@@ -1,27 +1,54 @@
-// Initial dashboard (S09, F1.2). Live counts come straight from Dexie;
-// S17 replaces the placeholders with the full F3.4 analysis widgets.
+// Dashboard proper (F3.4): due today, weekly fix, mistake-surface trend,
+// last-session outcome distribution. All numbers are derived from Dexie and
+// mirror the SQL semantics of analysis.ts.
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
+import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
+import type { Outcome } from '@/types';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Empty } from '@/components/ui/Empty';
 import { Button } from '@/components/ui/Button';
 import { db } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
-import { cn, formatDate, todayISO, plural } from '@/lib/utils';
-import { EXAM_DATE_DEFAULT } from '@/lib/constants';
+import { cn, formatDate, plural, todayISO } from '@/lib/utils';
+import { EXAM_DATE_DEFAULT, OUTCOMES, OUTCOME_BY_CODE } from '@/lib/constants';
+import { subjectInk } from '@/lib/subjectInk';
+import {
+  dueTodayCount,
+  latestSession,
+  mistakeSurfaceTrend,
+  outcomeDistribution
+} from '@/lib/analysis';
+
+const TONE_BG: Record<'ok' | 'slow' | 'guess' | 'wrong', string> = {
+  ok: 'bg-success',
+  slow: 'bg-warn',
+  guess: 'bg-guess',
+  wrong: 'bg-danger'
+};
+
+const TONE_TEXT: Record<'ok' | 'slow' | 'guess' | 'wrong', string> = {
+  ok: 'text-success',
+  slow: 'text-warn',
+  guess: 'text-guess',
+  wrong: 'text-danger'
+};
 
 function Stat({
   label,
   value,
   color,
-  dot
+  dot,
+  hint
 }: {
   label: string;
   value: number;
   color: string;
   dot: string;
+  hint?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5 px-4 py-4">
@@ -29,9 +56,84 @@ function Stat({
         <span className={cn('h-1.5 w-1.5 rounded-full', dot)} />
         <span className="u-label">{label}</span>
       </span>
-      <span className={cn('u-num text-[28px] font-semibold leading-none', value > 0 ? color : 'text-text-faint')}>
+      <span
+        className={cn(
+          'u-num text-[28px] font-semibold leading-none',
+          value > 0 ? color : 'text-text-faint'
+        )}
+      >
         {value}
       </span>
+      {hint && <span className="text-[12px] text-text-faint">{hint}</span>}
+    </div>
+  );
+}
+
+function TrendChip({ delta }: { delta: number }) {
+  if (delta === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[12px] text-text-faint">
+        <ArrowRight size={12} strokeWidth={2} /> flat vs. last week
+      </span>
+    );
+  }
+  const up = delta > 0;
+  const abs = Math.abs(delta);
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 text-[12px]',
+        up ? 'text-danger' : 'text-success'
+      )}
+    >
+      {up ? <ArrowUp size={12} strokeWidth={2} /> : <ArrowDown size={12} strokeWidth={2} />}
+      {up ? '+' : '−'}
+      {abs} vs. last week
+    </span>
+  );
+}
+
+function OutcomeBar({
+  distribution,
+  total
+}: {
+  distribution: Record<Outcome, number>;
+  total: number;
+}) {
+  if (total === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex h-2 overflow-hidden rounded-full bg-bg-overlay">
+        {OUTCOMES.map((o) => {
+          const n = distribution[o.code];
+          if (n === 0) return null;
+          const pct = (n / total) * 100;
+          return (
+            <div
+              key={o.code}
+              className={cn('h-full', TONE_BG[o.tone])}
+              style={{ width: `${pct}%` }}
+              aria-label={`${o.code}: ${n}`}
+            />
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+        {OUTCOMES.map((o) => (
+          <span key={o.code} className="flex items-center gap-1.5">
+            <span className={cn('h-1.5 w-1.5 rounded-full', TONE_BG[o.tone])} />
+            <span className="text-text-muted">{o.code}</span>
+            <span
+              className={cn(
+                'u-num',
+                distribution[o.code] > 0 ? TONE_TEXT[o.tone] : 'text-text-faint'
+              )}
+            >
+              {distribution[o.code]}
+            </span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -41,37 +143,38 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const today = todayISO();
 
-  const dueToday =
-    useLiveQuery(async () => {
-      if (!userId) return 0;
-      const rows = await db.reattempts.where('user_id').equals(userId).toArray();
-      return rows.filter((r) => r.stage !== 'MASTERED' && r.scheduled_date <= today).length;
-    }, [userId, today]) ?? 0;
+  const reattempts = useLiveQuery(
+    async () => (userId ? db.reattempts.where('user_id').equals(userId).toArray() : []),
+    [userId],
+    []
+  );
 
-  const surface =
-    useLiveQuery(async () => {
-      if (!userId) return 0;
-      const rows = await db.reattempts.where('user_id').equals(userId).toArray();
-      return rows.filter((r) => r.stage !== 'MASTERED').length;
-    }, [userId]) ?? 0;
-
-  const sessionCount =
-    useLiveQuery(
-      async () => (userId ? db.sessions.where('user_id').equals(userId).count() : 0),
-      [userId]
-    ) ?? 0;
-
-  const lastSession = useLiveQuery(async () => {
-    if (!userId) return undefined;
-    const rows = await db.sessions.where('user_id').equals(userId).sortBy('created_at');
-    return rows.at(-1);
-  }, [userId]);
+  const sessions = useLiveQuery(
+    async () => (userId ? db.sessions.where('user_id').equals(userId).toArray() : []),
+    [userId],
+    []
+  );
 
   const weeklyFix = useLiveQuery(async () => {
     if (!userId) return undefined;
     const rows = await db.weekly_reviews.where('user_id').equals(userId).sortBy('week_start');
     return rows.at(-1)?.this_weeks_fix ?? undefined;
   }, [userId]);
+
+  const last = useMemo(() => latestSession(sessions), [sessions]);
+
+  const lastSessionQuestions = useLiveQuery(
+    async () => {
+      if (!last) return [];
+      return db.questions.where('session_id').equals(last.id).toArray();
+    },
+    [last?.id],
+    []
+  );
+
+  const trend = useMemo(() => mistakeSurfaceTrend(reattempts), [reattempts]);
+  const due = useMemo(() => dueTodayCount(reattempts, today), [reattempts, today]);
+  const dist = useMemo(() => outcomeDistribution(lastSessionQuestions), [lastSessionQuestions]);
 
   const examDate = profile?.exam_date ?? EXAM_DATE_DEFAULT;
   const daysLeft = differenceInCalendarDays(parseISO(examDate), new Date());
@@ -89,10 +192,21 @@ export default function Dashboard() {
       />
 
       <Card>
-        <div className="grid grid-cols-3 divide-x divide-border">
-          <Stat label="Due today" value={dueToday} color="text-accent" dot="bg-accent" />
-          <Stat label="Mistake surface" value={surface} color="text-ink-violet" dot="bg-ink-violet" />
-          <Stat label="Sessions logged" value={sessionCount} color="text-ink-teal" dot="bg-ink-teal" />
+        <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <Stat label="Due today" value={due} color="text-accent" dot="bg-accent" />
+          <Stat
+            label="Mistake surface"
+            value={trend.current}
+            color="text-ink-violet"
+            dot="bg-ink-violet"
+            hint={<TrendChip delta={trend.delta} />}
+          />
+          <Stat
+            label="Sessions logged"
+            value={sessions.length}
+            color="text-ink-teal"
+            dot="bg-ink-teal"
+          />
         </div>
       </Card>
 
@@ -100,7 +214,7 @@ export default function Dashboard() {
         <CardHeader
           title="Re-attempts due"
           aside={
-            dueToday > 0 && (
+            due > 0 && (
               <Button size="sm" onClick={() => navigate('/reattempts')}>
                 Start review
               </Button>
@@ -108,13 +222,15 @@ export default function Dashboard() {
           }
         />
         <CardBody>
-          {dueToday > 0 ? (
+          {due > 0 ? (
             <p className="text-[13px] text-text-muted">
-              <span className="u-num text-text">{dueToday}</span>{' '}
-              {plural(dueToday, 'question')} scheduled for re-attempt today.
+              <span className="u-num text-text">{due}</span>{' '}
+              {plural(due, 'question')} scheduled for re-attempt today.
             </p>
           ) : (
-            <p className="text-[13px] text-text-faint">Nothing due. The queue fills as you tag mistakes.</p>
+            <p className="text-[13px] text-text-faint">
+              Nothing due. The queue fills as you tag mistakes.
+            </p>
           )}
         </CardBody>
       </Card>
@@ -135,21 +251,66 @@ export default function Dashboard() {
       </Card>
 
       <Card>
-        <CardHeader title="Last session" />
-        <CardBody>
-          {lastSession ? (
-            <div className="flex items-baseline justify-between gap-3">
-              <div>
-                <p className="text-sm">{lastSession.subject}</p>
-                <p className="mt-0.5 text-[12px] text-text-faint">
-                  {formatDate(lastSession.date)} · target{' '}
-                  <span className="u-num">{lastSession.target_duration_min}</span> min
-                </p>
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => navigate('/journal')}>
-                Journal
+        <CardHeader
+          title="Last session"
+          aside={
+            last && (
+              <Button size="sm" variant="ghost" onClick={() => navigate(`/session/${last.id}/review`)}>
+                Open review
               </Button>
-            </div>
+            )
+          }
+        />
+        <CardBody className="flex flex-col gap-4">
+          {last ? (
+            <>
+              <div className="flex items-baseline justify-between gap-3">
+                <div>
+                  <p className="flex items-center gap-2 text-sm">
+                    <span className={cn('h-1.5 w-1.5 rounded-full', subjectInk(last.subject).dot)} />
+                    <span className="font-medium">{last.subject}</span>
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-text-faint">
+                    {formatDate(last.date)} ·{' '}
+                    {last.actual_duration_min != null ? (
+                      <>
+                        <span className="u-num">{last.actual_duration_min}</span> of{' '}
+                        <span className="u-num">{last.target_duration_min}</span> min
+                      </>
+                    ) : (
+                      <>
+                        target <span className="u-num">{last.target_duration_min}</span> min · in progress
+                      </>
+                    )}
+                    {' · '}
+                    <span className="u-num">{lastSessionQuestions.length}</span>{' '}
+                    {plural(lastSessionQuestions.length, 'question')}
+                  </p>
+                </div>
+              </div>
+              {lastSessionQuestions.length > 0 ? (
+                <OutcomeBar distribution={dist} total={lastSessionQuestions.length} />
+              ) : (
+                <p className="text-[12px] text-text-faint">
+                  No questions tagged in this session yet.
+                </p>
+              )}
+              {lastSessionQuestions.length > 0 && (
+                <p className="text-[12px] text-text-faint">
+                  {(() => {
+                    const clean = dist['R'];
+                    const wrong = dist['W-C'] + dist['W-E'] + dist['W-R'];
+                    if (wrong > 0)
+                      return `${wrong} to re-attempt · ${clean} clean.`;
+                    if (dist['RBS'] + dist['RBG'] > 0)
+                      return `${dist['RBS'] + dist['RBG']} slow/guess to revisit.`;
+                    return `Clean session — nothing queued.`;
+                  })()}
+                  {OUTCOMES.find((o) => o.code === 'RBS' && dist[o.code] > 0) &&
+                    ` ${OUTCOME_BY_CODE['RBS'].label} means the target time was blown.`}
+                </p>
+              )}
+            </>
           ) : (
             <Empty
               title="No sessions yet"
