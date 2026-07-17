@@ -2,6 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import type { QuestionRow, ReattemptRow, SessionRow } from '@/types';
 import {
+  calibrationBySubject,
+  calibrationOverall,
   dueTodayCount,
   latestSession,
   mistakeSurfaceOpen,
@@ -270,6 +272,85 @@ describe('heatmapCells (F5.2 DoD)', () => {
     const totals = heatmapRowTotals(cells);
     expect(totals.get('Databases||Normalization — BCNF / 4NF')).toBe(3);
     expect(totals.get('Algorithms||Dynamic Programming — 1D')).toBe(1);
+  });
+});
+
+describe('calibration (F5.4 DoD)', () => {
+  it('EV math matches spec: skip=0, correct=+1, wrong=-1/3', () => {
+    const rows = [
+      q({ subject: 'Databases', mark_decision: 'MARK', mark_correct: true }),
+      q({ subject: 'Databases', mark_decision: 'MARK', mark_correct: true }),
+      q({ subject: 'Databases', mark_decision: 'MARK', mark_correct: false }),
+      q({ subject: 'Databases', mark_decision: 'SKIP', mark_correct: null })
+    ];
+    const cal = calibrationBySubject(rows);
+    const db = cal.find((c) => c.subject === 'Databases');
+    expect(db).toBeDefined();
+    expect(db!.marked).toBe(3);
+    expect(db!.markedCorrect).toBe(2);
+    expect(db!.markedWrong).toBe(1);
+    expect(db!.skipped).toBe(1);
+    // EV: (2 * 1 + 1 * -1/3) / 3 = 5/9 ≈ 0.5556
+    expect(db!.expectedValue).toBeCloseTo(5 / 9, 5);
+    expect(db!.accuracy).toBeCloseTo(2 / 3, 5);
+  });
+
+  it('50-50 counts as a decision that pays the same as MARK', () => {
+    const rows = [
+      q({ subject: 'Algorithms', mark_decision: 'FIFTY_FIFTY', mark_correct: true }),
+      q({ subject: 'Algorithms', mark_decision: 'FIFTY_FIFTY', mark_correct: false })
+    ];
+    const cal = calibrationBySubject(rows);
+    const algo = cal.find((c) => c.subject === 'Algorithms')!;
+    expect(algo.fiftyFifty).toBe(2);
+    expect(algo.fiftyFiftyCorrect).toBe(1);
+    // EV: (1 * 1 + 1 * -1/3) / 2 = 1/3
+    expect(algo.expectedValue).toBeCloseTo(1 / 3, 5);
+  });
+
+  it('recommends raise when accuracy is below break-even (25%)', () => {
+    // 1 correct of 8 = 12.5% — well below the -1/3 break-even.
+    const rows = Array.from({ length: 8 }, (_, i) =>
+      q({ subject: 'Databases', mark_decision: 'MARK', mark_correct: i === 0 })
+    );
+    const cal = calibrationBySubject(rows);
+    expect(cal[0].recommendation).toBe('raise');
+  });
+
+  it('holds when sample size is too small to advise', () => {
+    const rows = [
+      q({ subject: 'Databases', mark_decision: 'MARK', mark_correct: false }),
+      q({ subject: 'Databases', mark_decision: 'MARK', mark_correct: false })
+    ];
+    const cal = calibrationBySubject(rows);
+    expect(cal[0].recommendation).toBe('hold');
+  });
+
+  it('recommends lower for high accuracy + high EV', () => {
+    const rows = Array.from({ length: 10 }, (_, i) =>
+      q({
+        subject: 'Databases',
+        mark_decision: 'MARK',
+        mark_correct: i < 9 // 9/10 = 90%
+      })
+    );
+    const cal = calibrationBySubject(rows);
+    expect(cal[0].recommendation).toBe('lower');
+  });
+
+  it('overall aggregates per-subject rows', () => {
+    const rows = [
+      q({ subject: 'Databases', mark_decision: 'MARK', mark_correct: true }),
+      q({ subject: 'Algorithms', mark_decision: 'MARK', mark_correct: false }),
+      q({ subject: 'Algorithms', mark_decision: 'SKIP', mark_correct: null })
+    ];
+    const overall = calibrationOverall(calibrationBySubject(rows));
+    expect(overall.decided).toBe(2);
+    expect(overall.correct).toBe(1);
+    expect(overall.wrong).toBe(1);
+    expect(overall.skipped).toBe(1);
+    // EV: (1 * 1 + 1 * -1/3) / 2 = 1/3
+    expect(overall.expectedValue).toBeCloseTo(1 / 3, 5);
   });
 });
 

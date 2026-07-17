@@ -137,6 +137,116 @@ export function summarizeWeek(
   };
 }
 
+export interface CalibrationRow {
+  subject: string;
+  marked: number;
+  markedCorrect: number;
+  markedWrong: number;
+  skipped: number;
+  fiftyFifty: number;
+  fiftyFiftyCorrect: number;
+  accuracy: number | null; // null when no marks made
+  expectedValue: number; // per-question EV over this subject's non-skips
+  recommendation: 'raise' | 'lower' | 'hold';
+}
+
+/**
+ * F5.4 — per-subject calibration. Under GATE's -1/3 negative marking:
+ *   skip → 0, MARK correct → +1, MARK wrong → -1/3, 50-50 correct → +1,
+ *   50-50 wrong → -1/3 (same payoff as MARK since answer is committed).
+ * Recommendation:
+ *   - accuracy < 40% and EV < 0  → raise threshold (skip more)
+ *   - accuracy > 80% and EV > 0.6 → lower threshold (mark more)
+ *   - else → hold
+ */
+export function calibrationBySubject(questions: QuestionRow[]): CalibrationRow[] {
+  const per = new Map<string, CalibrationRow>();
+  for (const q of questions) {
+    if (!q.mark_decision) continue;
+    let row = per.get(q.subject);
+    if (!row) {
+      row = {
+        subject: q.subject,
+        marked: 0,
+        markedCorrect: 0,
+        markedWrong: 0,
+        skipped: 0,
+        fiftyFifty: 0,
+        fiftyFiftyCorrect: 0,
+        accuracy: null,
+        expectedValue: 0,
+        recommendation: 'hold'
+      };
+      per.set(q.subject, row);
+    }
+    if (q.mark_decision === 'SKIP') {
+      row.skipped += 1;
+    } else if (q.mark_decision === 'MARK') {
+      row.marked += 1;
+      if (q.mark_correct === true) row.markedCorrect += 1;
+      else if (q.mark_correct === false) row.markedWrong += 1;
+    } else if (q.mark_decision === 'FIFTY_FIFTY') {
+      row.fiftyFifty += 1;
+      if (q.mark_correct === true) row.fiftyFiftyCorrect += 1;
+    }
+  }
+  for (const row of per.values()) {
+    const decided = row.marked + row.fiftyFifty;
+    const correct = row.markedCorrect + row.fiftyFiftyCorrect;
+    const wrong = decided - correct;
+    if (row.marked > 0) row.accuracy = row.markedCorrect / row.marked;
+    row.expectedValue = decided === 0 ? 0 : (correct * 1 + wrong * (-1 / 3)) / decided;
+    // Under GATE −1/3 marking, break-even is at 25% accuracy. Anything below
+    // that is a guaranteed money-loser; anything above 80% is leaving points
+    // on the table. Sample size < 4 stays as "hold" to avoid twitchy advice.
+    if (decided < 4) {
+      row.recommendation = 'hold';
+    } else if (row.accuracy != null && row.accuracy < 0.25) {
+      row.recommendation = 'raise';
+    } else if (row.accuracy != null && row.accuracy > 0.8 && row.expectedValue > 0.6) {
+      row.recommendation = 'lower';
+    } else {
+      row.recommendation = 'hold';
+    }
+  }
+  return [...per.values()].sort(
+    (a, b) => a.expectedValue - b.expectedValue || b.marked - a.marked
+  );
+}
+
+/** Aggregate all-subject EV given the per-subject rows. */
+export function calibrationOverall(rows: CalibrationRow[]): {
+  decided: number;
+  correct: number;
+  wrong: number;
+  skipped: number;
+  expectedValue: number;
+  accuracy: number | null;
+} {
+  let decided = 0;
+  let correct = 0;
+  let wrong = 0;
+  let skipped = 0;
+  let markedAll = 0;
+  let markedCorrectAll = 0;
+  for (const r of rows) {
+    decided += r.marked + r.fiftyFifty;
+    correct += r.markedCorrect + r.fiftyFiftyCorrect;
+    wrong += r.markedWrong + (r.fiftyFifty - r.fiftyFiftyCorrect);
+    skipped += r.skipped;
+    markedAll += r.marked;
+    markedCorrectAll += r.markedCorrect;
+  }
+  return {
+    decided,
+    correct,
+    wrong,
+    skipped,
+    expectedValue: decided === 0 ? 0 : (correct * 1 + wrong * (-1 / 3)) / decided,
+    accuracy: markedAll === 0 ? null : markedCorrectAll / markedAll
+  };
+}
+
 export interface HeatmapCell {
   subject: string;
   subtopic: string | null;

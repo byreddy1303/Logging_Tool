@@ -15,6 +15,7 @@ import Patterns from '@/pages/Patterns';
 import Reattempts from '@/pages/Reattempts';
 import WeeklyReview from '@/pages/WeeklyReview';
 import Heatmap from '@/pages/Heatmap';
+import Calibration from '@/pages/Calibration';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
       { path: 'reattempts', element: <Reattempts /> },
       { path: 'weekly-review', element: <WeeklyReview /> },
       { path: 'heatmap', element: <Heatmap /> },
+      { path: 'calibration', element: <Calibration /> },
       { path: 'doubt', element: <Pending step="S20" /> },
       { path: 'triangulate', element: <Pending step="S21" /> },
       { path: 'trigger-drill', element: <Pending step="S24" /> },

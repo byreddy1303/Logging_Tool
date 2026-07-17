@@ -8,6 +8,7 @@ import {
   RotateCcw,
   CalendarCheck,
   Grid3x3,
+  Target,
   MessageSquare,
   Columns3,
   Zap,
@@ -45,7 +46,8 @@ const ANALYSIS: Item[] = [
     icon: CalendarCheck,
     active: 'bg-ink-marigold/10 text-ink-marigold'
   },
-  { to: '/heatmap', label: 'Heatmap', icon: Grid3x3, active: 'bg-ink-slate/10 text-ink-slate' }
+  { to: '/heatmap', label: 'Heatmap', icon: Grid3x3, active: 'bg-ink-slate/10 text-ink-slate' },
+  { to: '/calibration', label: 'Calibration', icon: Target, active: 'bg-ink-teal/10 text-ink-teal' }
 ];
 
 const LEARN: Item[] = [
