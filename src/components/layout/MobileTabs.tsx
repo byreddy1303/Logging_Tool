@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Gauge, Play, NotebookText, Shapes, MessageSquare } from 'lucide-react';
+import { Gauge, Play, NotebookText, PenLine, Shapes } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,14 @@ interface Tab {
 
 const TABS: Tab[] = [
   { to: '/', label: 'Home', icon: Gauge, match: ['/'], active: 'text-accent', bar: 'bg-accent' },
+  {
+    to: '/log',
+    label: 'Log',
+    icon: PenLine,
+    match: ['/log'],
+    active: 'text-ink-rose',
+    bar: 'bg-ink-rose'
+  },
   {
     to: '/session/new',
     label: 'Session',
@@ -41,14 +49,6 @@ const TABS: Tab[] = [
     match: ['/patterns', '/reattempts', '/weekly-review', '/heatmap', '/readiness', '/calibration'],
     active: 'text-ink-violet',
     bar: 'bg-ink-violet'
-  },
-  {
-    to: '/doubt',
-    label: 'Learn',
-    icon: MessageSquare,
-    match: ['/doubt', '/triangulate', '/trigger-drill', '/formulas'],
-    active: 'text-ink-marigold',
-    bar: 'bg-ink-marigold'
   }
 ];
 

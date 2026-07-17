@@ -124,6 +124,7 @@ export default function Nav() {
   }, [storedSessionId]);
   const main: Item[] = [
     { to: '/', label: 'Dashboard', icon: Gauge, active: 'bg-accent-faint text-accent' },
+    LOG_ITEM,
     liveSessionId
       ? {
           to: `/session/${liveSessionId}/solve`,
@@ -137,8 +138,7 @@ export default function Nav() {
           icon: Play,
           active: 'bg-ink-teal/10 text-ink-teal'
         },
-    JOURNAL_ITEM,
-    LOG_ITEM
+    JOURNAL_ITEM
   ];
 
   return (

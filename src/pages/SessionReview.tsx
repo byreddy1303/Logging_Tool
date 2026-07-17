@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Empty } from '@/components/ui/Empty';
 import { Dialog } from '@/components/ui/Dialog';
 import QuestionEditor, { DeleteBar } from '@/components/shared/QuestionEditor';
+import SessionEditor from '@/components/shared/SessionEditor';
 import {
   applyDraftToRow,
   draftFromRow,
@@ -57,6 +58,7 @@ export default function SessionReview() {
   const [editDraft, setEditDraft] = useState<EditorDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editSessionOpen, setEditSessionOpen] = useState(false);
 
   function openEdit(row: QuestionRow) {
     setEditRow(row);
@@ -155,14 +157,19 @@ export default function SessionReview() {
             <span className="u-num">{session.target_duration_min}</span>m target
           </p>
         </div>
-        <motion.span
-          className="u-stamp"
-          initial={{ opacity: 0, scale: 1.7, rotate: 6 }}
-          animate={{ opacity: 1, scale: 1, rotate: -4 }}
-          transition={{ type: 'spring', stiffness: 320, damping: 19, delay: 0.15 }}
-        >
-          logged
-        </motion.span>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setEditSessionOpen(true)}>
+            Edit session
+          </Button>
+          <motion.span
+            className="u-stamp"
+            initial={{ opacity: 0, scale: 1.7, rotate: 6 }}
+            animate={{ opacity: 1, scale: 1, rotate: -4 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 19, delay: 0.15 }}
+          >
+            logged
+          </motion.span>
+        </div>
       </div>
 
       <Card>
@@ -436,6 +443,22 @@ export default function SessionReview() {
               </Button>
             </div>
           </div>
+        )}
+      </Dialog>
+
+      <Dialog
+        open={editSessionOpen}
+        onClose={() => setEditSessionOpen(false)}
+        title="Edit session"
+        className="max-w-lg"
+      >
+        {session && (
+          <SessionEditor
+            session={session}
+            onSaved={() => setEditSessionOpen(false)}
+            onDeleted={() => navigate('/')}
+            onCancel={() => setEditSessionOpen(false)}
+          />
         )}
       </Dialog>
     </div>

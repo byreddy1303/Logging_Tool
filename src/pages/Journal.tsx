@@ -1,13 +1,14 @@
 // Journal (F3.1): every tagged question, filterable six ways, fuzzy trigger
 // search, expandable rows, 50/page.
-import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronDown, Pencil } from 'lucide-react';
-import type { QuestionRow } from '@/types';
+import { ChevronDown, ChevronRight, Pencil } from 'lucide-react';
+import type { QuestionRow, SessionRow } from '@/types';
 import { db } from '@/lib/db';
 import { writeLocal, deleteLocal } from '@/lib/sync';
+import { pruneEmptyFinishedSessions, allSessions, recentSessions } from '@/lib/sessions';
 import {
   OUTCOMES,
   OUTCOME_BY_CODE,
@@ -33,6 +34,7 @@ import { Empty } from '@/components/ui/Empty';
 import { ImagePreview } from '@/components/shared/ImagePreview';
 import { Dialog } from '@/components/ui/Dialog';
 import QuestionEditor, { DeleteBar } from '@/components/shared/QuestionEditor';
+import SessionEditor from '@/components/shared/SessionEditor';
 import {
   applyDraftToRow,
   draftFromRow,
@@ -70,6 +72,7 @@ interface Filters {
   mark: string;
   source: string;
   format: string;
+  session: string; // session id, or "" for all, or "standalone" for session_id IS NULL
   from: string;
   to: string;
 }
@@ -84,6 +87,7 @@ const EMPTY_FILTERS: Filters = {
   mark: '',
   source: '',
   format: '',
+  session: '',
   from: '',
   to: ''
 };
@@ -270,6 +274,7 @@ function Row({
 
 export default function Journal() {
   const { userId } = useAuth();
+  const navigate = useNavigate();
   const [params] = useSearchParams();
   const [f, setF] = useState<Filters>(() => ({
     ...EMPTY_FILTERS,
@@ -277,6 +282,7 @@ export default function Journal() {
     subject: params.get('subject') ?? '',
     subtopic: params.get('subtopic') ?? '',
     cause: params.get('cause') ?? '',
+    session: params.get('session') ?? '',
     from: params.get('from') ?? '',
     to: params.get('to') ?? ''
   }));
@@ -286,6 +292,14 @@ export default function Journal() {
   const [editDraft, setEditDraft] = useState<EditorDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editSession, setEditSession] = useState<SessionRow | null>(null);
+
+  // One-shot housekeeping: nuke finished sessions with zero tagged questions
+  // (from before the auto-delete-on-finish landed).
+  useEffect(() => {
+    if (!userId) return;
+    void pruneEmptyFinishedSessions(userId);
+  }, [userId]);
 
   function openEdit(row: QuestionRow) {
     setEditRow(row);
@@ -323,8 +337,33 @@ export default function Journal() {
     return rows.reverse();
   }, [userId]);
 
+  // Newest-first past sessions for the strip below the filter bar.
+  const recent = useLiveQuery(
+    async () => (userId ? recentSessions(userId, 6) : []),
+    [userId],
+    []
+  );
+  // All sessions for the filter Select — the user can jump to any old session
+  // even if it isn't in the top-6 strip.
+  const sessionsAll = useLiveQuery(
+    async () => (userId ? allSessions(userId) : []),
+    [userId],
+    []
+  );
+
+  // Per-session tagged counts (used by the sessions strip subtitle).
+  const questionCountBySession = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const q of questions ?? []) {
+      if (q.session_id) map.set(q.session_id, (map.get(q.session_id) ?? 0) + 1);
+    }
+    return map;
+  }, [questions]);
+
   const filtered = useMemo(() => {
     let rows = questions ?? [];
+    if (f.session === 'standalone') rows = rows.filter((q) => q.session_id === null);
+    else if (f.session) rows = rows.filter((q) => q.session_id === f.session);
     if (f.subject) rows = rows.filter((q) => q.subject === f.subject);
     if (f.subtopic) rows = rows.filter((q) => q.subtopic === f.subtopic);
     if (f.outcome) rows = rows.filter((q) => q.outcome === f.outcome);
@@ -345,6 +384,13 @@ export default function Journal() {
   const current = Math.min(page, pages - 1);
   const pageRows = filtered.slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE);
   const filtersActive = Object.values(f).some((v) => v !== '');
+  // Only surface the questions table when the user asked for one — i.e. any
+  // filter is set. Otherwise the recent-sessions strip stands alone.
+  const showQuestionsTable = filtersActive;
+  const selectedSession =
+    f.session && f.session !== 'standalone'
+      ? sessionsAll.find((s) => s.id === f.session) ?? null
+      : null;
 
   function set<K extends keyof Filters>(key: K, value: string) {
     setF((prev) => ({ ...prev, [key]: value }));
@@ -466,6 +512,20 @@ export default function Journal() {
               ))}
             </Select>
             <Select
+              value={f.session}
+              onChange={(e) => set('session', e.target.value)}
+              aria-label="Filter by session"
+              className="w-[220px]"
+            >
+              <option value="">All sessions</option>
+              <option value="standalone">Standalone (Log) entries</option>
+              {sessionsAll.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {formatDate(s.date, 'dd MMM yy')} · {s.subject}
+                </option>
+              ))}
+            </Select>
+            <Select
               value={f.format}
               onChange={(e) => set('format', e.target.value)}
               aria-label="Filter by question format"
@@ -511,6 +571,56 @@ export default function Journal() {
         </CardBody>
       </Card>
 
+      <RecentSessionsCard
+        sessions={recent}
+        countsBySession={questionCountBySession}
+        selectedId={f.session}
+        onSelect={(id) => set('session', id)}
+        onEdit={(s) => setEditSession(s)}
+        onOpenReview={(s) => navigate(`/session/${s.id}/review`)}
+      />
+
+      {selectedSession && (
+        <Card>
+          <CardBody className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-[13px]">
+              <span
+                className={cn('h-1.5 w-1.5 rounded-full', subjectInk(selectedSession.subject).dot)}
+              />
+              <span className="font-medium">{selectedSession.subject}</span>
+              <span className="text-text-faint">
+                · {formatDate(selectedSession.date, 'EEE dd MMM yy')} ·{' '}
+                <span className="u-num">{questionCountBySession.get(selectedSession.id) ?? 0}</span>{' '}
+                {plural(questionCountBySession.get(selectedSession.id) ?? 0, 'question')}
+                {selectedSession.actual_duration_min != null && (
+                  <>
+                    {' · '}
+                    <span className="u-num">{selectedSession.actual_duration_min}</span>m
+                  </>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(`/session/${selectedSession.id}/review`)}
+              >
+                Open review
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setEditSession(selectedSession)}>
+                <Pencil size={13} strokeWidth={1.75} className="mr-1" />
+                Edit session
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => set('session', '')}>
+                Clear
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {showQuestionsTable ? (
       <Card>
         {pageRows.length > 0 ? (
           <>
@@ -566,16 +676,13 @@ export default function Journal() {
           </>
         ) : (
           <Empty
-            title={filtersActive ? 'No entries match' : 'Nothing logged yet'}
-            hint={
-              filtersActive
-                ? 'Loosen a filter or clear them all.'
-                : 'Tag questions during a session and they land here.'
-            }
+            title="No entries match"
+            hint="Loosen a filter or clear them all."
             className="border-0 py-10"
           />
         )}
       </Card>
+      ) : null}
 
       <ImagePreview
         src={preview?.src ?? null}
@@ -620,6 +727,117 @@ export default function Journal() {
           </div>
         )}
       </Dialog>
+
+      <Dialog
+        open={!!editSession}
+        onClose={() => setEditSession(null)}
+        title="Edit session"
+        className="max-w-lg"
+      >
+        {editSession && (
+          <SessionEditor
+            session={editSession}
+            onSaved={() => setEditSession(null)}
+            onDeleted={() => {
+              // If the deleted session was the current filter, clear it.
+              if (f.session === editSession.id) set('session', '');
+              setEditSession(null);
+            }}
+            onCancel={() => setEditSession(null)}
+          />
+        )}
+      </Dialog>
     </div>
+  );
+}
+
+function RecentSessionsCard({
+  sessions,
+  countsBySession,
+  selectedId,
+  onSelect,
+  onEdit,
+  onOpenReview
+}: {
+  sessions: SessionRow[];
+  countsBySession: Map<string, number>;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  onEdit: (s: SessionRow) => void;
+  onOpenReview: (s: SessionRow) => void;
+}) {
+  if (sessions.length === 0) return null;
+  return (
+    <Card>
+      <CardBody className="p-0">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+          <span className="u-label">Recent sessions</span>
+          <span className="u-num text-[11px] text-text-faint">last {sessions.length}</span>
+        </div>
+        <ul className="divide-y divide-border">
+          {sessions.map((s) => {
+            const ink = subjectInk(s.subject);
+            const count = countsBySession.get(s.id) ?? 0;
+            const active = selectedId === s.id;
+            return (
+              <li
+                key={s.id}
+                className={cn(
+                  'flex flex-wrap items-center gap-3 px-4 py-2.5 transition-colors hover:bg-bg-overlay/40',
+                  active && 'bg-accent-faint/40'
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelect(s.id)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <ChevronRight
+                    size={14}
+                    strokeWidth={1.75}
+                    className={cn(
+                      'shrink-0 transition-colors',
+                      active ? 'text-accent' : 'text-text-faint'
+                    )}
+                  />
+                  <span className="u-num w-[74px] shrink-0 text-[11px] text-text-faint">
+                    {formatDate(s.date, 'dd MMM yy')}
+                  </span>
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', ink.dot)} />
+                    <span className="truncate text-[13px] font-medium">{s.subject}</span>
+                  </span>
+                  <span className="u-num shrink-0 text-[11px] text-text-muted">
+                    {count} {plural(count, 'question')}
+                  </span>
+                  {s.actual_duration_min != null && (
+                    <span className="u-num hidden shrink-0 text-[11px] text-text-faint sm:inline">
+                      · {s.actual_duration_min}m of {s.target_duration_min}m
+                    </span>
+                  )}
+                </button>
+                <span className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label="Edit session"
+                    onClick={() => onEdit(s)}
+                    className="rounded p-1 text-text-faint transition-colors hover:bg-bg-overlay hover:text-accent"
+                  >
+                    <Pencil size={12} strokeWidth={1.75} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenReview(s)}
+                    className="rounded px-2 py-0.5 text-[11px] text-text-muted transition-colors hover:bg-bg-overlay hover:text-text"
+                  >
+                    Review
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </CardBody>
+    </Card>
   );
 }

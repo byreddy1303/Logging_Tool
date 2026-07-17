@@ -12,7 +12,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { parseISO } from 'date-fns';
 import type { QuestionRow } from '@/types';
 import { db } from '@/lib/db';
-import { writeLocal } from '@/lib/sync';
+import { deleteLocal, writeLocal } from '@/lib/sync';
 import { needsReattempt, scheduleReattempt } from '@/lib/reattempt';
 import { DEFAULT_TARGET_TIME_SEC, MARKS_TARGET_SEC, buildSourceRef } from '@/lib/constants';
 import { cn, uuid, nowISO, secondsToClock } from '@/lib/utils';
@@ -91,6 +91,15 @@ export default function SessionActive() {
 
   async function finish() {
     if (!session) return;
+    // Zero-question sessions are noise. Drop the row instead of writing an
+    // "empty session logged" — it will never show up in the journal, the
+    // heatmap, or the weekly review.
+    if (taggedCount === 0) {
+      await deleteLocal('sessions', id);
+      store.end();
+      navigate('/');
+      return;
+    }
     const mins = Math.max(
       1,
       Math.round((Date.now() - parseISO(session.created_at).getTime()) / 60_000)

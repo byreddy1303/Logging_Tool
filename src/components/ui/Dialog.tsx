@@ -51,9 +51,12 @@ export function Dialog({
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0, transition: { duration: 0.12 } }}
             transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-            className={cn('u-panel w-full max-w-md shadow-lift outline-none', className)}
+            className={cn(
+              'u-panel flex max-h-[calc(100vh-32px)] w-full max-w-md flex-col shadow-lift outline-none',
+              className
+            )}
           >
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
               <h2 className="font-display text-[15px] font-semibold text-text">{title}</h2>
               <button
                 type="button"
@@ -64,7 +67,7 @@ export function Dialog({
                 <X size={16} strokeWidth={1.75} />
               </button>
             </div>
-            <div className="p-4">{children}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
           </motion.div>
         </motion.div>
       )}
