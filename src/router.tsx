@@ -7,6 +7,8 @@ import Auth from '@/pages/Auth';
 import NotFound from '@/pages/NotFound';
 import Pending from '@/components/shared/Pending';
 import Dashboard from '@/pages/Dashboard';
+import SessionNew from '@/pages/SessionNew';
+import SessionActive from '@/pages/SessionActive';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -36,7 +38,9 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Dashboard /> },
-      { path: 'session/new', element: <Pending step="S11" /> },
+      { path: 'session/new', element: <SessionNew /> },
+      { path: 'session/:id/solve', element: <SessionActive /> },
+      { path: 'session/:id/review', element: <Pending step="S13" /> },
       { path: 'journal', element: <Pending step="S14" /> },
       { path: 'patterns', element: <Pending step="S15" /> },
       { path: 'reattempts', element: <Pending step="S16" /> },

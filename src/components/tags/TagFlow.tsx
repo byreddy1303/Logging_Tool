@@ -1,0 +1,146 @@
+// 4-step tag pipeline (F2.2): Outcome → Pattern → Trigger → Root Cause.
+// Keyboard-first; root cause is skipped when the outcome is R.
+import { useRef, useState } from 'react';
+import type { Outcome, PatternRow, RootCause } from '@/types';
+import { OUTCOME_BY_CODE } from '@/lib/constants';
+import { cn, secondsToClock } from '@/lib/utils';
+
+import OutcomeStep from '@/components/tags/OutcomeStep';
+import PatternStep from '@/components/tags/PatternStep';
+import TriggerStep from '@/components/tags/TriggerStep';
+import RootCauseStep from '@/components/tags/RootCauseStep';
+
+export interface TagDraft {
+  outcome: Outcome;
+  pattern_name: string | null;
+  trigger_sentence: string | null;
+  root_cause: RootCause | null;
+}
+
+type Step = 'outcome' | 'pattern' | 'trigger' | 'cause';
+
+const STEP_LABELS: { id: Step; label: string }[] = [
+  { id: 'outcome', label: 'outcome' },
+  { id: 'pattern', label: 'pattern' },
+  { id: 'trigger', label: 'trigger' },
+  { id: 'cause', label: 'cause' }
+];
+
+const ADVANCE_FLASH_MS = 110;
+
+export default function TagFlow({
+  subject,
+  patterns,
+  questionLabel,
+  timeSpentSec,
+  onSave,
+  onCancel
+}: {
+  subject: string;
+  patterns: PatternRow[];
+  questionLabel: string;
+  timeSpentSec: number;
+  onSave: (draft: TagDraft) => Promise<void> | void;
+  onCancel: () => void;
+}) {
+  const [step, setStep] = useState<Step>('outcome');
+  const [outcome, setOutcome] = useState<Outcome>();
+  const [pattern, setPattern] = useState<string | null>(null);
+  const [trigger, setTrigger] = useState<string | null>(null);
+  const [cause, setCause] = useState<RootCause>();
+  const [saving, setSaving] = useState(false);
+  const advanceTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const steps = STEP_LABELS.filter((s) => s.id !== 'cause' || outcome !== 'R');
+
+  async function finalize(draft: TagDraft) {
+    setSaving(true);
+    try {
+      await onSave(draft);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function pickOutcome(o: Outcome) {
+    if (saving) return;
+    setOutcome(o);
+    clearTimeout(advanceTimer.current);
+    advanceTimer.current = setTimeout(() => setStep('pattern'), ADVANCE_FLASH_MS);
+  }
+
+  function submitPattern(name: string | null) {
+    setPattern(name);
+    setStep('trigger');
+  }
+
+  function submitTrigger(text: string | null) {
+    setTrigger(text);
+    if (outcome === 'R') {
+      void finalize({ outcome, pattern_name: pattern, trigger_sentence: text, root_cause: null });
+    } else {
+      setStep('cause');
+    }
+  }
+
+  function pickCause(rc: RootCause) {
+    if (saving || !outcome) return;
+    setCause(rc);
+    void finalize({ outcome, pattern_name: pattern, trigger_sentence: trigger, root_cause: rc });
+  }
+
+  const activeIdx = steps.findIndex((s) => s.id === step);
+
+  return (
+    <div className="flex flex-col gap-5" data-testid="tag-flow">
+      <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
+        <ol className="flex items-center gap-2">
+          {steps.map((s, i) => (
+            <li key={s.id} className="flex items-center gap-2">
+              {i > 0 && <span className="text-[10px] text-text-faint">·</span>}
+              <span
+                className={cn(
+                  'u-label',
+                  i === activeIdx
+                    ? 'text-accent'
+                    : i < activeIdx
+                      ? 'text-text-muted'
+                      : 'text-text-faint'
+                )}
+              >
+                {s.label}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <span className="u-num text-[12px] text-text-muted">
+          {questionLabel} · {secondsToClock(timeSpentSec)}
+          {outcome && <span className="ml-2 text-text">{OUTCOME_BY_CODE[outcome].code}</span>}
+        </span>
+      </div>
+
+      {step === 'outcome' && (
+        <OutcomeStep selected={outcome} onSelect={pickOutcome} onCancel={onCancel} />
+      )}
+      {step === 'pattern' && (
+        <PatternStep
+          subject={subject}
+          patterns={patterns}
+          initial={pattern}
+          onSubmit={submitPattern}
+          onBack={() => setStep('outcome')}
+        />
+      )}
+      {step === 'trigger' && (
+        <TriggerStep initial={trigger} onSubmit={submitTrigger} onBack={() => setStep('pattern')} />
+      )}
+      {step === 'cause' && (
+        <RootCauseStep selected={cause} onSelect={pickCause} onBack={() => setStep('trigger')} />
+      )}
+
+      <p className="u-label text-text-faint">
+        {saving ? 'saving…' : 'esc goes back · this should take under 30 seconds'}
+      </p>
+    </div>
+  );
+}
