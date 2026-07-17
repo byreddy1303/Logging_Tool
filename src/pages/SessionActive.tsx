@@ -14,6 +14,7 @@ import { cn, uuid, nowISO, secondsToClock } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useTimer } from '@/hooks/useTimer';
 import { useKeyboard } from '@/hooks/useKeyboard';
+import { useVisibilityChange } from '@/hooks/useVisibilityChange';
 import { useSessionStore } from '@/stores/session';
 import LoadingScreen from '@/components/shared/LoadingScreen';
 import Timer from '@/components/shared/Timer';
@@ -126,6 +127,26 @@ export default function SessionActive() {
 
   useKeyboard({ enter: openTag, n: openTag }, mode === 'solve' && !!session);
 
+  const sessionLive = !!session && session.actual_duration_min === null;
+  useVisibilityChange(() => {
+    void (async () => {
+      if (!userId) return;
+      const current = await db.sessions.get(id);
+      if (!current || current.actual_duration_min !== null) return;
+      await writeLocal('interruption_logs', {
+        id: uuid(),
+        user_id: userId,
+        session_id: id,
+        ts: nowISO(),
+        kind: 'tab_switch' as const
+      });
+      await writeLocal('sessions', {
+        ...current,
+        interruptions_count: current.interruptions_count + 1
+      });
+    })();
+  }, sessionLive);
+
   if (session === undefined) return <LoadingScreen />;
   if (session === null)
     return (
@@ -160,7 +181,11 @@ export default function SessionActive() {
             </div>
           </div>
           <div className="flex items-center justify-between border-t border-border pt-3">
-            <p className={cn('u-label text-text-faint')}>solve on paper · tag here</p>
+            <p className={cn('u-label text-text-faint')}>
+              solve on paper · tag here
+              {session.interruptions_count > 0 &&
+                ` · ${session.interruptions_count} interruption${session.interruptions_count === 1 ? '' : 's'}`}
+            </p>
             <Button variant="ghost" size="sm" onClick={() => void finish()}>
               End session
             </Button>
