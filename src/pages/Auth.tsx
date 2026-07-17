@@ -5,21 +5,10 @@ import { useAuthStore } from '@/stores/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { supabaseConfigured } from '@/lib/supabase';
 import { EXAM_DATE_DEFAULT } from '@/lib/constants';
-import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 
 type SendState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'error'; message: string };
-
-function CornerTicks() {
-  const tick = 'pointer-events-none absolute h-2 w-2 border-border-hover';
-  return (
-    <>
-      <span aria-hidden className={cn(tick, 'left-[-1px] top-[-1px] border-l border-t')} />
-      <span aria-hidden className={cn(tick, 'right-[-1px] top-[-1px] border-r border-t')} />
-      <span aria-hidden className={cn(tick, 'bottom-[-1px] left-[-1px] border-b border-l')} />
-      <span aria-hidden className={cn(tick, 'bottom-[-1px] right-[-1px] border-b border-r')} />
-    </>
-  );
-}
 
 export default function Auth() {
   const { status } = useAuth();
@@ -45,30 +34,33 @@ export default function Auth() {
   }
 
   return (
-    <div className="bg-dotgrid relative flex min-h-dvh flex-col">
+    <div className="relative flex min-h-dvh flex-col">
       <header className="flex items-center justify-between px-6 py-4">
         <span className="u-label text-text-muted">AIR Journal</span>
         <span className="u-label">invite-only</span>
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-4">
-        <div className="u-panel relative w-full max-w-[360px] p-8">
-          <CornerTicks />
+      <main className="flex flex-1 items-center justify-center px-4 py-8">
+        <div className="u-panel relative w-full max-w-[380px] p-8">
+          <span className="u-stamp absolute right-6 top-7">gate 2027</span>
 
-          <div>
-            <h1 className="font-mono text-[28px] font-medium leading-none tracking-[0.04em]">
-              AIR<span className="text-accent">_</span>
+          <div className="u-margin-line">
+            <h1 className="font-display text-[38px] font-bold leading-none tracking-tight">
+              AIR<span className="text-accent">.</span>
             </h1>
-            <p className="u-label mt-2">Journal / GATE 2027</p>
-            <p className="mt-4 text-[13px] leading-relaxed text-text-muted">
-              Every solved question becomes data. Compress your mistake surface.
+            <p className="u-label mt-2">the rank notebook</p>
+            <p className="mt-4 text-[13.5px] leading-relaxed text-text-muted">
+              Every solved question becomes data.{' '}
+              <span className="u-highlight font-medium text-text">
+                Compress your mistake surface.
+              </span>
             </p>
           </div>
 
           <div className="u-rule my-6" />
 
           {invite && (
-            <div className="mb-6 border border-accent-faint bg-bg-overlay px-3 py-2">
+            <div className="mb-6 rounded border border-accent/30 bg-accent-faint/60 px-3 py-2">
               <p className="u-label text-accent">invite detected</p>
               <p className="u-num mt-1 truncate text-xs text-text-muted">{invite}</p>
               <p className="mt-1 text-xs text-text-faint">
@@ -83,7 +75,7 @@ export default function Auth() {
                 <label htmlFor="email" className="u-label block">
                   Email
                 </label>
-                <input
+                <Input
                   id="email"
                   type="email"
                   required
@@ -92,15 +84,16 @@ export default function Auth() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="mt-2 w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-text-faint transition-colors hover:border-border-hover focus:border-accent focus:outline-none"
+                  className="mt-2"
                 />
-                <button
+                <Button
                   type="submit"
+                  variant="primary"
                   disabled={send.kind === 'sending'}
-                  className="mt-4 w-full rounded-sm bg-accent px-3 py-2 text-sm font-medium text-bg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                  className="mt-4 w-full"
                 >
                   {send.kind === 'sending' ? 'Sending link…' : 'Send magic link'}
-                </button>
+                </Button>
               </form>
 
               <div className="my-6 flex items-center gap-3">
@@ -109,20 +102,16 @@ export default function Auth() {
                 <div className="u-rule flex-1" />
               </div>
 
-              <button
-                type="button"
-                onClick={() => void signInWithGoogle()}
-                className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-text transition-colors hover:border-border-hover hover:bg-bg-overlay"
-              >
+              <Button type="button" onClick={() => void signInWithGoogle()} className="w-full">
                 Continue with Google
-              </button>
+              </Button>
 
               <div className="mt-6 min-h-[18px]" aria-live="polite">
                 {send.kind === 'sent' && (
-                  <p className="u-num text-xs text-success">Link sent — check your inbox.</p>
+                  <p className="text-xs font-medium text-success">Link sent — check your inbox.</p>
                 )}
                 {send.kind === 'error' && (
-                  <p className="u-num text-xs text-danger">{send.message}</p>
+                  <p className="text-xs font-medium text-danger">{send.message}</p>
                 )}
               </div>
             </>
@@ -133,13 +122,14 @@ export default function Auth() {
                 <span className="u-num text-xs text-text">.env.local</span> to enable sign-in.
               </p>
               {import.meta.env.DEV && (
-                <button
+                <Button
                   type="button"
+                  variant="primary"
                   onClick={() => void enterSandbox()}
-                  className="mt-4 w-full rounded-sm border border-accent-faint px-3 py-2 text-sm text-accent transition-colors hover:border-accent hover:bg-bg-overlay"
+                  className="mt-4 w-full"
                 >
                   Enter local sandbox
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -149,7 +139,8 @@ export default function Auth() {
       <footer className="flex items-center justify-between px-6 py-4">
         <span className="u-label">GATE CS · {EXAM_DATE_DEFAULT}</span>
         <span className="u-num text-xs text-text-muted">
-          T−{daysLeft}<span className="text-text-faint">d</span>
+          T−{daysLeft}
+          <span className="text-text-faint">d</span>
         </span>
       </footer>
     </div>

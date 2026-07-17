@@ -1,9 +1,11 @@
 export default function LoadingScreen() {
   return (
-    <div className="bg-dotgrid flex min-h-dvh items-center justify-center">
+    <div className="flex min-h-dvh items-center justify-center bg-bg">
       <div className="text-center">
-        <p className="u-label">AIR Journal</p>
-        <p className="u-num mt-2 text-xs text-text-faint">loading</p>
+        <p className="animate-pulse font-display text-[22px] font-bold tracking-tight text-text">
+          AIR<span className="text-accent">.</span>
+        </p>
+        <p className="u-label mt-1">loading</p>
       </div>
     </div>
   );

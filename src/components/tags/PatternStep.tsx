@@ -85,7 +85,7 @@ export default function PatternStep({
         aria-label="Pattern name"
       />
       {suggestions.length > 0 && (
-        <div className="flex flex-col divide-y divide-border border border-border">
+        <div className="flex flex-col divide-y divide-border overflow-hidden rounded border border-border bg-bg-raised shadow-sm">
           {suggestions.map((p, i) => (
             <button
               key={p.id}
@@ -94,17 +94,27 @@ export default function PatternStep({
               onMouseEnter={() => setHighlight(i)}
               className={cn(
                 'flex items-baseline justify-between gap-3 px-3 py-2 text-left text-sm transition-colors',
-                i === highlight ? 'bg-bg-overlay text-text' : 'text-text-muted hover:bg-bg-overlay'
+                i === highlight ? 'bg-accent-faint text-text' : 'text-text-muted'
               )}
             >
               <span className="truncate">{p.name}</span>
-              <span className="u-num shrink-0 text-[11px] text-text-faint">×{p.count}</span>
+              <span
+                className={cn(
+                  'u-num shrink-0 rounded-full px-1.5 text-[11px]',
+                  i === highlight ? 'bg-bg-raised text-accent' : 'text-text-faint'
+                )}
+              >
+                ×{p.count}
+              </span>
             </button>
           ))}
         </div>
       )}
       {text.trim() && !exact && (
-        <p className="u-label text-accent-hover">new pattern — “{text.trim()}”</p>
+        <p className="text-[12px]">
+          <span className="u-label text-accent">new pattern</span>{' '}
+          <span className="u-highlight ml-1 text-[13px] font-medium text-text">{text.trim()}</span>
+        </p>
       )}
       <div className="flex items-center justify-between">
         <p className="text-[12px] text-text-faint">

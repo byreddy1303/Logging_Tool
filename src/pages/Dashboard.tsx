@@ -12,11 +12,24 @@ import { useAuth } from '@/hooks/useAuth';
 import { cn, formatDate, todayISO, plural } from '@/lib/utils';
 import { EXAM_DATE_DEFAULT } from '@/lib/constants';
 
-function Stat({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+function Stat({
+  label,
+  value,
+  color,
+  dot
+}: {
+  label: string;
+  value: number;
+  color: string;
+  dot: string;
+}) {
   return (
-    <div className="flex flex-col gap-1 px-4 py-3">
-      <span className="u-label">{label}</span>
-      <span className={cn('u-num text-2xl leading-none', accent && value > 0 && 'text-accent')}>
+    <div className="flex flex-col gap-1.5 px-4 py-4">
+      <span className="flex items-center gap-1.5">
+        <span className={cn('h-1.5 w-1.5 rounded-full', dot)} />
+        <span className="u-label">{label}</span>
+      </span>
+      <span className={cn('u-num text-[28px] font-semibold leading-none', value > 0 ? color : 'text-text-faint')}>
         {value}
       </span>
     </div>
@@ -77,9 +90,9 @@ export default function Dashboard() {
 
       <Card>
         <div className="grid grid-cols-3 divide-x divide-border">
-          <Stat label="Due today" value={dueToday} accent />
-          <Stat label="Mistake surface" value={surface} />
-          <Stat label="Sessions logged" value={sessionCount} />
+          <Stat label="Due today" value={dueToday} color="text-accent" dot="bg-accent" />
+          <Stat label="Mistake surface" value={surface} color="text-ink-violet" dot="bg-ink-violet" />
+          <Stat label="Sessions logged" value={sessionCount} color="text-ink-teal" dot="bg-ink-teal" />
         </div>
       </Card>
 
@@ -110,7 +123,9 @@ export default function Dashboard() {
         <CardHeader title="This week's fix" />
         <CardBody>
           {weeklyFix ? (
-            <p className="text-[15px] leading-relaxed">{weeklyFix}</p>
+            <p className="text-[15px] leading-relaxed">
+              <span className="u-highlight font-medium">{weeklyFix}</span>
+            </p>
           ) : (
             <p className="text-[13px] text-text-faint">
               No weekly review yet. Your ONE fix for the week appears here after your first review.

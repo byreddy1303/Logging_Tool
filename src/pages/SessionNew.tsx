@@ -11,6 +11,7 @@ import { useKeyboard } from '@/hooks/useKeyboard';
 import { useSessionStore } from '@/stores/session';
 import { writeLocal } from '@/lib/sync';
 import { cn, uuid, todayISO, nowISO } from '@/lib/utils';
+import { subjectInk } from '@/lib/subjectInk';
 
 function Segmented({
   options,
@@ -22,17 +23,17 @@ function Segmented({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="inline-flex divide-x divide-border overflow-hidden rounded border border-border">
+    <div className="inline-flex divide-x divide-border overflow-hidden rounded border border-border bg-bg-raised shadow-sm">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            'h-9 px-4 font-mono text-[13px] transition-colors',
+            'h-9 px-4 font-mono text-[13px] transition-colors active:scale-95',
             value === o.value
-              ? 'bg-bg-overlay text-text'
-              : 'text-text-muted hover:bg-bg-overlay/60 hover:text-text'
+              ? 'bg-accent-faint font-semibold text-accent'
+              : 'text-text-muted hover:bg-bg-overlay hover:text-text'
           )}
         >
           {o.label}
@@ -83,22 +84,33 @@ export default function SessionNew() {
         <CardBody className="flex flex-col gap-6">
           <div>
             <p className="u-label mb-2">Subject</p>
-            <div className="grid grid-cols-2 gap-1.5 md:grid-cols-3">
-              {SUBJECTS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setSubject(s)}
-                  className={cn(
-                    'border px-3 py-2.5 text-left text-[13px] transition-colors',
-                    subject === s
-                      ? 'border-accent bg-bg-overlay text-text'
-                      : 'border-border text-text-muted hover:border-border-hover hover:text-text'
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+              {SUBJECTS.map((s) => {
+                const ink = subjectInk(s);
+                const active = subject === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSubject(s)}
+                    className={cn(
+                      'flex items-center gap-2 rounded border px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-150 active:scale-[0.97]',
+                      active
+                        ? cn('shadow-sm', ink.selected)
+                        : 'border-border bg-bg-raised text-text-muted hover:-translate-y-px hover:border-border-hover hover:text-text hover:shadow-card'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 shrink-0 rounded-full transition-opacity',
+                        ink.dot,
+                        active ? 'opacity-100' : 'opacity-40'
+                      )}
+                    />
+                    {s}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

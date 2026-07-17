@@ -44,7 +44,7 @@ These are enforced in code, tests, or CI — not left to willpower.
 5. **No LLM auto-tagging.** LLM never sets `outcome`, `root_cause`, `pattern_name`, `insight`, or `this_weeks_fix`. Attempting to do so at DB level triggers a check constraint failure. See migration `20260717000004_ai_boundaries.sql`.
 6. **Feature freeze on 2026-10-31.** After this date, `git hooks/pre-commit` blocks commits touching `src/pages/` or `src/components/` unless the commit message starts with `fix:`. Only bug fixes allowed post-freeze.
 7. **No emojis in UI text.** ESLint rule bans emoji unicode ranges in JSX text and string literals under `src/`.
-8. **No gradients, no neon colors, no decorative animation.** Enforced by design system; there is no gradient utility class in Tailwind config.
+8. **Motion and color serve feedback, not engagement.** (Amended 2026-07-17, user-directed.) Springy micro-interactions, color-rich surfaces, and celebration on *completed work* are in. Autoplaying attention-grabbers, badges, XP, and gamified reward loops stay banned.
 9. **Tag flow works offline.** Playwright test toggles offline, tags 5 questions, comes online, verifies sync.
 10. **Weekly review is user-first, LLM-second.** The `weekly-review` flow will not render the LLM synthesis pane until the user has submitted their own `root_cause_summary` and `weakest_concept`. Enforced by state machine.
 
@@ -1063,16 +1063,24 @@ Set via `supabase secrets set <KEY>=<value>`:
 
 ## 10. Design system tokens
 
-Locked. Do not add colors. Do not add radii. Do not add spacing steps.
+Amended 2026-07-17 (user-directed pivot): **"the sunlit rank notebook"** — warm paper surfaces, ink-colored data, red-pen brand accent, highlighter details, springy feedback. Colorful and crafted; never dark-panel, never generic.
 
-- **Colors**: `bg` (`#0a0a0a`), `bg-raised` (`#141414`), `bg-overlay` (`#1c1c1c`), `border` (`#252525`), `border-hover` (`#333333`), `text` (`#e8e8e8`), `text-muted` (`#8a8a8a`), `text-faint` (`#5a5a5a`), `accent` (`#d97706`), `accent-hover` (`#f59e0b`), `success` (`#16a34a`), `danger` (`#dc2626`), `warn` (`#ca8a04`).
-- **Fonts**: Inter (UI), JetBrains Mono (numbers, timers, code, tag chips).
+- **Surfaces**: `bg` (`#FAF6EC` paper), `bg-raised` (`#FFFFFF` card), `bg-overlay` (`#F2ECDD` sunk well). Subtle grain overlay ≤ 4% opacity.
+- **Ink (text)**: `text` (`#241E35` aubergine ink), `text-muted` (`#665D7E`), `text-faint` (`#9C94AF`).
+- **Lines**: `border` (`#E8E0CC`), `border-hover` (`#D6CAAD`).
+- **Brand**: `accent` (`#E14B32` red-pen vermilion), `accent-hover` (`#C73D26`), `accent-faint` (`#FBE7E2` tint).
+- **Semantics**: `success` (`#278C52`), `warn` (`#C98A04`), `danger` (`#B3273E` crimson — distinct from brand vermilion), `guess` (`#7048B6` violet).
+- **Highlighter**: `highlight` (`#FFDE59`) — marker streaks under key text, text selection.
+- **Subject inks** (`ink.*`): cobalt `#2E5EAA`, teal `#0E8A74`, violet `#7048B6`, rose `#C2366B`, marigold `#C98A04`, slate `#52627A`. Assigned to subjects by stable index.
+- **Fonts**: Bricolage Grotesque (display/headings), Schibsted Grotesk (UI body), Azeret Mono (numbers, timers, kbd chips, micro-labels).
 - **Spacing**: 4, 8, 12, 16, 24, 32, 48, 64. No other values.
-- **Radii**: 0, 4 (inputs), 8 (cards), full (avatars).
-- **Motion**: 150ms ease-out. Only for state feedback (tag saved, sync done). No page transitions.
-- **Icons**: lucide-react, `strokeWidth={1.5}`, `size={16|20|24}` only.
+- **Radii**: 6 (chips/kbd), 10 (inputs/buttons), 16 (cards), full (pills/avatars).
+- **Shadows**: layered soft paper lifts (`sm`, `card`, `lift`, `press`). No harsh drops.
+- **Motion**: springy micro-feedback via `motion` lib, 150–400ms. Motion always answers a user action (press, stamp, save, step change); nothing autoplays on a loop.
+- **Signature motifs**: vermilion notebook margin-line; highlighter underline on active items; rotated "LOGGED" stamp on session completion; ink-dot burst on milestones.
+- **Icons**: lucide-react, `strokeWidth={1.75}`, `size={16|20|24}` only.
 - **Max content width**: 720px (single column mobile-first).
-- **No emojis. No gradients. No shadows > sm.**
+- **No emojis — color does the celebrating.**
 
 ---
 
@@ -1241,7 +1249,7 @@ Ship v1.0.0 when ALL of these hold:
 - Do not add real-time chat between buddies.
 - Do not add public sign-up (invite-only, enforced server-side).
 - Do not add emojis to UI.
-- Do not add gradients / neon / decorative animation.
+- Do not add gamified reward loops (badges, XP, levels, leaderboards).
 - Do not add third-party analytics (Google Analytics, Mixpanel, etc.).
 - Do not add ads.
 - Do not add anything that pings the user for engagement.

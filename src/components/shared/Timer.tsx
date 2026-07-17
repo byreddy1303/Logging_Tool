@@ -17,7 +17,7 @@ export default function Timer({
     <div className={cn('flex flex-col items-center gap-4', className)}>
       <span
         className={cn(
-          'u-num text-[56px] leading-none tracking-tight md:text-[72px]',
+          'u-num text-[56px] leading-none tracking-tight transition-colors duration-700 md:text-[72px]',
           farOver ? 'text-danger' : over ? 'text-warn' : 'text-text'
         )}
       >
@@ -25,11 +25,11 @@ export default function Timer({
       </span>
       {targetSec !== undefined && (
         <div className="flex flex-col items-center gap-1.5">
-          <div className="h-0.5 w-44 overflow-hidden rounded-full bg-bg-overlay">
+          <div className="h-1 w-56 overflow-hidden rounded-full bg-bg-overlay">
             <div
               className={cn(
-                'h-full transition-[width] duration-500',
-                farOver ? 'bg-danger' : over ? 'bg-warn' : 'bg-accent'
+                'h-full rounded-full transition-[width,background-color] duration-500',
+                farOver ? 'bg-danger' : over ? 'bg-warn' : 'bg-success'
               )}
               style={{ width: `${pct}%` }}
             />

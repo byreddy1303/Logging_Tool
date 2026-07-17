@@ -11,6 +11,7 @@ import { writeLocal } from '@/lib/sync';
 import { needsReattempt, scheduleReattempt } from '@/lib/reattempt';
 import { DEFAULT_TARGET_TIME_SEC } from '@/lib/constants';
 import { cn, uuid, nowISO, secondsToClock } from '@/lib/utils';
+import { subjectInk } from '@/lib/subjectInk';
 import { useAuth } from '@/hooks/useAuth';
 import { useTimer } from '@/hooks/useTimer';
 import { useKeyboard } from '@/hooks/useKeyboard';
@@ -161,7 +162,9 @@ export default function SessionActive() {
   return (
     <div className="flex min-h-[70vh] flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
-        <span className="u-label">session · {session.subject}</span>
+        <span className="u-label">
+          session · <span className={subjectInk(session.subject).text}>{session.subject}</span>
+        </span>
         <span className="u-num text-[12px] text-text-muted">
           Q {String(qIndex).padStart(2, '0')}
           {planned && <span className="text-text-faint">/{String(planned).padStart(2, '0')}</span>}

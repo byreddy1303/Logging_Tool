@@ -1,42 +1,59 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
         bg: {
-          DEFAULT: '#0a0a0a',
-          raised: '#141414',
-          overlay: '#1c1c1c'
+          DEFAULT: '#faf6ec',
+          raised: '#ffffff',
+          overlay: '#f2ecdd'
         },
         border: {
-          DEFAULT: '#252525',
-          hover: '#333333'
+          DEFAULT: '#e8e0cc',
+          hover: '#d6caad'
         },
         text: {
-          DEFAULT: '#e8e8e8',
-          muted: '#8a8a8a',
-          faint: '#5a5a5a'
+          DEFAULT: '#241e35',
+          muted: '#665d7e',
+          faint: '#9c94af'
         },
         accent: {
-          DEFAULT: '#d97706',
-          hover: '#f59e0b',
-          faint: '#78350f'
+          DEFAULT: '#e14b32',
+          hover: '#c73d26',
+          faint: '#fbe7e2'
         },
-        success: '#16a34a',
-        danger: '#dc2626',
-        warn: '#ca8a04'
+        success: { DEFAULT: '#278c52', faint: '#e3f2e9' },
+        danger: { DEFAULT: '#b3273e', faint: '#f8e4e8' },
+        warn: { DEFAULT: '#c98a04', faint: '#faf0d8' },
+        guess: { DEFAULT: '#7048b6', faint: '#eee7f9' },
+        highlight: '#ffde59',
+        ink: {
+          cobalt: '#2e5eaa',
+          teal: '#0e8a74',
+          violet: '#7048b6',
+          rose: '#c2366b',
+          marigold: '#c98a04',
+          slate: '#52627a'
+        }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'ui-monospace', 'monospace']
+        display: ['"Bricolage Grotesque"', 'system-ui', 'sans-serif'],
+        sans: ['"Schibsted Grotesk"', 'system-ui', 'sans-serif'],
+        mono: ['"Azeret Mono"', 'ui-monospace', 'monospace']
       },
       borderRadius: {
         none: '0',
-        sm: '4px',
-        DEFAULT: '8px',
+        sm: '6px',
+        DEFAULT: '10px',
+        lg: '16px',
         full: '9999px'
+      },
+      boxShadow: {
+        sm: '0 1px 2px rgba(36, 30, 53, 0.05)',
+        card: '0 1px 2px rgba(36, 30, 53, 0.04), 0 3px 10px rgba(36, 30, 53, 0.07)',
+        lift: '0 2px 4px rgba(36, 30, 53, 0.05), 0 10px 24px rgba(36, 30, 53, 0.10)',
+        press: 'inset 0 1px 2px rgba(36, 30, 53, 0.08)'
       },
       spacing: {
         1: '4px',

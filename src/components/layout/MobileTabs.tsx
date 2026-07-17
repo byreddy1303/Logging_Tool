@@ -9,23 +9,43 @@ interface Tab {
   icon: LucideIcon;
   /** Route prefixes that light this tab up. */
   match: string[];
+  active: string;
+  bar: string;
 }
 
 const TABS: Tab[] = [
-  { to: '/', label: 'Home', icon: Gauge, match: ['/'] },
-  { to: '/session/new', label: 'Session', icon: Play, match: ['/session'] },
-  { to: '/journal', label: 'Journal', icon: NotebookText, match: ['/journal'] },
+  { to: '/', label: 'Home', icon: Gauge, match: ['/'], active: 'text-accent', bar: 'bg-accent' },
+  {
+    to: '/session/new',
+    label: 'Session',
+    icon: Play,
+    match: ['/session'],
+    active: 'text-ink-teal',
+    bar: 'bg-ink-teal'
+  },
+  {
+    to: '/journal',
+    label: 'Journal',
+    icon: NotebookText,
+    match: ['/journal'],
+    active: 'text-ink-cobalt',
+    bar: 'bg-ink-cobalt'
+  },
   {
     to: '/patterns',
     label: 'Analysis',
     icon: Shapes,
-    match: ['/patterns', '/reattempts', '/weekly-review', '/heatmap', '/readiness', '/calibration']
+    match: ['/patterns', '/reattempts', '/weekly-review', '/heatmap', '/readiness', '/calibration'],
+    active: 'text-ink-violet',
+    bar: 'bg-ink-violet'
   },
   {
     to: '/doubt',
     label: 'Learn',
     icon: MessageSquare,
-    match: ['/doubt', '/triangulate', '/trigger-drill', '/formulas']
+    match: ['/doubt', '/triangulate', '/trigger-drill', '/formulas'],
+    active: 'text-ink-marigold',
+    bar: 'bg-ink-marigold'
   }
 ];
 
@@ -34,7 +54,7 @@ export default function MobileTabs() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-bg pb-[env(safe-area-inset-bottom)] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-bg-raised/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_12px_rgba(36,30,53,0.06)] backdrop-blur md:hidden"
       aria-label="Primary"
     >
       {TABS.map((tab) => {
@@ -48,13 +68,13 @@ export default function MobileTabs() {
             key={tab.to}
             to={tab.to}
             className={cn(
-              'relative flex h-12 flex-col items-center justify-center gap-0.5 transition-colors',
-              active ? 'text-text' : 'text-text-faint'
+              'relative flex h-14 flex-col items-center justify-center gap-1 transition-colors active:scale-95',
+              active ? tab.active : 'text-text-faint'
             )}
           >
-            {active && <span className="absolute inset-x-4 top-0 h-[2px] bg-accent" />}
-            <Icon size={18} strokeWidth={1.5} />
-            <span className="font-mono text-[9px] uppercase tracking-[0.1em]">{tab.label}</span>
+            {active && <span className={cn('absolute inset-x-5 top-0 h-[3px] rounded-b-full', tab.bar)} />}
+            <Icon size={20} strokeWidth={1.75} />
+            <span className="text-[10px] font-semibold">{tab.label}</span>
           </NavLink>
         );
       })}

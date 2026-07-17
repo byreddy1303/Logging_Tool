@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -36,7 +36,7 @@ export function Dialog({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-text/30 p-4 backdrop-blur-[2px]"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
@@ -47,21 +47,21 @@ export function Dialog({
             aria-modal="true"
             aria-label={title}
             tabIndex={-1}
-            initial={{ scale: 0.98, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.98, opacity: 0 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className={cn('u-panel w-full max-w-md shadow-sm outline-none', className)}
+            initial={{ scale: 0.92, y: 12, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0, transition: { duration: 0.12 } }}
+            transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+            className={cn('u-panel w-full max-w-md shadow-lift outline-none', className)}
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2 className="u-label">{title}</h2>
+              <h2 className="font-display text-[15px] font-semibold text-text">{title}</h2>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="text-text-faint transition-colors hover:text-text"
+                className="rounded-full p-1 text-text-faint transition-colors hover:bg-bg-overlay hover:text-text"
               >
-                <X size={16} strokeWidth={1.5} />
+                <X size={16} strokeWidth={1.75} />
               </button>
             </div>
             <div className="p-4">{children}</div>

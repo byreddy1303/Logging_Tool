@@ -26,31 +26,38 @@ interface Item {
   to: string;
   label: string;
   icon: LucideIcon;
+  /** Active-state ink. Static classes — Tailwind needs to see them whole. */
+  active: string;
 }
 
 const MAIN: Item[] = [
-  { to: '/', label: 'Dashboard', icon: Gauge },
-  { to: '/session/new', label: 'Session', icon: Play },
-  { to: '/journal', label: 'Journal', icon: NotebookText }
+  { to: '/', label: 'Dashboard', icon: Gauge, active: 'bg-accent-faint text-accent' },
+  { to: '/session/new', label: 'Session', icon: Play, active: 'bg-ink-teal/10 text-ink-teal' },
+  { to: '/journal', label: 'Journal', icon: NotebookText, active: 'bg-ink-cobalt/10 text-ink-cobalt' }
 ];
 
 const ANALYSIS: Item[] = [
-  { to: '/patterns', label: 'Patterns', icon: Shapes },
-  { to: '/reattempts', label: 'Re-attempts', icon: RotateCcw },
-  { to: '/weekly-review', label: 'Weekly', icon: CalendarCheck },
-  { to: '/heatmap', label: 'Heatmap', icon: Grid3x3 }
+  { to: '/patterns', label: 'Patterns', icon: Shapes, active: 'bg-ink-violet/10 text-ink-violet' },
+  { to: '/reattempts', label: 'Re-attempts', icon: RotateCcw, active: 'bg-ink-rose/10 text-ink-rose' },
+  {
+    to: '/weekly-review',
+    label: 'Weekly',
+    icon: CalendarCheck,
+    active: 'bg-ink-marigold/10 text-ink-marigold'
+  },
+  { to: '/heatmap', label: 'Heatmap', icon: Grid3x3, active: 'bg-ink-slate/10 text-ink-slate' }
 ];
 
 const LEARN: Item[] = [
-  { to: '/doubt', label: 'Doubt', icon: MessageSquare },
-  { to: '/triangulate', label: 'Triangulate', icon: Columns3 },
-  { to: '/trigger-drill', label: 'Trigger drill', icon: Zap },
-  { to: '/formulas', label: 'Formulas', icon: Sigma }
+  { to: '/doubt', label: 'Doubt', icon: MessageSquare, active: 'bg-ink-cobalt/10 text-ink-cobalt' },
+  { to: '/triangulate', label: 'Triangulate', icon: Columns3, active: 'bg-ink-violet/10 text-ink-violet' },
+  { to: '/trigger-drill', label: 'Trigger drill', icon: Zap, active: 'bg-ink-marigold/10 text-ink-marigold' },
+  { to: '/formulas', label: 'Formulas', icon: Sigma, active: 'bg-ink-teal/10 text-ink-teal' }
 ];
 
 const SOCIAL: Item[] = [
-  { to: '/buddy', label: 'Buddy', icon: Users },
-  { to: '/settings', label: 'Settings', icon: Settings }
+  { to: '/buddy', label: 'Buddy', icon: Users, active: 'bg-ink-rose/10 text-ink-rose' },
+  { to: '/settings', label: 'Settings', icon: Settings, active: 'bg-ink-slate/10 text-ink-slate' }
 ];
 
 function NavItem({ item }: { item: Item }) {
@@ -61,14 +68,14 @@ function NavItem({ item }: { item: Item }) {
       end={item.to === '/'}
       className={({ isActive }) =>
         cn(
-          'relative flex h-8 items-center gap-3 rounded-sm px-3 text-[13px] transition-colors',
+          'relative flex h-9 items-center gap-3 rounded px-3 text-[13.5px] transition-all duration-150',
           isActive
-            ? 'bg-bg-overlay text-text before:absolute before:left-0 before:top-1.5 before:h-5 before:w-[2px] before:bg-accent'
-            : 'text-text-muted hover:bg-bg-overlay hover:text-text'
+            ? cn('font-semibold', item.active)
+            : 'font-medium text-text-muted hover:translate-x-0.5 hover:bg-bg-overlay/70 hover:text-text'
         )
       }
     >
-      <Icon size={16} strokeWidth={1.5} className="shrink-0" />
+      <Icon size={16} strokeWidth={1.75} className="shrink-0" />
       {item.label}
     </NavLink>
   );
@@ -76,7 +83,7 @@ function NavItem({ item }: { item: Item }) {
 
 function Group({ label, items }: { label?: string; items: Item[] }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-0.5">
       {label && <p className="u-label px-3 pb-1 pt-4">{label}</p>}
       {items.map((i) => (
         <NavItem key={i.to} item={i} />
@@ -94,18 +101,20 @@ export default function Nav() {
   );
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[220px] flex-col border-r border-border bg-bg md:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[224px] flex-col border-r border-border bg-bg md:flex">
       <div className="flex items-baseline justify-between px-4 pb-4 pt-5">
-        <span className="font-mono text-[15px] font-medium tracking-[0.04em]">
-          AIR<span className="text-accent">_</span>
+        <span className="font-display text-[19px] font-bold tracking-tight text-text">
+          AIR<span className="text-accent">.</span>
         </span>
-        <span className="u-num text-xs text-text-muted">
-          T−{daysLeft}
-          <span className="text-text-faint">d</span>
+        <span
+          className="u-num rounded-full bg-accent-faint px-2 py-0.5 text-[11px] font-semibold text-accent"
+          title="Days to GATE"
+        >
+          T−{daysLeft}d
         </span>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2">
+      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
         <Group items={MAIN} />
         <Group label="Analysis" items={ANALYSIS} />
         <Group label="Learn" items={LEARN} />
@@ -114,20 +123,25 @@ export default function Nav() {
 
       <div className="border-t border-border px-4 py-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-xs text-text-muted">{profile?.name ?? '—'}</p>
-            <p className="u-num truncate text-[11px] text-text-faint">
-              {sandbox ? 'local sandbox' : (profile?.email ?? '')}
-            </p>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-cobalt/15 font-display text-[13px] font-bold text-ink-cobalt">
+              {(profile?.name ?? 'S')[0].toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-text">{profile?.name ?? '—'}</p>
+              <p className="u-num truncate text-[10px] text-text-faint">
+                {sandbox ? 'local sandbox' : (profile?.email ?? '')}
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => void signOut()}
             aria-label="Sign out"
             title="Sign out"
-            className="shrink-0 text-text-faint transition-colors hover:text-danger"
+            className="shrink-0 rounded-full p-1.5 text-text-faint transition-colors hover:bg-danger-faint hover:text-danger"
           >
-            <LogOut size={16} strokeWidth={1.5} />
+            <LogOut size={16} strokeWidth={1.75} />
           </button>
         </div>
       </div>

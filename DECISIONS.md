@@ -60,3 +60,8 @@ Format:
 
 ## 2026-07-17 — Re-attempt advancement is computed client-side
 F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the client would break offline-first (result taggable offline) and double-apply once the row upsert syncs. Instead the client applies an identical pure transition (`src/lib/reattempt.ts advance()`) and persists via the normal sync path; the SQL function remains for server-side jobs (nightly cron). Semantics are byte-identical, verified by reattempt.test.ts.
+
+## 2026-07-17 — Design pivot: dark instrument-panel → sunlit rank notebook
+**Chose**: user-directed aesthetic override. Warm paper palette, red-pen vermilion brand, subject ink colors, highlighter motifs, springy micro-interactions (`motion` lib added). BUILD.md §2.8, §10, §17 amended in place.
+**Rejected**: keeping the locked dark tokens; also rejected switching frameworks (FastAPI/other frontend) — stack unchanged.
+**Reason**: user clarified "never look vibe-coded" meant colorful + magical + effortless, not dark minimal. Behavioral bans (no streaks, no emojis, no engagement bait, no gamified rewards) remain.

@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { useUiStore, type ToastTone } from '@/stores/ui';
 import { cn } from '@/lib/utils';
 
@@ -16,21 +16,22 @@ export function Toaster() {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[280px] flex-col gap-2"
+      className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[300px] flex-col gap-2"
     >
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
           <motion.button
             key={t.id}
             type="button"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
+            layout
+            initial={{ opacity: 0, y: 16, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.12 } }}
+            transition={{ type: 'spring', stiffness: 500, damping: 32 }}
             onClick={() => dismiss(t.id)}
             className={cn(
-              'pointer-events-auto border border-border border-l-2 bg-bg-overlay px-3 py-2 text-left',
-              'font-mono text-xs text-text-muted',
+              'pointer-events-auto rounded border border-border border-l-[3px] bg-bg-raised px-3 py-2.5 text-left shadow-lift',
+              'text-[13px] font-medium text-text',
               toneBar[t.tone]
             )}
           >

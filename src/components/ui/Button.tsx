@@ -9,16 +9,29 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
 }
 
+/* Key-cap physics: rest on a hard under-shadow, sink into it on press. */
 const variantClasses: Record<Variant, string> = {
-  primary: 'bg-accent text-bg font-medium hover:bg-accent-hover',
-  secondary: 'border border-border bg-bg-raised text-text hover:border-border-hover hover:bg-bg-overlay',
-  ghost: 'text-text-muted hover:bg-bg-overlay hover:text-text',
-  danger: 'border border-danger/40 text-danger hover:border-danger hover:bg-danger/10'
+  primary: cn(
+    'bg-accent font-semibold text-white shadow-[0_2px_0_#a5311b]',
+    'hover:-translate-y-px hover:bg-accent-hover hover:shadow-[0_3px_0_#a5311b]',
+    'active:translate-y-[2px] active:shadow-none'
+  ),
+  secondary: cn(
+    'border border-border bg-bg-raised font-medium text-text shadow-[0_2px_0_theme(colors.border.DEFAULT)]',
+    'hover:-translate-y-px hover:border-border-hover hover:shadow-[0_3px_0_theme(colors.border.hover)]',
+    'active:translate-y-[2px] active:shadow-none'
+  ),
+  ghost: 'font-medium text-text-muted hover:bg-bg-overlay hover:text-text active:scale-[0.97]',
+  danger: cn(
+    'border border-danger/40 font-medium text-danger shadow-[0_2px_0_theme(colors.danger.faint)]',
+    'hover:border-danger hover:bg-danger-faint',
+    'active:translate-y-[2px] active:shadow-none'
+  )
 };
 
 const sizeClasses: Record<Size, string> = {
   sm: 'h-8 px-3 text-[13px]',
-  md: 'h-9 px-4 text-sm'
+  md: 'h-10 px-4 text-sm'
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -30,8 +43,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       className={cn(
-        'inline-flex select-none items-center justify-center gap-2 rounded-sm transition-colors',
-        'disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex select-none items-center justify-center gap-2 rounded',
+        'transition-[transform,background-color,border-color,box-shadow,color] duration-100',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none disabled:hover:translate-y-0',
         variantClasses[variant],
         sizeClasses[size],
         className
