@@ -11,6 +11,7 @@ import SessionNew from '@/pages/SessionNew';
 import SessionActive from '@/pages/SessionActive';
 import SessionReview from '@/pages/SessionReview';
 import Journal from '@/pages/Journal';
+import Patterns from '@/pages/Patterns';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -44,7 +45,7 @@ export const router = createBrowserRouter([
       { path: 'session/:id/solve', element: <SessionActive /> },
       { path: 'session/:id/review', element: <SessionReview /> },
       { path: 'journal', element: <Journal /> },
-      { path: 'patterns', element: <Pending step="S15" /> },
+      { path: 'patterns', element: <Patterns /> },
       { path: 'reattempts', element: <Pending step="S16" /> },
       { path: 'weekly-review', element: <Pending step="S25" /> },
       { path: 'heatmap', element: <Pending step="S26" /> },

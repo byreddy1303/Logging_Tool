@@ -1,6 +1,7 @@
 // Journal (F3.1): every tagged question, filterable six ways, fuzzy trigger
 // search, expandable rows, 50/page.
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
@@ -178,7 +179,11 @@ function Row({ q }: { q: QuestionRow }) {
 
 export default function Journal() {
   const { userId } = useAuth();
-  const [f, setF] = useState<Filters>(EMPTY_FILTERS);
+  const [params] = useSearchParams();
+  const [f, setF] = useState<Filters>(() => ({
+    ...EMPTY_FILTERS,
+    pattern: params.get('pattern') ?? ''
+  }));
   const [page, setPage] = useState(0);
 
   const questions = useLiveQuery(async () => {
