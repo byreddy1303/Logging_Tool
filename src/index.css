@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-bg font-sans text-text;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: theme('colors.accent.DEFAULT');
+    color: theme('colors.bg.DEFAULT');
+  }
+
+  :focus-visible {
+    outline: 1px solid theme('colors.accent.DEFAULT');
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.border.DEFAULT') transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: theme('colors.border.DEFAULT');
+    border-radius: 4px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.border.hover');
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+  }
+
+  /* Numbers are data. Data is mono, tabular, always. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'zero' 1;
+  }
+}
+
+@layer components {
+  /* The instrument-panel voice: 10px uppercase mono micro-labels. */
+  .u-label {
+    @apply font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-text-faint;
+  }
+
+  /* Numeric readouts (timers, counts, scores). */
+  .u-num {
+    @apply font-mono tabular-nums;
+  }
+
+  /* Flat raised panel — the only surface construction in the app. */
+  .u-panel {
+    @apply rounded border border-border bg-bg-raised;
+  }
+
+  /* Engineering-pad dot grid (static SVG texture, not a gradient). */
+  .bg-dotgrid {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23161616'/%3E%3C/svg%3E");
+  }
+
+  /* Hairline horizontal rule with a mono label sitting on it. */
+  .u-rule {
+    @apply border-t border-border;
+  }
+}
