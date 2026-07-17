@@ -13,6 +13,7 @@ import SessionReview from '@/pages/SessionReview';
 import Journal from '@/pages/Journal';
 import Patterns from '@/pages/Patterns';
 import Reattempts from '@/pages/Reattempts';
+import WeeklyReview from '@/pages/WeeklyReview';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -48,7 +49,7 @@ export const router = createBrowserRouter([
       { path: 'journal', element: <Journal /> },
       { path: 'patterns', element: <Patterns /> },
       { path: 'reattempts', element: <Reattempts /> },
-      { path: 'weekly-review', element: <Pending step="S25" /> },
+      { path: 'weekly-review', element: <WeeklyReview /> },
       { path: 'heatmap', element: <Pending step="S26" /> },
       { path: 'doubt', element: <Pending step="S20" /> },
       { path: 'triangulate', element: <Pending step="S21" /> },

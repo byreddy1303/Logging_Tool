@@ -8,7 +8,7 @@ export default function PageHeader({
   className
 }: {
   title: string;
-  description?: string;
+  description?: ReactNode;
   actions?: ReactNode;
   className?: string;
 }) {

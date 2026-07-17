@@ -7,7 +7,11 @@ import {
   mistakeSurfaceOpen,
   mistakeSurfaceTrend,
   outcomeDistribution,
-  activeDaysBack
+  activeDaysBack,
+  summarizeWeek,
+  synthesisUnlocked,
+  weeklyDraftFingerprint,
+  type WeeklyDraft
 } from '@/lib/analysis';
 
 const USER = '00000000-0000-4000-8000-000000000001';
@@ -129,6 +133,82 @@ describe('dueTodayCount', () => {
       ra({ scheduled_date: '2026-07-15', stage: 'MASTERED' })
     ];
     expect(dueTodayCount(rows, '2026-07-17')).toBe(2);
+  });
+});
+
+describe('summarizeWeek', () => {
+  const weekStart = '2026-07-13'; // Monday
+  it('buckets in-week questions and skips out-of-window rows', () => {
+    const rows = [
+      q({ outcome: 'R', subject: 'Algorithms', created_at: '2026-07-13T09:00:00.000Z' }),
+      q({ outcome: 'RBS', subject: 'Algorithms', created_at: '2026-07-14T09:00:00.000Z' }),
+      q({ outcome: 'W-C', subject: 'Databases', created_at: '2026-07-15T09:00:00.000Z' }),
+      q({ outcome: 'W-C', subject: 'Databases', created_at: '2026-07-16T09:00:00.000Z' }),
+      // out of window
+      q({ outcome: 'R', subject: 'Algorithms', created_at: '2026-07-06T09:00:00.000Z' })
+    ];
+    const s = summarizeWeek(rows, weekStart);
+    expect(s.totalQ).toBe(4);
+    expect(s.clean).toBe(1);
+    expect(s.slow).toBe(1);
+    expect(s.wrong).toBe(2);
+    expect(s.bySubject[0].subject).toBe('Databases'); // most wrongish first
+    expect(s.bySubject[0].wrongish).toBe(2);
+    expect(s.weekEnd).toBe('2026-07-19'); // +6 days
+  });
+
+  it('counts root causes and top patterns', () => {
+    const rows = [
+      q({
+        outcome: 'W-C',
+        root_cause: 'concept',
+        pattern_name: 'joins on nulls',
+        created_at: '2026-07-13T09:00:00.000Z'
+      }),
+      q({
+        outcome: 'W-C',
+        root_cause: 'concept',
+        pattern_name: 'joins on nulls',
+        created_at: '2026-07-14T09:00:00.000Z'
+      }),
+      q({
+        outcome: 'RBS',
+        root_cause: 'strategy',
+        pattern_name: 'set cover',
+        created_at: '2026-07-15T09:00:00.000Z'
+      })
+    ];
+    const s = summarizeWeek(rows, weekStart);
+    expect(s.byRootCause.concept).toBe(2);
+    expect(s.byRootCause.strategy).toBe(1);
+    expect(s.topPatterns[0]).toEqual({ name: 'joins on nulls', count: 2 });
+  });
+});
+
+describe('synthesisUnlocked (F5.1 DoD)', () => {
+  const filled: WeeklyDraft = {
+    root_cause_summary: 'I overtrust reflex on identity questions.',
+    weakest_concept: 'Set-associative caches',
+    this_weeks_fix: 'Re-derive the three GATE 2020 cache Qs from scratch.'
+  };
+  it('stays locked while any of the three narratives is empty', () => {
+    const empty = { root_cause_summary: '', weakest_concept: '', this_weeks_fix: '' };
+    expect(synthesisUnlocked(empty, null)).toBe(false);
+    expect(
+      synthesisUnlocked({ ...filled, this_weeks_fix: '' }, weeklyDraftFingerprint(filled))
+    ).toBe(false);
+  });
+  it('stays locked when the draft has drifted since save', () => {
+    const saved = weeklyDraftFingerprint(filled);
+    const edited = { ...filled, this_weeks_fix: 'different plan' };
+    expect(synthesisUnlocked(edited, saved)).toBe(false);
+  });
+  it('unlocks when all three fields are filled AND the saved fingerprint matches', () => {
+    expect(synthesisUnlocked(filled, weeklyDraftFingerprint(filled))).toBe(true);
+  });
+  it('whitespace-only fields count as empty', () => {
+    const junk = { ...filled, weakest_concept: '   ' };
+    expect(synthesisUnlocked(junk, weeklyDraftFingerprint(junk))).toBe(false);
   });
 });
 

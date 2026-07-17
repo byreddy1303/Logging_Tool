@@ -65,3 +65,13 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 **Chose**: user-directed aesthetic override. Warm paper palette, red-pen vermilion brand, subject ink colors, highlighter motifs, springy micro-interactions (`motion` lib added). BUILD.md §2.8, §10, §17 amended in place.
 **Rejected**: keeping the locked dark tokens; also rejected switching frameworks (FastAPI/other frontend) — stack unchanged.
 **Reason**: user clarified "never look vibe-coded" meant colorful + magical + effortless, not dark minimal. Behavioral bans (no streaks, no emojis, no engagement bait, no gamified rewards) remain.
+
+## 2026-07-18 — Extend tag flow with source metadata + question format
+**Chose**: new SourceStep at head of TagFlow captures subject override, source kind (PYQ / Go Classes Quiz+DPP+Weekly / GATE Overflow / Other), PYQ year (past 35) + set (2014+), question number, format (MCQ/MSQ/NAT), marks (1/2 → target_time_sec 90s/180s), image upload for non-PYQ (client-compressed JPEG data URL on `image_url`).
+**Rejected**: adding new schema columns for `source_kind`, `question_format`, `marks`.
+**Reason**: `source_ref` and `image_url` are already free-form on the frozen schema. Encoding kind+year+set+qnum+format into a canonical `source_ref` (prefix-matchable for filter) keeps the schema stable; images ride the same offline sync path as any other row without needing Supabase Storage first. Journal filters + display parse the same canonical form.
+
+## 2026-07-18 — Defer S18–S24 (LLM stack) until API keys land
+**Chose**: build S25 (Weekly review) and later analytics/PWA steps ahead of S18–S24.
+**Rejected**: strict S18 → S44 order per CLAUDE.md.
+**Reason**: S18 rate-limit logic can be written and unit-tested with mocked fetch, but the provider adapters (Groq / Gemini / OpenRouter / Cerebras) can't be end-to-end verified without secrets, and S20–S24 UI is worthless without a working router. The tagging + weekly-review + re-attempt loop stands on its own — that's the mistake-surface engine. LLM assist is an augment; it will slot in later without churning the pages we ship now.
