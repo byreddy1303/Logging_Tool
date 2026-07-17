@@ -57,3 +57,6 @@ Format:
 **Chose**: buddy/shared tables (buddies, shared_insights, question_shares, study_rooms) read via React Query from Supabase; not mirrored in Dexie.
 **Rejected**: full offline mirror of buddy data.
 **Reason**: §4 only requires offline-first for the user's own solo flow; buddy features are inherently online (realtime presence).
+
+## 2026-07-17 — Re-attempt advancement is computed client-side
+F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the client would break offline-first (result taggable offline) and double-apply once the row upsert syncs. Instead the client applies an identical pure transition (`src/lib/reattempt.ts advance()`) and persists via the normal sync path; the SQL function remains for server-side jobs (nightly cron). Semantics are byte-identical, verified by reattempt.test.ts.
