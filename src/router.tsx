@@ -2,8 +2,10 @@ import { lazy, Suspense } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 import RequireAuth from '@/components/shared/RequireAuth';
 import LoadingScreen from '@/components/shared/LoadingScreen';
+import Shell from '@/components/layout/Shell';
 import Auth from '@/pages/Auth';
 import NotFound from '@/pages/NotFound';
+import Pending from '@/components/shared/Pending';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -28,14 +30,24 @@ export const router = createBrowserRouter([
     path: '/',
     element: (
       <RequireAuth>
-        <div className="bg-dotgrid flex min-h-dvh items-center justify-center">
-          <div className="text-center">
-            <p className="u-label">AIR Journal</p>
-            <p className="u-num mt-2 text-lg text-text-muted">dashboard lands at S09</p>
-          </div>
-        </div>
+        <Shell />
       </RequireAuth>
-    )
+    ),
+    children: [
+      { index: true, element: <Pending step="S09" /> },
+      { path: 'session/new', element: <Pending step="S11" /> },
+      { path: 'journal', element: <Pending step="S14" /> },
+      { path: 'patterns', element: <Pending step="S15" /> },
+      { path: 'reattempts', element: <Pending step="S16" /> },
+      { path: 'weekly-review', element: <Pending step="S25" /> },
+      { path: 'heatmap', element: <Pending step="S26" /> },
+      { path: 'doubt', element: <Pending step="S20" /> },
+      { path: 'triangulate', element: <Pending step="S21" /> },
+      { path: 'trigger-drill', element: <Pending step="S24" /> },
+      { path: 'formulas', element: <Pending step="S23" /> },
+      { path: 'buddy', element: <Pending step="S29" /> },
+      { path: 'settings', element: <Pending step="S39" /> }
+    ]
   },
   { path: '*', element: <NotFound /> }
 ]);
