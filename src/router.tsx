@@ -6,6 +6,7 @@ import Shell from '@/components/layout/Shell';
 import Auth from '@/pages/Auth';
 import NotFound from '@/pages/NotFound';
 import Pending from '@/components/shared/Pending';
+import Dashboard from '@/pages/Dashboard';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -34,7 +35,7 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <Pending step="S09" /> },
+      { index: true, element: <Dashboard /> },
       { path: 'session/new', element: <Pending step="S11" /> },
       { path: 'journal', element: <Pending step="S14" /> },
       { path: 'patterns', element: <Pending step="S15" /> },
