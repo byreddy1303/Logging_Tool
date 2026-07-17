@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+.env
+.env.local
+.env.production
+*.local
+.DS_Store
+.vscode
+.idea
+supabase/.branches
+supabase/.temp
+supabase/functions/**/.env
+coverage
+playwright-report
+test-results
