@@ -5,9 +5,10 @@ import { useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { motion } from 'motion/react';
-import type { Outcome } from '@/types';
+import { Pencil } from 'lucide-react';
+import type { Outcome, QuestionRow } from '@/types';
 import { db } from '@/lib/db';
-import { writeLocal } from '@/lib/sync';
+import { writeLocal, deleteLocal } from '@/lib/sync';
 import { OUTCOMES, OUTCOME_BY_CODE } from '@/lib/constants';
 import { cn, formatDate, secondsToClock } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
@@ -16,7 +17,15 @@ import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Kbd } from '@/components/ui/Kbd';
+import { Badge } from '@/components/ui/Badge';
 import { Empty } from '@/components/ui/Empty';
+import { Dialog } from '@/components/ui/Dialog';
+import QuestionEditor, { DeleteBar } from '@/components/shared/QuestionEditor';
+import {
+  applyDraftToRow,
+  draftFromRow,
+  type EditorDraft
+} from '@/components/shared/questionDraft';
 
 const TONE_BG: Record<'ok' | 'slow' | 'guess' | 'wrong', string> = {
   ok: 'bg-success',
@@ -44,6 +53,40 @@ export default function SessionReview() {
 
   const [draft, setDraft] = useState<string>();
   const [nudged, setNudged] = useState(false);
+  const [editRow, setEditRow] = useState<QuestionRow | null>(null);
+  const [editDraft, setEditDraft] = useState<EditorDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  function openEdit(row: QuestionRow) {
+    setEditRow(row);
+    setEditDraft(draftFromRow(row));
+  }
+
+  async function saveEdit() {
+    if (!editRow || !editDraft) return;
+    setSaving(true);
+    try {
+      const merged = applyDraftToRow(editRow, editDraft);
+      await writeLocal('questions', merged);
+      setEditRow(null);
+      setEditDraft(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeRow() {
+    if (!editRow) return;
+    setDeleting(true);
+    try {
+      await deleteLocal('questions', editRow.id);
+      setEditRow(null);
+      setEditDraft(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const stats = useMemo(() => {
     const qs = questions ?? [];
@@ -238,6 +281,91 @@ export default function SessionReview() {
         </Card>
       )}
 
+      {questions.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Tagged questions"
+            aside={
+              <span className="u-num text-[12px] text-text-faint">
+                edit anything before you finish
+              </span>
+            }
+          />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse text-[13px]">
+              <thead>
+                <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
+                  <th className="px-3 py-2 font-mono">#</th>
+                  <th className="px-3 py-2 font-mono">Outcome</th>
+                  <th className="px-3 py-2 font-mono">Pattern</th>
+                  <th className="hidden px-3 py-2 font-mono sm:table-cell">Source</th>
+                  <th className="px-3 py-2 text-right font-mono">Time</th>
+                  <th className="w-[52px] px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {questions.map((q, i) => {
+                  const spec = OUTCOME_BY_CODE[q.outcome];
+                  const over = q.time_spent_sec > q.target_time_sec;
+                  return (
+                    <tr key={q.id} className="hover:bg-bg-overlay/40">
+                      <td className="u-num px-3 py-2 text-[11px] text-text-faint">
+                        Q{String(i + 1).padStart(2, '0')}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge
+                          tone={
+                            spec.tone === 'ok'
+                              ? 'success'
+                              : spec.tone === 'slow'
+                                ? 'warn'
+                                : spec.tone === 'guess'
+                                  ? 'guess'
+                                  : 'danger'
+                          }
+                        >
+                          {q.outcome}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="truncate text-text">
+                          {q.pattern_name ?? (
+                            <span className="text-text-faint">no pattern</span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="hidden max-w-[240px] px-3 py-2 text-[12px] text-text-muted sm:table-cell">
+                        <span className="truncate">
+                          {q.source_ref ?? <span className="text-text-faint">—</span>}
+                        </span>
+                      </td>
+                      <td
+                        className={cn(
+                          'u-num px-3 py-2 text-right text-[12px]',
+                          over ? 'text-warn' : 'text-text-muted'
+                        )}
+                      >
+                        {secondsToClock(q.time_spent_sec)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(q)}
+                          aria-label={`Edit Q${i + 1}`}
+                          className="rounded p-1 text-text-faint transition-colors hover:bg-bg-overlay hover:text-accent"
+                        >
+                          <Pencil size={13} strokeWidth={1.75} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       <Card>
         <CardHeader title="Biggest insight" aside={<span className="u-label">optional</span>} />
         <CardBody className="flex flex-col gap-3">
@@ -273,6 +401,43 @@ export default function SessionReview() {
           </div>
         </CardBody>
       </Card>
+
+      <Dialog
+        open={!!editRow && !!editDraft}
+        onClose={() => {
+          if (saving || deleting) return;
+          setEditRow(null);
+          setEditDraft(null);
+        }}
+        title="Edit question"
+        className="max-w-2xl"
+      >
+        {editDraft && (
+          <div className="flex flex-col gap-4">
+            <QuestionEditor draft={editDraft} onChange={setEditDraft} />
+            <DeleteBar onDelete={() => void removeRow()} />
+            <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditRow(null);
+                  setEditDraft(null);
+                }}
+                disabled={saving || deleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void saveEdit()}
+                disabled={saving || deleting}
+              >
+                {saving ? 'Saving…' : 'Save changes'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

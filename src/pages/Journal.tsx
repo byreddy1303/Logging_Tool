@@ -4,9 +4,10 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Pencil } from 'lucide-react';
 import type { QuestionRow } from '@/types';
 import { db } from '@/lib/db';
+import { writeLocal, deleteLocal } from '@/lib/sync';
 import {
   OUTCOMES,
   OUTCOME_BY_CODE,
@@ -30,6 +31,13 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Empty } from '@/components/ui/Empty';
 import { ImagePreview } from '@/components/shared/ImagePreview';
+import { Dialog } from '@/components/ui/Dialog';
+import QuestionEditor, { DeleteBar } from '@/components/shared/QuestionEditor';
+import {
+  applyDraftToRow,
+  draftFromRow,
+  type EditorDraft
+} from '@/components/shared/questionDraft';
 import { subtopicsFor } from '@/lib/subtopics';
 
 const PAGE_SIZE = 50;
@@ -107,120 +115,156 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
-function Row({ q, onImage }: { q: QuestionRow; onImage: (src: string, caption: string) => void }) {
+function Row({
+  q,
+  onImage,
+  onEdit
+}: {
+  q: QuestionRow;
+  onImage: (src: string, caption: string) => void;
+  onEdit: (row: QuestionRow) => void;
+}) {
   const [open, setOpen] = useState(false);
   const spec = OUTCOME_BY_CODE[q.outcome];
   const ink = subjectInk(q.subject);
   const over = q.time_spent_sec > q.target_time_sec;
   const sourceKind = detectSourceKind(q.source_ref);
+  const format = detectFormat(q.source_ref);
   const sourceLabel = sourceKind ? SOURCE_KIND_BY_VALUE[sourceKind].label : null;
   return (
-    <div className="border-b border-border last:border-b-0">
-      <button
-        type="button"
+    <>
+      <tr
+        className="cursor-pointer transition-colors hover:bg-bg-overlay/40"
         onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-bg-overlay/50"
       >
-        <span className="u-num w-[74px] shrink-0 text-[11px] text-text-faint">
+        <td className="u-num w-[86px] whitespace-nowrap px-3 py-2 text-[11px] text-text-faint">
           {formatDate(q.created_at.slice(0, 10), 'dd MMM yy')}
-        </span>
-        <span className="flex w-[130px] shrink-0 items-center gap-1.5 md:w-[170px]">
-          <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', ink.dot)} />
-          <span className="truncate text-[12px] text-text-muted">{q.subject}</span>
-        </span>
-        <Badge tone={TONE_BADGE[spec.tone]} className="shrink-0">
-          {q.outcome}
-        </Badge>
-        <span className="min-w-0 flex-1 truncate text-[13px]">
-          {q.pattern_name ?? <span className="text-text-faint">no pattern</span>}
-        </span>
-        <span className={cn('u-num shrink-0 text-[12px]', over ? 'text-warn' : 'text-text-faint')}>
+        </td>
+        <td className="min-w-[140px] max-w-[180px] px-3 py-2">
+          <span className="flex items-center gap-1.5">
+            <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', ink.dot)} />
+            <span className="truncate text-[12px] text-text-muted">{q.subject}</span>
+          </span>
+        </td>
+        <td className="hidden max-w-[180px] px-3 py-2 text-[12px] text-text-muted sm:table-cell">
+          <span className="truncate">{q.subtopic ?? <span className="text-text-faint">—</span>}</span>
+        </td>
+        <td className="hidden px-3 py-2 sm:table-cell">
+          <Badge tone={TONE_BADGE[spec.tone]}>{q.outcome}</Badge>
+        </td>
+        <td className="hidden max-w-[220px] px-3 py-2 text-[12px] text-text-muted md:table-cell">
+          <span className="truncate">
+            {sourceLabel ?? '—'}
+            {format && <span className="ml-1 font-mono text-text-faint">· {format}</span>}
+          </span>
+        </td>
+        <td className="min-w-0 max-w-[280px] px-3 py-2">
+          <span className="truncate text-[13px]">
+            {q.pattern_name ?? <span className="text-text-faint">no pattern</span>}
+          </span>
+        </td>
+        <td
+          className={cn(
+            'u-num hidden px-3 py-2 text-right text-[12px] sm:table-cell',
+            over ? 'text-warn' : 'text-text-faint'
+          )}
+        >
           {secondsToClock(q.time_spent_sec)}
-        </span>
-        <ChevronDown
-          size={14}
-          strokeWidth={1.75}
-          className={cn('shrink-0 text-text-faint transition-transform', open && 'rotate-180')}
-        />
-      </button>
+        </td>
+        <td className="w-[88px] px-3 py-2 text-right">
+          <span className="inline-flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Edit"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(q);
+              }}
+              className="rounded p-1 text-text-faint transition-colors hover:bg-bg-overlay hover:text-accent"
+            >
+              <Pencil size={13} strokeWidth={1.75} />
+            </button>
+            <ChevronDown
+              size={14}
+              strokeWidth={1.75}
+              className={cn('text-text-faint transition-transform', open && 'rotate-180')}
+            />
+          </span>
+        </td>
+      </tr>
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 38 }}
-            className="overflow-hidden"
+          <motion.tr
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
           >
-            <div className="grid grid-cols-1 gap-4 border-t border-border bg-bg-overlay/40 px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Detail label="trigger">
-                {q.trigger_sentence ? (
-                  <span className="u-highlight">{q.trigger_sentence}</span>
-                ) : (
-                  <span className="text-text-faint">—</span>
-                )}
-              </Detail>
-              <Detail label="root cause">
-                {q.root_cause ? (
-                  ROOT_CAUSES.find((rc) => rc.value === q.root_cause)?.label
-                ) : (
-                  <span className="text-text-faint">—</span>
-                )}
-              </Detail>
-              <Detail label="time vs target">
-                <span className="u-num">{secondsToClock(q.time_spent_sec)}</span>
-                <span className="text-text-faint"> of </span>
-                <span className="u-num">{secondsToClock(q.target_time_sec)}</span>
-                {over && <span className="ml-1 text-warn">over</span>}
-              </Detail>
-              <Detail label="subtopic">
-                {q.subtopic ? (
-                  <span>{q.subtopic}</span>
-                ) : (
-                  <span className="text-text-faint">—</span>
-                )}
-              </Detail>
-              <Detail label="source">
-                {q.source_ref || q.image_url ? (
-                  <div className="flex flex-col gap-1.5">
-                    {q.source_ref && <span>{q.source_ref}</span>}
-                    {q.image_url && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onImage(q.image_url as string, q.source_ref ?? sourceLabel ?? 'Question')
-                        }
-                        className="group relative h-16 w-16 overflow-hidden rounded border border-border shadow-sm transition-transform hover:-translate-y-px hover:shadow-card active:translate-y-0"
-                        aria-label="View full-size image"
-                      >
-                        <img
-                          src={q.image_url}
-                          alt="question scan thumbnail"
-                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-                        />
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-text-faint">—</span>
-                )}
-              </Detail>
-              {q.mark_decision && (
-                <Detail label="mark decision">
-                  {MARK_DECISIONS.find((m) => m.value === q.mark_decision)?.label}
-                  {q.mark_correct !== null && (
-                    <span className={cn('ml-1.5', q.mark_correct ? 'text-success' : 'text-danger')}>
-                      {q.mark_correct ? 'paid off' : 'did not'}
-                    </span>
+            <td colSpan={8} className="border-b border-border bg-bg-overlay/40 px-4 py-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Detail label="trigger">
+                  {q.trigger_sentence ? (
+                    <span className="u-highlight">{q.trigger_sentence}</span>
+                  ) : (
+                    <span className="text-text-faint">—</span>
                   )}
                 </Detail>
-              )}
-            </div>
-          </motion.div>
+                <Detail label="root cause">
+                  {q.root_cause ? (
+                    ROOT_CAUSES.find((rc) => rc.value === q.root_cause)?.label
+                  ) : (
+                    <span className="text-text-faint">—</span>
+                  )}
+                </Detail>
+                <Detail label="time vs target">
+                  <span className="u-num">{secondsToClock(q.time_spent_sec)}</span>
+                  <span className="text-text-faint"> of </span>
+                  <span className="u-num">{secondsToClock(q.target_time_sec)}</span>
+                  {over && <span className="ml-1 text-warn">over</span>}
+                </Detail>
+                <Detail label="source">
+                  {q.source_ref || q.image_url ? (
+                    <div className="flex flex-col gap-1.5">
+                      {q.source_ref && <span>{q.source_ref}</span>}
+                      {q.image_url && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onImage(q.image_url as string, q.source_ref ?? sourceLabel ?? 'Question')
+                          }
+                          className="group relative h-16 w-16 overflow-hidden rounded border border-border shadow-sm transition-transform hover:-translate-y-px hover:shadow-card"
+                          aria-label="View full-size image"
+                        >
+                          <img
+                            src={q.image_url}
+                            alt="question scan thumbnail"
+                            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                          />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-text-faint">—</span>
+                  )}
+                </Detail>
+                {q.mark_decision && (
+                  <Detail label="mark decision">
+                    {MARK_DECISIONS.find((m) => m.value === q.mark_decision)?.label}
+                    {q.mark_correct !== null && (
+                      <span
+                        className={cn('ml-1.5', q.mark_correct ? 'text-success' : 'text-danger')}
+                      >
+                        {q.mark_correct ? 'paid off' : 'did not'}
+                      </span>
+                    )}
+                  </Detail>
+                )}
+              </div>
+            </td>
+          </motion.tr>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }
 
@@ -238,6 +282,40 @@ export default function Journal() {
   }));
   const [page, setPage] = useState(0);
   const [preview, setPreview] = useState<{ src: string; caption: string } | null>(null);
+  const [editRow, setEditRow] = useState<QuestionRow | null>(null);
+  const [editDraft, setEditDraft] = useState<EditorDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  function openEdit(row: QuestionRow) {
+    setEditRow(row);
+    setEditDraft(draftFromRow(row));
+  }
+
+  async function saveEdit() {
+    if (!editRow || !editDraft) return;
+    setSaving(true);
+    try {
+      const merged = applyDraftToRow(editRow, editDraft);
+      await writeLocal('questions', merged);
+      setEditRow(null);
+      setEditDraft(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeRow() {
+    if (!editRow) return;
+    setDeleting(true);
+    try {
+      await deleteLocal('questions', editRow.id);
+      setEditRow(null);
+      setEditDraft(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const questions = useLiveQuery(async () => {
     if (!userId) return [];
@@ -436,14 +514,31 @@ export default function Journal() {
       <Card>
         {pageRows.length > 0 ? (
           <>
-            <div>
-              {pageRows.map((q) => (
-                <Row
-                  key={q.id}
-                  q={q}
-                  onImage={(src, caption) => setPreview({ src, caption })}
-                />
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] border-collapse text-[13px]">
+                <thead>
+                  <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
+                    <th className="px-3 py-2 font-mono">Date</th>
+                    <th className="px-3 py-2 font-mono">Subject</th>
+                    <th className="hidden px-3 py-2 font-mono sm:table-cell">Subtopic</th>
+                    <th className="hidden px-3 py-2 font-mono sm:table-cell">Outcome</th>
+                    <th className="hidden px-3 py-2 font-mono md:table-cell">Source</th>
+                    <th className="px-3 py-2 font-mono">Pattern</th>
+                    <th className="hidden px-3 py-2 text-right font-mono sm:table-cell">Time</th>
+                    <th className="w-[88px] px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pageRows.map((q) => (
+                    <Row
+                      key={q.id}
+                      q={q}
+                      onImage={(src, caption) => setPreview({ src, caption })}
+                      onEdit={openEdit}
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
             {pages > 1 && (
               <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
@@ -488,6 +583,43 @@ export default function Journal() {
         open={!!preview}
         onClose={() => setPreview(null)}
       />
+
+      <Dialog
+        open={!!editRow && !!editDraft}
+        onClose={() => {
+          if (saving || deleting) return;
+          setEditRow(null);
+          setEditDraft(null);
+        }}
+        title="Edit question"
+        className="max-w-2xl"
+      >
+        {editDraft && (
+          <div className="flex flex-col gap-4">
+            <QuestionEditor draft={editDraft} onChange={setEditDraft} />
+            <DeleteBar onDelete={() => void removeRow()} />
+            <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditRow(null);
+                  setEditDraft(null);
+                }}
+                disabled={saving || deleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void saveEdit()}
+                disabled={saving || deleting}
+              >
+                {saving ? 'Saving…' : 'Save changes'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

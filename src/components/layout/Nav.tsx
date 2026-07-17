@@ -4,6 +4,7 @@ import {
   Gauge,
   Play,
   NotebookText,
+  PenLine,
   Shapes,
   RotateCcw,
   CalendarCheck,
@@ -39,6 +40,13 @@ const JOURNAL_ITEM: Item = {
   label: 'Journal',
   icon: NotebookText,
   active: 'bg-ink-cobalt/10 text-ink-cobalt'
+};
+
+const LOG_ITEM: Item = {
+  to: '/log',
+  label: 'Log',
+  icon: PenLine,
+  active: 'bg-ink-rose/10 text-ink-rose'
 };
 
 const ANALYSIS: Item[] = [
@@ -129,7 +137,8 @@ export default function Nav() {
           icon: Play,
           active: 'bg-ink-teal/10 text-ink-teal'
         },
-    JOURNAL_ITEM
+    JOURNAL_ITEM,
+    LOG_ITEM
   ];
 
   return (

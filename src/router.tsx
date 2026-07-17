@@ -16,6 +16,7 @@ import Reattempts from '@/pages/Reattempts';
 import WeeklyReview from '@/pages/WeeklyReview';
 import Heatmap from '@/pages/Heatmap';
 import Calibration from '@/pages/Calibration';
+import Log from '@/pages/Log';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
       { path: 'session/:id/solve', element: <SessionActive /> },
       { path: 'session/:id/review', element: <SessionReview /> },
       { path: 'journal', element: <Journal /> },
+      { path: 'log', element: <Log /> },
       { path: 'patterns', element: <Patterns /> },
       { path: 'reattempts', element: <Reattempts /> },
       { path: 'weekly-review', element: <WeeklyReview /> },
