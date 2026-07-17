@@ -18,8 +18,11 @@ import {
   LogOut
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuthStore } from '@/stores/auth';
 import { useAuth } from '@/hooks/useAuth';
+import { useSessionStore } from '@/stores/session';
+import { db } from '@/lib/db';
 import { EXAM_DATE_DEFAULT } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
@@ -31,11 +34,12 @@ interface Item {
   active: string;
 }
 
-const MAIN: Item[] = [
-  { to: '/', label: 'Dashboard', icon: Gauge, active: 'bg-accent-faint text-accent' },
-  { to: '/session/new', label: 'Session', icon: Play, active: 'bg-ink-teal/10 text-ink-teal' },
-  { to: '/journal', label: 'Journal', icon: NotebookText, active: 'bg-ink-cobalt/10 text-ink-cobalt' }
-];
+const JOURNAL_ITEM: Item = {
+  to: '/journal',
+  label: 'Journal',
+  icon: NotebookText,
+  active: 'bg-ink-cobalt/10 text-ink-cobalt'
+};
 
 const ANALYSIS: Item[] = [
   { to: '/patterns', label: 'Patterns', icon: Shapes, active: 'bg-ink-violet/10 text-ink-violet' },
@@ -101,6 +105,32 @@ export default function Nav() {
     parseISO(profile?.exam_date ?? EXAM_DATE_DEFAULT),
     new Date()
   );
+  const storedSessionId = useSessionStore((s) => s.sessionId);
+  // Confirm the stored session is still live (row exists, unfinished) — a
+  // stale localStorage entry after a "finish" that crashed shouldn't hijack
+  // the Session tab. useLiveQuery re-evaluates as Dexie changes.
+  const liveSessionId = useLiveQuery(async () => {
+    if (!storedSessionId) return null;
+    const row = await db.sessions.get(storedSessionId);
+    return row && row.actual_duration_min === null ? storedSessionId : null;
+  }, [storedSessionId]);
+  const main: Item[] = [
+    { to: '/', label: 'Dashboard', icon: Gauge, active: 'bg-accent-faint text-accent' },
+    liveSessionId
+      ? {
+          to: `/session/${liveSessionId}/solve`,
+          label: 'Resume session',
+          icon: Play,
+          active: 'bg-ink-teal/10 text-ink-teal'
+        }
+      : {
+          to: '/session/new',
+          label: 'Session',
+          icon: Play,
+          active: 'bg-ink-teal/10 text-ink-teal'
+        },
+    JOURNAL_ITEM
+  ];
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[224px] flex-col border-r border-border bg-bg md:flex">
@@ -117,7 +147,7 @@ export default function Nav() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
-        <Group items={MAIN} />
+        <Group items={main} />
         <Group label="Analysis" items={ANALYSIS} />
         <Group label="Learn" items={LEARN} />
         <Group label="" items={SOCIAL} />

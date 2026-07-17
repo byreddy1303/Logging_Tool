@@ -1,7 +1,10 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { Gauge, Play, NotebookText, Shapes, MessageSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/db';
+import { useSessionStore } from '@/stores/session';
 
 interface Tab {
   to: string;
@@ -51,13 +54,24 @@ const TABS: Tab[] = [
 
 export default function MobileTabs() {
   const { pathname } = useLocation();
+  const storedSessionId = useSessionStore((s) => s.sessionId);
+  const liveSessionId = useLiveQuery(async () => {
+    if (!storedSessionId) return null;
+    const row = await db.sessions.get(storedSessionId);
+    return row && row.actual_duration_min === null ? storedSessionId : null;
+  }, [storedSessionId]);
+  const tabs = TABS.map((t) =>
+    t.label === 'Session' && liveSessionId
+      ? { ...t, to: `/session/${liveSessionId}/solve`, label: 'Resume' }
+      : t
+  );
 
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-bg-raised/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_12px_rgba(36,30,53,0.06)] backdrop-blur md:hidden"
       aria-label="Primary"
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const Icon = tab.icon;
         const active =
           tab.to === '/'

@@ -1,7 +1,12 @@
 // Active session (F2.2): count-up timer per question; Next opens the 4-step
 // tag flow; saving a tag writes the question, reconciles the pattern count,
 // and schedules a re-attempt for RBS/RBG/W-* — all local-first.
-import { useEffect, useState } from 'react';
+//
+// State that must survive mid-session navigation (or a hard reload) lives in
+// the persisted session store: sessionId, plannedCount, questionStartedAt,
+// mode (solve/tag), and the elapsed seconds captured on tag-open. Local
+// useState is reserved for things that can safely restart.
+import { useEffect } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { parseISO } from 'date-fns';
@@ -62,10 +67,13 @@ export default function SessionActive() {
       [userId]
     ) ?? [];
 
-  const [mode, setMode] = useState<'solve' | 'tag'>('solve');
-  const [timeSpent, setTimeSpent] = useState(0);
+  const mode = store.sessionId === id ? store.mode : 'solve';
+  const timeSpent =
+    store.sessionId === id && store.pendingTimeSpent != null ? store.pendingTimeSpent : 0;
 
-  // Recovery after a reload: the planned count is ephemeral and lost — run open-ended.
+  // Recovery: only reinit when the store points at a different session.
+  // If the store already matches this session id, its mode / questionStartedAt /
+  // pendingTimeSpent survived the navigation or reload — leave them alone.
   const beginStore = useSessionStore((s) => s.begin);
   useEffect(() => {
     if (session && useSessionStore.getState().sessionId !== id) beginStore(id, 0);
@@ -78,8 +86,7 @@ export default function SessionActive() {
   const qIndex = taggedCount + 1;
 
   function openTag() {
-    setTimeSpent(qSeconds);
-    setMode('tag');
+    store.enterTag(qSeconds);
   }
 
   async function finish() {
@@ -132,7 +139,6 @@ export default function SessionActive() {
       return;
     }
     store.startQuestion();
-    setMode('solve');
   }
 
   useKeyboard({ enter: openTag, n: openTag }, mode === 'solve' && !!session);
@@ -211,7 +217,7 @@ export default function SessionActive() {
             questionLabel={`Q ${String(qIndex).padStart(2, '0')}`}
             timeSpentSec={timeSpent}
             onSave={saveTag}
-            onCancel={() => setMode('solve')}
+            onCancel={() => store.cancelTag()}
           />
         </div>
       )}

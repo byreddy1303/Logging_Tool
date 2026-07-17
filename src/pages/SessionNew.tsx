@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { Play } from 'lucide-react';
 import type { SessionRow } from '@/types';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -10,7 +12,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useSessionStore } from '@/stores/session';
 import { writeLocal } from '@/lib/sync';
-import { cn, uuid, todayISO, nowISO } from '@/lib/utils';
+import { db } from '@/lib/db';
+import { cn, uuid, todayISO, nowISO, formatDate } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
 
 function Segmented({
@@ -47,6 +50,14 @@ export default function SessionNew() {
   const { userId } = useAuth();
   const navigate = useNavigate();
   const begin = useSessionStore((s) => s.begin);
+  const storedSessionId = useSessionStore((s) => s.sessionId);
+  const inProgress = useLiveQuery(async () => {
+    if (!storedSessionId) return null;
+    const row = await db.sessions.get(storedSessionId);
+    if (!row || row.actual_duration_min !== null) return null;
+    const tagged = await db.questions.where('session_id').equals(row.id).count();
+    return { row, tagged };
+  }, [storedSessionId]);
   const [subject, setSubject] = useState<string>();
   const [duration, setDuration] = useState<number>(60);
   const [count, setCount] = useState<number>(10);
@@ -80,6 +91,42 @@ export default function SessionNew() {
         title="New session"
         description="Pick the block, start the clock, tag every question as you go."
       />
+      {inProgress && (
+        <Card className="mb-4 border-ink-teal/40">
+          <CardBody className="flex flex-wrap items-center gap-3">
+            <span className="flex items-center gap-2">
+              <span
+                className={cn('h-1.5 w-1.5 rounded-full', subjectInk(inProgress.row.subject).dot)}
+              />
+              <span className="text-[13px]">
+                <span className="font-medium">{inProgress.row.subject}</span>
+                <span className="text-text-faint">
+                  {' '}
+                  · started {formatDate(inProgress.row.date, 'dd MMM')} · {inProgress.tagged}{' '}
+                  tagged
+                </span>
+              </span>
+            </span>
+            <span className="ml-auto flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(`/session/${inProgress.row.id}/review`)}
+              >
+                End & review
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => navigate(`/session/${inProgress.row.id}/solve`)}
+              >
+                <Play size={14} strokeWidth={2} className="mr-1" />
+                Resume
+              </Button>
+            </span>
+          </CardBody>
+        </Card>
+      )}
       <Card>
         <CardBody className="flex flex-col gap-6">
           <div>
