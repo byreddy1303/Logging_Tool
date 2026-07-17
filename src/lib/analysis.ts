@@ -137,6 +137,57 @@ export function summarizeWeek(
   };
 }
 
+export interface HeatmapCell {
+  subject: string;
+  subtopic: string | null;
+  rootCause: RootCause | 'unspecified';
+  count: number;
+}
+
+/** True for outcomes that count as "mistake surface" — the weakness heatmap only shows these. */
+export function isMistake(outcome: Outcome): boolean {
+  return outcome !== 'R';
+}
+
+/**
+ * F5.2 — buckets mistake-surface questions into (subject × subtopic × root_cause) cells.
+ * `groupBySubtopic=false` collapses subtopic to null so the heatmap can render at
+ * subject granularity when the user prefers a bigger picture.
+ */
+export function heatmapCells(
+  questions: QuestionRow[],
+  {
+    from,
+    to,
+    groupBySubtopic = true
+  }: { from?: string; to?: string; groupBySubtopic?: boolean } = {}
+): HeatmapCell[] {
+  const buckets = new Map<string, HeatmapCell>();
+  for (const q of questions) {
+    if (!isMistake(q.outcome)) continue;
+    const day = q.created_at.slice(0, 10);
+    if (from && day < from) continue;
+    if (to && day > to) continue;
+    const subtopic = groupBySubtopic ? q.subtopic : null;
+    const cause: RootCause | 'unspecified' = q.root_cause ?? 'unspecified';
+    const key = `${q.subject}||${subtopic ?? ''}||${cause}`;
+    const cell = buckets.get(key) ?? { subject: q.subject, subtopic, rootCause: cause, count: 0 };
+    cell.count += 1;
+    buckets.set(key, cell);
+  }
+  return [...buckets.values()].sort((a, b) => b.count - a.count);
+}
+
+/** Row totals per (subject × subtopic) — used to color the "worst row" header. */
+export function heatmapRowTotals(cells: HeatmapCell[]): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const c of cells) {
+    const key = `${c.subject}||${c.subtopic ?? ''}`;
+    totals.set(key, (totals.get(key) ?? 0) + c.count);
+  }
+  return totals;
+}
+
 /**
  * Consecutive days ending today on which any question was tagged. Used only as
  * a calm signal, never for streak gamification (§17 hard ban).

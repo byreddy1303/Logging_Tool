@@ -8,6 +8,8 @@ import {
   mistakeSurfaceTrend,
   outcomeDistribution,
   activeDaysBack,
+  heatmapCells,
+  heatmapRowTotals,
   summarizeWeek,
   synthesisUnlocked,
   weeklyDraftFingerprint,
@@ -209,6 +211,65 @@ describe('synthesisUnlocked (F5.1 DoD)', () => {
   it('whitespace-only fields count as empty', () => {
     const junk = { ...filled, weakest_concept: '   ' };
     expect(synthesisUnlocked(junk, weeklyDraftFingerprint(junk))).toBe(false);
+  });
+});
+
+describe('heatmapCells (F5.2 DoD)', () => {
+  const rows = [
+    q({ outcome: 'R', subject: 'Databases', subtopic: 'SQL — Joins & Subqueries' }),
+    q({
+      outcome: 'W-C',
+      subject: 'Databases',
+      subtopic: 'Normalization — BCNF / 4NF',
+      root_cause: 'concept'
+    }),
+    q({
+      outcome: 'W-C',
+      subject: 'Databases',
+      subtopic: 'Normalization — BCNF / 4NF',
+      root_cause: 'concept',
+      created_at: '2026-07-16T09:00:00.000Z'
+    }),
+    q({
+      outcome: 'RBS',
+      subject: 'Algorithms',
+      subtopic: 'Dynamic Programming — 1D',
+      root_cause: null
+    }),
+    q({
+      outcome: 'W-E',
+      subject: 'Databases',
+      subtopic: 'Normalization — BCNF / 4NF',
+      root_cause: 'computation'
+    })
+  ];
+
+  it('skips R outcomes and buckets by (subject × subtopic × root_cause)', () => {
+    const cells = heatmapCells(rows);
+    expect(cells.find((c) => c.rootCause === 'concept' && c.subject === 'Databases')?.count).toBe(2);
+    expect(cells.find((c) => c.rootCause === 'computation')?.count).toBe(1);
+    expect(cells.find((c) => c.rootCause === 'unspecified')?.count).toBe(1);
+    // R is skipped entirely
+    expect(cells.some((c) => c.subtopic === 'SQL — Joins & Subqueries')).toBe(false);
+  });
+
+  it('collapses subtopic when groupBySubtopic is false', () => {
+    const cells = heatmapCells(rows, { groupBySubtopic: false });
+    for (const c of cells) expect(c.subtopic).toBeNull();
+    expect(cells.find((c) => c.subject === 'Databases' && c.rootCause === 'concept')?.count).toBe(2);
+  });
+
+  it('respects from/to window', () => {
+    const cells = heatmapCells(rows, { from: '2026-07-17', to: '2026-07-17' });
+    // only rows from 2026-07-17 (the default in q()) — the 07-16 one is dropped
+    expect(cells.find((c) => c.rootCause === 'concept')?.count).toBe(1);
+  });
+
+  it('row totals aggregate across causes', () => {
+    const cells = heatmapCells(rows);
+    const totals = heatmapRowTotals(cells);
+    expect(totals.get('Databases||Normalization — BCNF / 4NF')).toBe(3);
+    expect(totals.get('Algorithms||Dynamic Programming — 1D')).toBe(1);
   });
 });
 

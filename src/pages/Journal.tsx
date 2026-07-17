@@ -229,7 +229,12 @@ export default function Journal() {
   const [params] = useSearchParams();
   const [f, setF] = useState<Filters>(() => ({
     ...EMPTY_FILTERS,
-    pattern: params.get('pattern') ?? ''
+    pattern: params.get('pattern') ?? '',
+    subject: params.get('subject') ?? '',
+    subtopic: params.get('subtopic') ?? '',
+    cause: params.get('cause') ?? '',
+    from: params.get('from') ?? '',
+    to: params.get('to') ?? ''
   }));
   const [page, setPage] = useState(0);
   const [preview, setPreview] = useState<{ src: string; caption: string } | null>(null);
