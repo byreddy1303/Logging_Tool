@@ -1,26 +1,32 @@
-// 4-step tag pipeline (F2.2): Outcome → Pattern → Trigger → Root Cause.
+// 5-step tag pipeline (F2.2, extended): Source → Outcome → Pattern → Trigger → Root Cause.
 // Keyboard-first; root cause is skipped when the outcome is R.
+// Source records subject/kind/year/set/image/marks so questions can be looked up
+// and time targets can be pegged to 1-mark (~90s) vs 2-mark (~180s).
 import { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Outcome, PatternRow, RootCause } from '@/types';
 import { OUTCOME_BY_CODE } from '@/lib/constants';
 import { cn, secondsToClock } from '@/lib/utils';
 
+import SourceStep from '@/components/tags/SourceStep';
+import { makeInitialSource, type SourceDraft } from '@/components/tags/sourceDraft';
 import OutcomeStep from '@/components/tags/OutcomeStep';
 import PatternStep from '@/components/tags/PatternStep';
 import TriggerStep from '@/components/tags/TriggerStep';
 import RootCauseStep from '@/components/tags/RootCauseStep';
 
 export interface TagDraft {
+  source: SourceDraft;
   outcome: Outcome;
   pattern_name: string | null;
   trigger_sentence: string | null;
   root_cause: RootCause | null;
 }
 
-type Step = 'outcome' | 'pattern' | 'trigger' | 'cause';
+type Step = 'source' | 'outcome' | 'pattern' | 'trigger' | 'cause';
 
 const STEP_LABELS: { id: Step; label: string }[] = [
+  { id: 'source', label: 'source' },
   { id: 'outcome', label: 'outcome' },
   { id: 'pattern', label: 'pattern' },
   { id: 'trigger', label: 'trigger' },
@@ -57,7 +63,8 @@ export default function TagFlow({
   onSave: (draft: TagDraft) => Promise<void> | void;
   onCancel: () => void;
 }) {
-  const [step, setStep] = useState<Step>('outcome');
+  const [step, setStep] = useState<Step>('source');
+  const [source, setSource] = useState<SourceDraft>(() => makeInitialSource(subject));
   const [outcome, setOutcome] = useState<Outcome>();
   const [pattern, setPattern] = useState<string | null>(null);
   const [trigger, setTrigger] = useState<string | null>(null);
@@ -73,13 +80,18 @@ export default function TagFlow({
     setStep(next);
   }
 
-  async function finalize(draft: TagDraft) {
+  async function finalize(draft: Omit<TagDraft, 'source'>) {
     setSaving(true);
     try {
-      await onSave(draft);
+      await onSave({ source, ...draft });
     } finally {
       setSaving(false);
     }
+  }
+
+  function submitSource(next: SourceDraft) {
+    setSource(next);
+    go('outcome', 1);
   }
 
   function pickOutcome(o: Outcome) {
@@ -97,7 +109,12 @@ export default function TagFlow({
   function submitTrigger(text: string | null) {
     setTrigger(text);
     if (outcome === 'R') {
-      void finalize({ outcome, pattern_name: pattern, trigger_sentence: text, root_cause: null });
+      void finalize({
+        outcome,
+        pattern_name: pattern,
+        trigger_sentence: text,
+        root_cause: null
+      });
     } else {
       go('cause', 1);
     }
@@ -106,7 +123,12 @@ export default function TagFlow({
   function pickCause(rc: RootCause) {
     if (saving || !outcome) return;
     setCause(rc);
-    void finalize({ outcome, pattern_name: pattern, trigger_sentence: trigger, root_cause: rc });
+    void finalize({
+      outcome,
+      pattern_name: pattern,
+      trigger_sentence: trigger,
+      root_cause: rc
+    });
   }
 
   const activeIdx = steps.findIndex((s) => s.id === step);
@@ -159,12 +181,19 @@ export default function TagFlow({
             exit="exit"
             transition={{ type: 'spring', stiffness: 480, damping: 38 }}
           >
+            {step === 'source' && (
+              <SourceStep initial={source} onSubmit={submitSource} onCancel={onCancel} />
+            )}
             {step === 'outcome' && (
-              <OutcomeStep selected={outcome} onSelect={pickOutcome} onCancel={onCancel} />
+              <OutcomeStep
+                selected={outcome}
+                onSelect={pickOutcome}
+                onCancel={() => go('source', -1)}
+              />
             )}
             {step === 'pattern' && (
               <PatternStep
-                subject={subject}
+                subject={source.subject}
                 patterns={patterns}
                 initial={pattern}
                 onSubmit={submitPattern}

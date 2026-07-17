@@ -7,7 +7,18 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import type { QuestionRow } from '@/types';
 import { db } from '@/lib/db';
-import { OUTCOMES, OUTCOME_BY_CODE, ROOT_CAUSES, MARK_DECISIONS, SUBJECTS } from '@/lib/constants';
+import {
+  OUTCOMES,
+  OUTCOME_BY_CODE,
+  ROOT_CAUSES,
+  MARK_DECISIONS,
+  SUBJECTS,
+  SOURCE_KINDS,
+  SOURCE_KIND_BY_VALUE,
+  QUESTION_FORMATS,
+  type SourceKind,
+  type QuestionFormat
+} from '@/lib/constants';
 import { cn, formatDate, levenshtein, secondsToClock, plural } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
 import { useAuth } from '@/hooks/useAuth';
@@ -18,6 +29,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Empty } from '@/components/ui/Empty';
+import { ImagePreview } from '@/components/shared/ImagePreview';
 
 const PAGE_SIZE = 50;
 
@@ -46,6 +58,8 @@ interface Filters {
   outcome: string;
   cause: string;
   mark: string;
+  source: string;
+  format: string;
   from: string;
   to: string;
 }
@@ -57,9 +71,29 @@ const EMPTY_FILTERS: Filters = {
   outcome: '',
   cause: '',
   mark: '',
+  source: '',
+  format: '',
   from: '',
   to: ''
 };
+
+/** Extract the source-kind key from a canonical source_ref (prefix match). */
+function detectSourceKind(ref: string | null): SourceKind | null {
+  if (!ref) return null;
+  for (const s of SOURCE_KINDS) {
+    if (ref === s.refPrefix || ref.startsWith(`${s.refPrefix} · `)) return s.value;
+  }
+  return null;
+}
+
+/** Extract question format if it was appended as the last segment of source_ref. */
+function detectFormat(ref: string | null): QuestionFormat | null {
+  if (!ref) return null;
+  for (const qf of QUESTION_FORMATS) {
+    if (ref === qf.value || ref.endsWith(` · ${qf.value}`)) return qf.value;
+  }
+  return null;
+}
 
 function Detail({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -70,11 +104,13 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
-function Row({ q }: { q: QuestionRow }) {
+function Row({ q, onImage }: { q: QuestionRow; onImage: (src: string, caption: string) => void }) {
   const [open, setOpen] = useState(false);
   const spec = OUTCOME_BY_CODE[q.outcome];
   const ink = subjectInk(q.subject);
   const over = q.time_spent_sec > q.target_time_sec;
+  const sourceKind = detectSourceKind(q.source_ref);
+  const sourceLabel = sourceKind ? SOURCE_KIND_BY_VALUE[sourceKind].label : null;
   return (
     <div className="border-b border-border last:border-b-0">
       <button
@@ -136,25 +172,26 @@ function Row({ q }: { q: QuestionRow }) {
                 {over && <span className="ml-1 text-warn">over</span>}
               </Detail>
               <Detail label="source">
-                {q.source_year || q.source_ref ? (
-                  <>
-                    {q.source_year && <span className="u-num">{q.source_year}</span>}
-                    {q.source_year && q.source_ref && ' · '}
-                    {q.source_ref}
+                {q.source_ref || q.image_url ? (
+                  <div className="flex flex-col gap-1.5">
+                    {q.source_ref && <span>{q.source_ref}</span>}
                     {q.image_url && (
-                      <>
-                        {' · '}
-                        <a
-                          href={q.image_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-accent underline underline-offset-2 hover:text-accent-hover"
-                        >
-                          view scan
-                        </a>
-                      </>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onImage(q.image_url as string, q.source_ref ?? sourceLabel ?? 'Question')
+                        }
+                        className="group relative h-16 w-16 overflow-hidden rounded border border-border shadow-sm transition-transform hover:-translate-y-px hover:shadow-card active:translate-y-0"
+                        aria-label="View full-size image"
+                      >
+                        <img
+                          src={q.image_url}
+                          alt="question scan thumbnail"
+                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                        />
+                      </button>
                     )}
-                  </>
+                  </div>
                 ) : (
                   <span className="text-text-faint">—</span>
                 )}
@@ -185,6 +222,7 @@ export default function Journal() {
     pattern: params.get('pattern') ?? ''
   }));
   const [page, setPage] = useState(0);
+  const [preview, setPreview] = useState<{ src: string; caption: string } | null>(null);
 
   const questions = useLiveQuery(async () => {
     if (!userId) return [];
@@ -198,6 +236,8 @@ export default function Journal() {
     if (f.outcome) rows = rows.filter((q) => q.outcome === f.outcome);
     if (f.cause) rows = rows.filter((q) => q.root_cause === f.cause);
     if (f.mark) rows = rows.filter((q) => q.mark_decision === f.mark);
+    if (f.source) rows = rows.filter((q) => detectSourceKind(q.source_ref) === f.source);
+    if (f.format) rows = rows.filter((q) => detectFormat(q.source_ref) === f.format);
     if (f.from) rows = rows.filter((q) => q.created_at.slice(0, 10) >= f.from);
     if (f.to) rows = rows.filter((q) => q.created_at.slice(0, 10) <= f.to);
     if (f.pattern.trim())
@@ -299,6 +339,32 @@ export default function Journal() {
                 </option>
               ))}
             </Select>
+            <Select
+              value={f.source}
+              onChange={(e) => set('source', e.target.value)}
+              aria-label="Filter by source"
+              className="w-[170px]"
+            >
+              <option value="">All sources</option>
+              {SOURCE_KINDS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={f.format}
+              onChange={(e) => set('format', e.target.value)}
+              aria-label="Filter by question format"
+              className="w-[130px]"
+            >
+              <option value="">All formats</option>
+              {QUESTION_FORMATS.map((qf) => (
+                <option key={qf.value} value={qf.value}>
+                  {qf.label}
+                </option>
+              ))}
+            </Select>
             <Input
               type="date"
               value={f.from}
@@ -337,7 +403,11 @@ export default function Journal() {
           <>
             <div>
               {pageRows.map((q) => (
-                <Row key={q.id} q={q} />
+                <Row
+                  key={q.id}
+                  q={q}
+                  onImage={(src, caption) => setPreview({ src, caption })}
+                />
               ))}
             </div>
             {pages > 1 && (
@@ -376,6 +446,13 @@ export default function Journal() {
           />
         )}
       </Card>
+
+      <ImagePreview
+        src={preview?.src ?? null}
+        caption={preview?.caption}
+        open={!!preview}
+        onClose={() => setPreview(null)}
+      />
     </div>
   );
 }

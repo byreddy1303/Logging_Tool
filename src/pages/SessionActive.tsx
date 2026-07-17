@@ -9,7 +9,7 @@ import type { QuestionRow } from '@/types';
 import { db } from '@/lib/db';
 import { writeLocal } from '@/lib/sync';
 import { needsReattempt, scheduleReattempt } from '@/lib/reattempt';
-import { DEFAULT_TARGET_TIME_SEC } from '@/lib/constants';
+import { DEFAULT_TARGET_TIME_SEC, MARKS_TARGET_SEC, buildSourceRef } from '@/lib/constants';
 import { cn, uuid, nowISO, secondsToClock } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
 import { useAuth } from '@/hooks/useAuth';
@@ -95,18 +95,27 @@ export default function SessionActive() {
 
   async function saveTag(draft: TagDraft) {
     if (!session || !userId) return;
+    const { source } = draft;
+    const target =
+      source.marks != null ? MARKS_TARGET_SEC[source.marks] : DEFAULT_TARGET_TIME_SEC;
     const q: QuestionRow = {
       id: uuid(),
       user_id: userId,
       session_id: id,
-      subject: session.subject,
+      subject: source.subject,
       subtopic: null,
-      source_year: null,
-      source_ref: null,
+      source_year: source.year,
+      source_ref: buildSourceRef(
+        source.kind,
+        source.year,
+        source.set,
+        source.questionNumber,
+        source.format
+      ),
       question_text: null,
-      image_url: null,
+      image_url: source.imageDataUrl,
       time_spent_sec: timeSpent,
-      target_time_sec: DEFAULT_TARGET_TIME_SEC,
+      target_time_sec: target,
       outcome: draft.outcome,
       pattern_name: draft.pattern_name,
       trigger_sentence: draft.trigger_sentence,
@@ -116,7 +125,7 @@ export default function SessionActive() {
       created_at: nowISO()
     };
     await writeLocal('questions', q);
-    if (draft.pattern_name) await reconcilePattern(userId, session.subject, draft.pattern_name);
+    if (draft.pattern_name) await reconcilePattern(userId, source.subject, draft.pattern_name);
     if (needsReattempt(draft.outcome)) await scheduleReattempt(userId, q.id);
     if (planned && taggedCount + 1 >= planned) {
       await finish();
