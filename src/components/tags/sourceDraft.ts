@@ -10,6 +10,7 @@ import {
 
 export interface SourceDraft {
   subject: string;
+  subtopic: string | null;
   kind: SourceKind;
   year: number | null;
   set: 1 | 2 | null;
@@ -24,6 +25,7 @@ export function makeInitialSource(subject: string): SourceDraft {
   const defaultYear = years[0] ?? null;
   return {
     subject,
+    subtopic: null,
     kind: 'pyq',
     year: defaultYear,
     set: defaultYear != null && defaultYear >= PYQ_TWO_SETS_FROM ? 1 : null,

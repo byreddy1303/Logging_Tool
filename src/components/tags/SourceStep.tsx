@@ -15,6 +15,7 @@ import {
   type SourceKind
 } from '@/lib/constants';
 import { compressToDataUrl, ImageTooLargeError } from '@/lib/image';
+import { subtopicsFor } from '@/lib/subtopics';
 import { cn } from '@/lib/utils';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { Button } from '@/components/ui/Button';
@@ -119,6 +120,8 @@ export default function SourceStep({
 
   const isPyq = draft.kind === 'pyq';
   const yearHasSets = draft.year != null && draft.year >= PYQ_TWO_SETS_FROM;
+  const subtopics = useMemo(() => subtopicsFor(draft.subject), [draft.subject]);
+  const activeSubtopicSpec = subtopics.find((s) => s.value === draft.subtopic);
 
   useEffect(() => {
     if (!isPyq) return;
@@ -129,6 +132,13 @@ export default function SourceStep({
       setDraft((d) => ({ ...d, set: 1 }));
     }
   }, [draft.year, draft.set, isPyq]);
+
+  // Clear subtopic when subject switches — the list is subject-scoped.
+  useEffect(() => {
+    if (!draft.subtopic) return;
+    const stillValid = subtopics.some((s) => s.value === draft.subtopic);
+    if (!stillValid) setDraft((d) => ({ ...d, subtopic: null }));
+  }, [draft.subject, draft.subtopic, subtopics]);
 
   useKeyboard(
     {
@@ -162,6 +172,7 @@ export default function SourceStep({
     // Normalize: non-PYQ drops year+set; PYQ without year still allowed (user may not remember)
     const normalized: SourceDraft = {
       ...draft,
+      subtopic: draft.subtopic?.trim() ? draft.subtopic.trim() : null,
       year: isPyq ? draft.year : null,
       set: isPyq && yearHasSets ? draft.set : null,
       questionNumber: draft.questionNumber?.trim() ? draft.questionNumber.trim() : null,
@@ -205,6 +216,35 @@ export default function SourceStep({
             ))}
           </Select>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="u-label" htmlFor="src-subtopic">
+          Subtopic (optional)
+        </label>
+        <Select
+          id="src-subtopic"
+          value={draft.subtopic ?? ''}
+          onChange={(e) => setDraft((d) => ({ ...d, subtopic: e.target.value || null }))}
+        >
+          <option value="">— pick a subtopic</option>
+          {subtopics.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.value}
+            </option>
+          ))}
+        </Select>
+        {activeSubtopicSpec?.relatedSubjects?.length ? (
+          <p className="text-[11px] text-text-faint">
+            Often crosses into:{' '}
+            {activeSubtopicSpec.relatedSubjects.map((s, i) => (
+              <span key={s}>
+                {i > 0 && ', '}
+                <span className="text-text-muted">{s}</span>
+              </span>
+            ))}
+          </p>
+        ) : null}
       </div>
 
       {isPyq ? (

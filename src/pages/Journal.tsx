@@ -30,6 +30,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Empty } from '@/components/ui/Empty';
 import { ImagePreview } from '@/components/shared/ImagePreview';
+import { subtopicsFor } from '@/lib/subtopics';
 
 const PAGE_SIZE = 50;
 
@@ -55,6 +56,7 @@ interface Filters {
   trigger: string;
   pattern: string;
   subject: string;
+  subtopic: string;
   outcome: string;
   cause: string;
   mark: string;
@@ -68,6 +70,7 @@ const EMPTY_FILTERS: Filters = {
   trigger: '',
   pattern: '',
   subject: '',
+  subtopic: '',
   outcome: '',
   cause: '',
   mark: '',
@@ -171,6 +174,13 @@ function Row({ q, onImage }: { q: QuestionRow; onImage: (src: string, caption: s
                 <span className="u-num">{secondsToClock(q.target_time_sec)}</span>
                 {over && <span className="ml-1 text-warn">over</span>}
               </Detail>
+              <Detail label="subtopic">
+                {q.subtopic ? (
+                  <span>{q.subtopic}</span>
+                ) : (
+                  <span className="text-text-faint">—</span>
+                )}
+              </Detail>
               <Detail label="source">
                 {q.source_ref || q.image_url ? (
                   <div className="flex flex-col gap-1.5">
@@ -233,6 +243,7 @@ export default function Journal() {
   const filtered = useMemo(() => {
     let rows = questions ?? [];
     if (f.subject) rows = rows.filter((q) => q.subject === f.subject);
+    if (f.subtopic) rows = rows.filter((q) => q.subtopic === f.subtopic);
     if (f.outcome) rows = rows.filter((q) => q.outcome === f.outcome);
     if (f.cause) rows = rows.filter((q) => q.root_cause === f.cause);
     if (f.mark) rows = rows.filter((q) => q.mark_decision === f.mark);
@@ -289,7 +300,11 @@ export default function Journal() {
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={f.subject}
-              onChange={(e) => set('subject', e.target.value)}
+              onChange={(e) => {
+                set('subject', e.target.value);
+                // Reset subtopic when subject changes — subtopic list is subject-scoped.
+                if (f.subtopic) set('subtopic', '');
+              }}
               aria-label="Filter by subject"
               className="w-[180px]"
             >
@@ -300,6 +315,21 @@ export default function Journal() {
                 </option>
               ))}
             </Select>
+            {f.subject && subtopicsFor(f.subject).length > 0 && (
+              <Select
+                value={f.subtopic}
+                onChange={(e) => set('subtopic', e.target.value)}
+                aria-label="Filter by subtopic"
+                className="w-[220px]"
+              >
+                <option value="">All subtopics</option>
+                {subtopicsFor(f.subject).map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.value}
+                  </option>
+                ))}
+              </Select>
+            )}
             <Select
               value={f.outcome}
               onChange={(e) => set('outcome', e.target.value)}

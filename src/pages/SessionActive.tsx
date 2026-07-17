@@ -103,7 +103,7 @@ export default function SessionActive() {
       user_id: userId,
       session_id: id,
       subject: source.subject,
-      subtopic: null,
+      subtopic: source.subtopic,
       source_year: source.year,
       source_ref: buildSourceRef(
         source.kind,
