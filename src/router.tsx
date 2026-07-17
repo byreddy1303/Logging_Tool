@@ -9,6 +9,7 @@ import Pending from '@/components/shared/Pending';
 import Dashboard from '@/pages/Dashboard';
 import SessionNew from '@/pages/SessionNew';
 import SessionActive from '@/pages/SessionActive';
+import SessionReview from '@/pages/SessionReview';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -40,7 +41,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Dashboard /> },
       { path: 'session/new', element: <SessionNew /> },
       { path: 'session/:id/solve', element: <SessionActive /> },
-      { path: 'session/:id/review', element: <Pending step="S13" /> },
+      { path: 'session/:id/review', element: <SessionReview /> },
       { path: 'journal', element: <Pending step="S14" /> },
       { path: 'patterns', element: <Pending step="S15" /> },
       { path: 'reattempts', element: <Pending step="S16" /> },
