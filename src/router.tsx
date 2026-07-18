@@ -20,6 +20,7 @@ import Log from '@/pages/Log';
 import DoubtChat from '@/pages/DoubtChat';
 import Triangulate from '@/pages/Triangulate';
 import Formulas from '@/pages/Formulas';
+import TriggerDrill from '@/pages/TriggerDrill';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -61,7 +62,7 @@ export const router = createBrowserRouter([
       { path: 'calibration', element: <Calibration /> },
       { path: 'doubt', element: <DoubtChat /> },
       { path: 'triangulate', element: <Triangulate /> },
-      { path: 'trigger-drill', element: <Pending step="S24" /> },
+      { path: 'trigger-drill', element: <TriggerDrill /> },
       { path: 'formulas', element: <Formulas /> },
       { path: 'buddy', element: <Pending step="S29" /> },
       { path: 'settings', element: <Pending step="S39" /> }
