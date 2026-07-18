@@ -266,9 +266,28 @@ export async function requestPinReset(input: PinResetInput): Promise<{ ok: true 
   return { ok: false, status: res.status, error: body?.error ?? `reset ${res.status}` };
 }
 
+export type BuddyRequestStatus =
+  | 'sent'
+  | 'new'
+  | 'reopened'
+  | 'already_pending'
+  | 'active'
+  | 'cooldown'
+  | 'rate_limit'
+  | 'self'
+  | 'no_such_user'
+  | 'invalid_username';
+
+export interface BuddyRequestOk {
+  ok: true;
+  exists: boolean;
+  status: BuddyRequestStatus;
+  created: boolean;
+}
+
 export async function sendBuddyRequest(
   username: string
-): Promise<{ ok: true } | EdgeError> {
+): Promise<BuddyRequestOk | EdgeError> {
   const jwt = await currentJwt();
   if (!jwt) return { ok: false, status: 401, error: 'Sign in first.' };
   const res = await fetch(`${functionsBase()}/buddy-request`, {
@@ -279,8 +298,17 @@ export async function sendBuddyRequest(
     },
     body: JSON.stringify({ username })
   }).catch((e) => new Response(JSON.stringify({ error: (e as Error).message }), { status: 0 }));
-  const body = (await readJson(res)) as { ok?: boolean; error?: string } | null;
-  if (res.ok && body?.ok) return { ok: true };
+  const body = (await readJson(res)) as
+    | { ok?: boolean; exists?: boolean; status?: BuddyRequestStatus; created?: boolean; error?: string }
+    | null;
+  if (res.ok && body?.ok) {
+    return {
+      ok: true,
+      exists: !!body.exists,
+      status: (body.status ?? 'sent') as BuddyRequestStatus,
+      created: !!body.created
+    };
+  }
   return {
     ok: false,
     status: res.status,

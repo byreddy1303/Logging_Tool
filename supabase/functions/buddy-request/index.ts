@@ -41,21 +41,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch {
     return json({ error: 'invalid json' }, 400);
   }
-  const uname = (body.username ?? '').trim().toLowerCase();
+  const uname = (body.username ?? '').trim().toLowerCase().replace(/^@+/, '');
   if (!USERNAME_RE.test(uname)) {
-    // Match the anti-enumeration contract: always ok, quietly no-op.
-    return json({ ok: true });
+    return json({ ok: true, exists: false, status: 'invalid_username' });
   }
 
   const { data: targetId } = await admin.rpc('find_user_id_by_username', { uname });
   const target = typeof targetId === 'string' ? targetId : null;
-  if (!target) return json({ ok: true });
+  if (!target) {
+    return json({ ok: true, exists: false, status: 'no_such_user' });
+  }
+  if (target === me) {
+    return json({ ok: true, exists: true, status: 'self' });
+  }
 
   const { data: rpcRes, error: rpcErr } = await admin.rpc('send_buddy_request', {
     requester: me,
     target
   });
-  if (rpcErr) return json({ ok: true }); // never leak
+  if (rpcErr) return json({ ok: false, error: rpcErr.message }, 500);
   const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
 
   // Notify the recipient (best-effort; failure is not fatal).
@@ -87,5 +91,5 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
   }
 
-  return json({ ok: true });
+  return json({ ok: true, exists: true, status: row?.reason ?? 'sent', created: !!row?.created });
 });

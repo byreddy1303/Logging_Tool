@@ -11,7 +11,6 @@ import { Check, RefreshCcw, Search, X } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Empty } from '@/components/ui/Empty';
 import BuddyChat from '@/components/buddy/BuddyChat';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
@@ -92,63 +91,49 @@ export default function Buddy() {
 
   async function onSendRequest(e: FormEvent) {
     e.preventDefault();
-    const cleaned = uname.trim().toLowerCase();
+    const cleaned = uname.trim().toLowerCase().replace(/^@+/, '');
     if (!USERNAME_RE.test(cleaned)) {
       pushToast('Enter a valid username (3–32 lowercase letters/digits/_).', 'neutral');
       return;
     }
-    if (cleaned === '') return;
-
-    const beforeIds = new Set(buddies.map((b) => b.row.id));
     setSending(true);
     const res = await sendBuddyRequest(cleaned);
+    setSending(false);
     if (!('ok' in res && res.ok)) {
-      setSending(false);
       pushToast(res.error, 'neutral');
       return;
     }
-    // Give Postgres a beat to commit, then check if we now have a new row
-    // to that peer. If yes → the target exists. Otherwise it silently
-    // no-ops (peer doesn't exist / already paired / rate-limited).
-    await new Promise((r) => setTimeout(r, 400));
-    await reload();
-    setSending(false);
-
-    // Re-read latest state (setState is async; but reload updated `buddies`
-    // via setBuddies — read from ref-free ref by fetching again quickly).
-    const { data: recent } = await supabase
-      .from('buddies')
-      .select('id, requested_by, user_a, user_b, status, created_at')
-      .or(`user_a.eq.${userId},user_b.eq.${userId}`)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    const added = ((recent as { id: string }[]) ?? []).find((r) => !beforeIds.has(r.id));
-    if (added) {
-      pushToast(`Request sent to @${cleaned}. They'll see it next time they open the app.`, 'success');
-    } else {
-      // Either the peer doesn't exist, already paired, rate limited, or
-      // cooldown. We can't tell (anti-enumeration) — but if the row already
-      // exists locally we can be more precise.
-      const existing = buddies.find(
-        (b) => b.peer?.username?.toLowerCase() === cleaned
-      );
-      if (existing) {
-        pushToast(
-          existing.row.status === 'active'
-            ? `@${cleaned} is already your active buddy.`
-            : existing.row.status === 'pending'
-              ? `Already pending with @${cleaned}.`
-              : `Paused with @${cleaned}. Try again after 24 h.`,
-          'neutral'
-        );
-      } else {
-        pushToast(
-          `No visible request created. If @${cleaned} exists, they may already be paired with someone else, or you've hit today's request limit.`,
-          'neutral'
-        );
-      }
+    switch (res.status) {
+      case 'no_such_user':
+        pushToast(`No user with username @${cleaned}. Check the spelling.`, 'neutral');
+        return;
+      case 'invalid_username':
+        pushToast('Usernames are 3–32 characters, lowercase letters/digits/underscore.', 'neutral');
+        return;
+      case 'self':
+        pushToast("That's you.", 'neutral');
+        return;
+      case 'rate_limit':
+        pushToast('You have hit the daily request limit. Try again tomorrow.', 'neutral');
+        return;
+      case 'cooldown':
+        pushToast(`@${cleaned} recently declined. You can re-request after 24 hours.`, 'neutral');
+        return;
+      case 'already_pending':
+        pushToast(`You already have a pending request to @${cleaned}.`, 'neutral');
+        break;
+      case 'active':
+        pushToast(`@${cleaned} is already your active buddy.`, 'neutral');
+        break;
+      case 'new':
+      case 'reopened':
+      case 'sent':
+      default:
+        pushToast(`Request sent to @${cleaned}. They will see it next time they open the app.`, 'success');
+        break;
     }
     setUname('');
+    void reload();
   }
 
   async function onRespond(bId: string, action: 'accept' | 'decline') {
@@ -274,21 +259,28 @@ export default function Buddy() {
                   <label htmlFor="b-uname" className="u-label mb-1 block">
                     Their username
                   </label>
-                  <Input
-                    id="b-uname"
-                    placeholder="rank_notebook"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    maxLength={32}
-                    value={uname}
-                    onChange={(e) =>
-                      setUname(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
-                    }
-                    disabled={sending}
-                  />
+                  <div className="flex h-10 items-stretch overflow-hidden rounded border border-border bg-bg-raised transition-[border-color,box-shadow] focus-within:border-accent focus-within:shadow-[0_0_0_3px_theme(colors.accent.faint)]">
+                    <span className="flex select-none items-center border-r border-border bg-bg-overlay/60 px-3 font-display text-[14px] font-semibold text-text-muted">
+                      @
+                    </span>
+                    <input
+                      id="b-uname"
+                      type="text"
+                      placeholder="rank_notebook"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      maxLength={32}
+                      value={uname}
+                      onChange={(e) =>
+                        setUname(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
+                      }
+                      disabled={sending}
+                      className="block flex-1 bg-transparent px-3 text-[13.5px] text-text placeholder:text-text-faint focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    />
+                  </div>
                   <p className="mt-1 text-[11px] text-text-faint">
-                    Exact match only. You'll always see the same "sent" message — the app
-                    never reveals whether a username exists.
+                    Exact match — usernames are case-insensitive.
                   </p>
                 </div>
                 <Button type="submit" variant="primary" disabled={sending || uname.length < 3}>

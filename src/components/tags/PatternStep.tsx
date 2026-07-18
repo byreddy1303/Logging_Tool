@@ -116,6 +116,33 @@ export default function PatternStep({
           <span className="u-highlight ml-1 text-[13px] font-medium text-text">{text.trim()}</span>
         </p>
       )}
+      <details className="rounded border border-border/70 bg-bg-overlay/40 px-3 py-2 text-[12px] text-text-muted">
+        <summary className="cursor-pointer font-medium text-text-muted">
+          What makes a good pattern name?
+        </summary>
+        <ul className="mt-2 flex flex-col gap-1.5 pl-4 leading-relaxed">
+          <li>
+            <span className="font-medium text-text">Name the trick, not the topic.</span>
+            &nbsp;"pigeonhole on remainders" beats "combinatorics".
+          </li>
+          <li>
+            <span className="font-medium text-text">Reusable across questions.</span>
+            &nbsp;Ask: would this name fit another problem where the same idea unlocks it? If yes, it's a pattern.
+          </li>
+          <li>
+            <span className="font-medium text-text">3–5 words, lowercase.</span>
+            &nbsp;"invariant under XOR", "Chinese remainder on mod 4/9", "cut on articulation vertex".
+          </li>
+          <li>
+            <span className="font-medium text-text">Avoid outcomes.</span>
+            &nbsp;Don't write "silly mistake" or "forgot formula" — that's a <em>root cause</em>, comes later.
+          </li>
+          <li>
+            <span className="font-medium text-text">Suggestions above are yours.</span>
+            &nbsp;Reuse them so the count grows; the pattern surfaces in the Heatmap.
+          </li>
+        </ul>
+      </details>
       <div className="flex items-center justify-between">
         <p className="text-[12px] text-text-faint">
           3–5 words naming the reusable trick. Enter saves · empty skips.
