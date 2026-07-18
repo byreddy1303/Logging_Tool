@@ -25,6 +25,7 @@ export interface UserRow {
   id: string;
   name: string;
   email: string;
+  username: string;
   exam_date: string;
   target_rank: number;
   sadhana_practice: boolean;

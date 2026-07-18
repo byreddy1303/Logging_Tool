@@ -1,12 +1,26 @@
+// Auth store — username + PIN model (2026-07-18).
+// Signup goes through the signup-via-invite edge fn (validates invite +
+// creates auth user + stamps username). Login goes through the login edge fn
+// (server-side username→email resolve + password grant → session tokens).
+// Google OAuth and magic-link are gone.
 import { create } from 'zustand';
 import type { User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
 import { db } from '@/lib/db';
 import { wipeLocalState } from '@/lib/isolation';
+import { loginWithUsernamePin, signupViaInvite } from '@/lib/edge';
 import type { UserRow } from '@/types';
 import { EXAM_DATE_DEFAULT } from '@/lib/constants';
 
 export type AuthStatus = 'loading' | 'signed_out' | 'signed_in';
+
+export interface SignupPayload {
+  username: string;
+  pin: string;
+  email?: string;
+  name?: string;
+  invite_token?: string;
+}
 
 interface AuthState {
   status: AuthStatus;
@@ -15,8 +29,8 @@ interface AuthState {
   /** True when running without Supabase env in dev ("local sandbox"). */
   sandbox: boolean;
   init: () => void;
-  signInWithEmail: (email: string, inviteToken?: string) => Promise<{ error?: string }>;
-  signInWithGoogle: () => Promise<{ error?: string }>;
+  signIn: (username: string, pin: string) => Promise<{ error?: string }>;
+  signUp: (payload: SignupPayload) => Promise<{ error?: string }>;
   enterSandbox: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -32,6 +46,7 @@ const SANDBOX_PROFILE: UserRow = {
   id: '00000000-0000-4000-8000-00000000dev0',
   name: 'Sandbox',
   email: 'sandbox@local',
+  username: 'sandbox',
   exam_date: EXAM_DATE_DEFAULT,
   target_rank: 100,
   sadhana_practice: false,
@@ -52,8 +67,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     initialized = true;
 
     if (!supabaseConfigured) {
-      // Resume a previous sandbox session if one exists. Prefer any saved
-      // profile overrides so Settings edits round-trip even offline.
       db.meta.get('sandbox').then(async (row) => {
         if (row?.value) {
           const stored = (await db.meta.get('sandbox_profile'))?.value as UserRow | undefined;
@@ -90,24 +103,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!error && data) set({ profile: data as UserRow });
   },
 
-  signInWithEmail: async (email, inviteToken) => {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: window.location.origin,
-        shouldCreateUser: true,
-        data: inviteToken ? { invite_token: inviteToken } : undefined
-      }
+  signIn: async (username, pin) => {
+    const res = await loginWithUsernamePin({ username, pin });
+    if (!('ok' in res) || !res.ok) return { error: res.error };
+    // Hand the tokens to the Supabase client so future calls carry the JWT.
+    const { error } = await supabase.auth.setSession({
+      access_token: res.access_token,
+      refresh_token: res.refresh_token
     });
-    return error ? { error: error.message } : {};
+    if (error) return { error: error.message };
+    await get().refreshProfile();
+    return {};
   },
 
-  signInWithGoogle: async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin }
+  signUp: async (payload) => {
+    const res = await signupViaInvite(payload);
+    if (!('ok' in res) || !res.ok) return { error: res.error };
+    // Sign in immediately with the same credentials so the user lands
+    // straight on the dashboard.
+    const login = await loginWithUsernamePin({
+      username: payload.username,
+      pin: payload.pin
     });
-    return error ? { error: error.message } : {};
+    if (!('ok' in login) || !login.ok) return { error: login.error };
+    const { error } = await supabase.auth.setSession({
+      access_token: login.access_token,
+      refresh_token: login.refresh_token
+    });
+    if (error) return { error: error.message };
+    await get().refreshProfile();
+    return {};
   },
 
   enterSandbox: async () => {
@@ -131,7 +156,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { profile, sandbox, user } = get();
     if (!profile) return { error: 'no profile loaded' };
     const merged: UserRow = { ...profile, ...patch };
-    // Sandbox: persist to Dexie meta so the change survives reloads.
     if (sandbox) {
       await db.meta.put({ key: 'sandbox_profile', value: merged });
       set({ profile: merged });

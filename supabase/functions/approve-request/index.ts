@@ -59,7 +59,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!row) return json({ error: 'no row returned' }, 500);
 
   const base = APP_URL ? APP_URL.replace(/\/$/, '') : new URL(req.url).origin;
-  const inviteUrl = `${base}/auth?invite=${encodeURIComponent(row.invite_token)}`;
+  const inviteUrl = `${base}/signup?invite=${encodeURIComponent(row.invite_token)}`;
   const { subject, html } = inviteApproved({
     name: row.requester_name,
     inviteUrl,

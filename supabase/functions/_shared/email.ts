@@ -145,6 +145,27 @@ export function inviteApproved(args: {
   };
 }
 
+export function pinResetRequested(args: {
+  name: string;
+  resetUrl: string;
+  ttlHours: number;
+}): { subject: string; html: string } {
+  const inner = `
+    <p style="margin:0 0 8px 0;font-size:17px;font-weight:600;">Reset your PIN, ${escape(args.name.split(' ')[0] || args.name)}.</p>
+    <p style="margin:0 0 20px 0;color:#665D7E;">Someone requested a PIN reset for your AIR Journal account. If that was you, click below to set a new 6-digit PIN.</p>
+    <p style="margin:0 0 22px 0;">
+      <a href="${escape(args.resetUrl)}" style="display:inline-block;padding:12px 22px;background:#E14B32;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px;">Set a new PIN</a>
+    </p>
+    <p style="margin:0 0 8px 0;font-size:12.5px;color:#665D7E;">Or paste this link into your browser:</p>
+    <p style="margin:0 0 22px 0;font-size:12px;color:#241E35;word-break:break-all;background:#F2ECDD;padding:10px 12px;border-radius:8px;">${escape(args.resetUrl)}</p>
+    <p style="margin:0;font-size:12.5px;color:#9C94AF;">This link expires in ${args.ttlHours} hour${args.ttlHours === 1 ? '' : 's'}. If you didn't request a reset, ignore this email — your PIN stays the same.</p>
+  `;
+  return {
+    subject: 'Reset your AIR Journal PIN',
+    html: shell(inner)
+  };
+}
+
 export function inviteDeclined(args: {
   name: string;
   reason?: string | null;

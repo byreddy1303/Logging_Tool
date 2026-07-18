@@ -1,47 +1,67 @@
+// /auth — Username + PIN login.
+// The signup + Google + magic-link paths are gone; the only entry into an
+// account is username + PIN. Outsiders get pushed to /request-access, and
+// the very first user (bootstrap) can jump to /signup with no invite token.
 import { useState, type FormEvent } from 'react';
-import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
+import { motion } from 'motion/react';
 import { useAuthStore } from '@/stores/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { supabaseConfigured } from '@/lib/supabase';
 import { EXAM_DATE_DEFAULT } from '@/lib/constants';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import PinInput from '@/components/auth/PinInput';
 
-type SendState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'error'; message: string };
+type SubmitState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'error'; message: string };
 
 export default function Auth() {
   const { status } = useAuth();
-  const [params] = useSearchParams();
-  const invite = params.get('invite') ?? undefined;
-  const signInWithEmail = useAuthStore((s) => s.signInWithEmail);
-  const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
+  const signIn = useAuthStore((s) => s.signIn);
   const enterSandbox = useAuthStore((s) => s.enterSandbox);
+  const navigate = useNavigate();
 
-  const [email, setEmail] = useState('');
-  const [send, setSend] = useState<SendState>({ kind: 'idle' });
+  const [username, setUsername] = useState('');
+  const [pin, setPin] = useState('');
+  const [state, setState] = useState<SubmitState>({ kind: 'idle' });
 
   if (status === 'signed_in') return <Navigate to="/" replace />;
 
   const daysLeft = differenceInCalendarDays(parseISO(EXAM_DATE_DEFAULT), new Date());
+  const cleanedUsername = username.trim().toLowerCase();
+  const canSubmit =
+    state.kind !== 'sending' &&
+    /^[a-z0-9_]{3,32}$/.test(cleanedUsername) &&
+    /^\d{6}$/.test(pin);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!email || send.kind === 'sending') return;
-    setSend({ kind: 'sending' });
-    const { error } = await signInWithEmail(email.trim(), invite);
-    setSend(error ? { kind: 'error', message: error } : { kind: 'sent' });
+    if (!canSubmit) return;
+    setState({ kind: 'sending' });
+    const { error } = await signIn(cleanedUsername, pin);
+    if (error) {
+      setState({ kind: 'error', message: error });
+      setPin('');
+      return;
+    }
+    navigate('/', { replace: true });
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col">
+    <div className="relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
         <span className="u-label text-text-muted">AIR Journal</span>
         <span className="u-label">invite-only</span>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 py-8">
-        <div className="u-panel relative w-full max-w-[380px] p-8">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: 'easeOut' }}
+          className="u-panel relative w-full max-w-[400px] p-8"
+        >
           <span className="u-stamp absolute right-6 top-7">gate 2027</span>
 
           <div className="u-margin-line">
@@ -50,81 +70,81 @@ export default function Auth() {
             </h1>
             <p className="u-label mt-2">the rank notebook</p>
             <p className="mt-4 text-[13.5px] leading-relaxed text-text-muted">
-              Every solved question becomes data.{' '}
-              <span className="u-highlight font-medium text-text">
-                Compress your mistake surface.
-              </span>
+              Sign in with your{' '}
+              <span className="u-highlight font-medium text-text">username and PIN</span>.
             </p>
           </div>
 
           <div className="u-rule my-6" />
 
-          {invite && (
-            <div className="mb-6 rounded border border-accent/30 bg-accent-faint/60 px-3 py-2">
-              <p className="u-label text-accent">invite detected</p>
-              <p className="u-num mt-1 truncate text-xs text-text-muted">{invite}</p>
-              <p className="mt-1 text-xs text-text-faint">
-                Sending the link will create your account with this invite.
-              </p>
-            </div>
-          )}
-
-          {!invite && supabaseConfigured && (
-            <div className="mb-6 rounded border border-border bg-bg-overlay/40 px-3 py-2.5">
-              <p className="text-[12.5px] leading-relaxed text-text-muted">
-                No invite yet?{' '}
-                <Link to="/request-access" className="font-medium text-accent hover:underline">
-                  Ask for one
-                </Link>
-                .
-              </p>
-            </div>
-          )}
-
           {supabaseConfigured ? (
             <>
-              <form onSubmit={onSubmit}>
-                <label htmlFor="email" className="u-label block">
-                  Email
+              <form onSubmit={onSubmit} noValidate>
+                <label htmlFor="username" className="u-label block">
+                  Username
                 </label>
                 <Input
-                  id="email"
-                  type="email"
-                  required
-                  autoComplete="email"
+                  id="username"
+                  type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
                   spellCheck={false}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="your_handle"
                   className="mt-2"
+                  disabled={state.kind === 'sending'}
                 />
+
+                <label htmlFor="pin" className="u-label mt-4 block">
+                  6-digit PIN
+                </label>
+                <div className="mt-2">
+                  <PinInput
+                    id="pin"
+                    value={pin}
+                    onChange={setPin}
+                    disabled={state.kind === 'sending'}
+                    autoFocus={false}
+                  />
+                </div>
+
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={send.kind === 'sending'}
-                  className="mt-4 w-full"
+                  disabled={!canSubmit}
+                  className="mt-6 w-full"
                 >
-                  {send.kind === 'sending' ? 'Sending link…' : 'Send magic link'}
+                  {state.kind === 'sending' ? 'Signing in…' : 'Sign in'}
                 </Button>
               </form>
 
-              <div className="my-6 flex items-center gap-3">
-                <div className="u-rule flex-1" />
-                <span className="u-label">or</span>
-                <div className="u-rule flex-1" />
+              <div className="mt-4 min-h-[18px]" aria-live="polite">
+                {state.kind === 'error' && (
+                  <p className="text-xs font-medium text-danger">{state.message}</p>
+                )}
               </div>
 
-              <Button type="button" onClick={() => void signInWithGoogle()} className="w-full">
-                Continue with Google
-              </Button>
-
-              <div className="mt-6 min-h-[18px]" aria-live="polite">
-                {send.kind === 'sent' && (
-                  <p className="text-xs font-medium text-success">Link sent — check your inbox.</p>
-                )}
-                {send.kind === 'error' && (
-                  <p className="text-xs font-medium text-danger">{send.message}</p>
-                )}
+              <div className="mt-6 flex flex-col gap-2 border-t border-border pt-5 text-[12.5px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted">Forgot your PIN?</span>
+                  <Link to="/forgot-pin" className="font-medium text-accent hover:underline">
+                    Reset with email
+                  </Link>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted">No invite yet?</span>
+                  <Link to="/request-access" className="font-medium text-accent hover:underline">
+                    Ask for one
+                  </Link>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted">First-time owner setup?</span>
+                  <Link to="/signup" className="font-medium text-accent hover:underline">
+                    Bootstrap
+                  </Link>
+                </div>
               </div>
             </>
           ) : (
@@ -145,7 +165,7 @@ export default function Auth() {
               )}
             </div>
           )}
-        </div>
+        </motion.div>
       </main>
 
       <footer className="flex items-center justify-between px-6 py-4">

@@ -178,3 +178,110 @@ export async function fetchWeeklyInsight(
 export function isEdgeError(x: unknown): x is EdgeError {
   return typeof x === 'object' && x !== null && (x as { ok?: boolean }).ok === false;
 }
+
+// -------- Auth flow: username + PIN ---------------------------------------
+
+export interface SignupInput {
+  username: string;
+  pin: string;
+  email?: string;
+  name?: string;
+  invite_token?: string;
+}
+
+export interface SignupOk {
+  ok: true;
+  user_id: string;
+  email: string;
+  bootstrap: boolean;
+}
+
+export async function signupViaInvite(input: SignupInput): Promise<SignupOk | EdgeError> {
+  const key = anonKey();
+  if (!key) return { ok: false, status: 0, error: 'Supabase is not configured yet.' };
+  const res = await fetch(`${functionsBase()}/signup-via-invite`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+      apikey: key
+    },
+    body: JSON.stringify(input)
+  }).catch((e) => new Response(JSON.stringify({ error: (e as Error).message }), { status: 0 }));
+  const body = (await readJson(res)) as { ok?: boolean; user_id?: string; email?: string; bootstrap?: boolean; error?: string } | null;
+  if (res.ok && body?.ok && body.user_id && body.email) {
+    return { ok: true, user_id: body.user_id, email: body.email, bootstrap: !!body.bootstrap };
+  }
+  return { ok: false, status: res.status, error: body?.error ?? `signup ${res.status}` };
+}
+
+export interface LoginInput {
+  username: string;
+  pin: string;
+}
+
+export interface LoginOk {
+  ok: true;
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+  token_type: string;
+  user: { id?: string; email?: string };
+}
+
+export async function loginWithUsernamePin(input: LoginInput): Promise<LoginOk | EdgeError> {
+  const key = anonKey();
+  if (!key) return { ok: false, status: 0, error: 'Supabase is not configured yet.' };
+  const res = await fetch(`${functionsBase()}/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+      apikey: key
+    },
+    body: JSON.stringify(input)
+  }).catch((e) => new Response(JSON.stringify({ error: (e as Error).message }), { status: 0 }));
+  const body = (await readJson(res)) as (LoginOk & { ok: true }) | { error?: string } | null;
+  if (res.ok && body && (body as LoginOk).ok) return body as LoginOk;
+  return { ok: false, status: res.status, error: (body as { error?: string })?.error ?? `login ${res.status}` };
+}
+
+export interface PinResetInput {
+  username: string;
+}
+
+export async function requestPinReset(input: PinResetInput): Promise<{ ok: true } | EdgeError> {
+  const key = anonKey();
+  if (!key) return { ok: false, status: 0, error: 'Supabase is not configured yet.' };
+  const res = await fetch(`${functionsBase()}/request-pin-reset`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+      apikey: key
+    },
+    body: JSON.stringify(input)
+  }).catch((e) => new Response(JSON.stringify({ error: (e as Error).message }), { status: 0 }));
+  const body = (await readJson(res)) as { ok?: boolean; error?: string } | null;
+  if (res.ok && body?.ok) return { ok: true };
+  return { ok: false, status: res.status, error: body?.error ?? `reset ${res.status}` };
+}
+
+/** Optional client-side check before submitting the signup form. */
+export async function isUsernameAvailable(username: string): Promise<boolean> {
+  const key = anonKey();
+  if (!key) return true;
+  const url = `${functionsBase().replace('/functions/v1', '')}/rest/v1/rpc/is_username_available`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+      apikey: key
+    },
+    body: JSON.stringify({ uname: username })
+  }).catch(() => null);
+  if (!res || !res.ok) return true; // fail-open: signup will reject if actually taken
+  const val = (await res.json().catch(() => null)) as unknown;
+  return val === true;
+}
