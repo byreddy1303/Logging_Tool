@@ -1,14 +1,18 @@
-// Shared Resend transport + three transactional email templates:
-//   - newRequestNotification (owner receives when someone asks for access)
-//   - inviteApproved         (requester receives with invite link)
-//   - inviteDeclined         (requester receives polite decline)
+// Shared mail transport + transactional templates.
 //
-// All templates are inline-styled HTML so they render in every mail client
-// without CSS dropping. Copy is aligned with the sunlit-notebook aesthetic:
-// warm paper, ink-only, vermilion accent, no emojis (BUILD §2.7).
+// Provider preference (first configured wins):
+//   1. Gmail SMTP  — GMAIL_USER + GMAIL_APP_PASSWORD (unlimited recipients)
+//   2. Resend      — RESEND_API_KEY + MAIL_FROM (sandbox: owner only)
+//
+// The Resend onboarding sandbox refuses to deliver to any address other than
+// the account owner's verified email. That's fine for owner-notify but breaks
+// invite-approved / decline / PIN-reset mails to third parties. Gmail SMTP
+// via an App Password works from any Gmail account to any recipient.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const Deno: any;
+
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
@@ -22,10 +26,54 @@ export interface SendEmailInput {
 export interface SendEmailResult {
   ok: boolean;
   id?: string;
+  provider?: 'gmail' | 'resend';
   error?: string;
 }
 
-export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
+function normalizeFrom(raw: string, fallbackAddr: string): { from: string; addr: string } {
+  // Accepts "Name <addr@x>" or "addr@x". Falls back to the plain address if
+  // the header is missing so denomailer's From: is always something legal.
+  const trimmed = raw.trim();
+  const m = trimmed.match(/<([^>]+)>/);
+  if (m) return { from: trimmed, addr: m[1] };
+  if (trimmed.includes('@')) return { from: `AIR Journal <${trimmed}>`, addr: trimmed };
+  return { from: `AIR Journal <${fallbackAddr}>`, addr: fallbackAddr };
+}
+
+async function sendViaGmail(input: SendEmailInput): Promise<SendEmailResult> {
+  const user = Deno.env.get('GMAIL_USER');
+  const pass = Deno.env.get('GMAIL_APP_PASSWORD');
+  if (!user || !pass) return { ok: false, error: 'gmail not configured' };
+  const fromHeader = Deno.env.get('MAIL_FROM') || `AIR Journal <${user}>`;
+  const { from } = normalizeFrom(fromHeader, user);
+
+  const client = new SMTPClient({
+    connection: {
+      hostname: 'smtp.gmail.com',
+      port: 465,
+      tls: true,
+      auth: { username: user, password: pass }
+    }
+  });
+
+  try {
+    await client.send({
+      from,
+      to: input.to,
+      subject: input.subject,
+      content: 'This email is best viewed in an HTML-capable client.',
+      html: input.html,
+      replyTo: input.reply_to
+    });
+    return { ok: true, provider: 'gmail' };
+  } catch (e) {
+    return { ok: false, provider: 'gmail', error: (e as Error).message.slice(0, 200) };
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
+async function sendViaResend(input: SendEmailInput): Promise<SendEmailResult> {
   const apiKey = Deno.env.get('RESEND_API_KEY');
   const from = Deno.env.get('MAIL_FROM');
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY not set' };
@@ -48,10 +96,23 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    return { ok: false, error: `resend ${res.status}: ${text.slice(0, 200)}` };
+    return { ok: false, provider: 'resend', error: `resend ${res.status}: ${text.slice(0, 200)}` };
   }
   const data = (await res.json().catch(() => ({}))) as { id?: string };
-  return { ok: true, id: data.id };
+  return { ok: true, provider: 'resend', id: data.id };
+}
+
+export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
+  // Gmail SMTP first if credentials are present — it's the one that
+  // actually delivers to arbitrary recipients right now.
+  if (Deno.env.get('GMAIL_USER') && Deno.env.get('GMAIL_APP_PASSWORD')) {
+    const g = await sendViaGmail(input);
+    if (g.ok) return g;
+    // Fall through to Resend as a fallback so a Gmail hiccup doesn't kill
+    // owner-notify mail (which Resend can still handle).
+    console.warn('[email] gmail send failed, falling back to resend:', g.error);
+  }
+  return sendViaResend(input);
 }
 
 // ---------- Shared layout ---------- //

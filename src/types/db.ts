@@ -186,6 +186,35 @@ export interface BuddyRow {
   created_at: string;
 }
 
+/** Payload used for kind='question' messages.
+ * Deliberately excludes outcome, pattern, notes, root_cause — anything that
+ * reveals the sender's analysis. Only the raw question metadata + optional
+ * image. */
+export interface SharedQuestionRef {
+  subject: string;
+  subtopic: string | null;
+  question_text: string | null;
+  image_url: string | null;
+  source_ref: string | null;
+  source_year: number | null;
+  target_time_sec: number;
+  /** Optional sender's original question row id — for click-through if the
+   *  recipient wants to reply with their own version. Never used to fetch
+   *  analysis. */
+  origin_question_id: string | null;
+}
+
+export interface BuddyMessageRow {
+  id: string;
+  buddy_id: string;
+  sender_id: string;
+  kind: 'text' | 'question';
+  body: string | null;
+  question_ref: SharedQuestionRef | null;
+  created_at: string;
+  read_at: string | null;
+}
+
 export interface SharedInsightRow {
   id: string;
   user_id: string;
