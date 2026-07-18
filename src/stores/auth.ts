@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import type { User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
-import { db, clearLocalData } from '@/lib/db';
+import { db } from '@/lib/db';
+import { wipeLocalState } from '@/lib/isolation';
 import type { UserRow } from '@/types';
 import { EXAM_DATE_DEFAULT } from '@/lib/constants';
 
@@ -117,12 +118,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signOut: async () => {
     if (get().sandbox) {
-      await clearLocalData();
+      await wipeLocalState();
       set({ status: 'signed_out', profile: null, sandbox: false, user: null });
       return;
     }
     await supabase.auth.signOut();
-    await clearLocalData();
+    await wipeLocalState();
     set({ status: 'signed_out', profile: null, user: null });
   },
 
