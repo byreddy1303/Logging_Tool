@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# scripts/deploy.sh — One-shot production deploy for AIR Journal backend.
+#
+# Prerequisites (do these once, in a browser):
+#   1. Sign up on Supabase (https://supabase.com) and create a project.
+#      Note the "Project Reference" — you can find it in Settings → General
+#      or in the URL of your project dashboard.
+#   2. Sign up on Resend (https://resend.com) and grab the API key.
+#      Optional but recommended: verify a sending domain so invite mails
+#      can go to third parties.
+#   3. Sign up on Groq / Gemini / OpenRouter / Cerebras for LLM keys.
+#
+# Then:
+#   1. Populate .deploy.env in this repo root (already created for you).
+#   2. Run `supabase login` once — this opens a browser tab.
+#   3. Run `bash scripts/deploy.sh` from the repo root.
+#
+# This script is idempotent — you can run it again after tweaking .deploy.env
+# and it will re-apply the changes without breaking things.
+
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here"
+
+step() { printf '\n\033[1;35m▶ %s\033[0m\n' "$*"; }
+info() { printf '  \033[0;36m%s\033[0m\n' "$*"; }
+fail() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*"; exit 1; }
+ok()   { printf '  \033[1;32m✓ %s\033[0m\n' "$*"; }
+
+step "Load .deploy.env"
+[[ -f .deploy.env ]] || fail ".deploy.env is missing. Copy the template from README and fill in your secrets."
+set -a
+# shellcheck source=/dev/null
+source .deploy.env
+set +a
+ok "Loaded secrets"
+
+step "Sanity check secrets"
+for var in RESEND_API_KEY MAIL_FROM OWNER_EMAIL SUPABASE_PROJECT_REF; do
+  if [[ -z "${!var:-}" ]]; then
+    fail "$var is empty in .deploy.env — fill it in and retry."
+  fi
+done
+missing_llm=()
+for var in GROQ_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY CEREBRAS_API_KEY; do
+  [[ -z "${!var:-}" ]] && missing_llm+=("$var")
+done
+if [[ ${#missing_llm[@]} -gt 0 ]]; then
+  info "Warning: LLM keys missing: ${missing_llm[*]}"
+  info "         Doubt / triangulate / weekly-insight will fail until set."
+fi
+ok "Required secrets present"
+
+step "Check supabase CLI"
+command -v supabase >/dev/null 2>&1 || fail "supabase CLI not installed. Install: brew install supabase/tap/supabase"
+ok "supabase CLI: $(supabase --version)"
+
+step "Verify supabase login"
+if ! supabase projects list >/dev/null 2>&1; then
+  fail "You are not logged into Supabase. Run: supabase login  (opens a browser)"
+fi
+ok "Logged into Supabase"
+
+step "Link this repo to project $SUPABASE_PROJECT_REF"
+if [[ -f supabase/.temp/project-ref ]]; then
+  existing=$(cat supabase/.temp/project-ref)
+  if [[ "$existing" != "$SUPABASE_PROJECT_REF" ]]; then
+    info "Repo is linked to a different ref ($existing) — re-linking."
+    supabase link --project-ref "$SUPABASE_PROJECT_REF"
+  else
+    ok "Already linked."
+  fi
+else
+  supabase link --project-ref "$SUPABASE_PROJECT_REF"
+  ok "Linked."
+fi
+
+step "Apply migrations to remote"
+supabase db push
+ok "Schema is up to date"
+
+step "Deploy edge functions"
+functions=(
+  llm-router
+  schedule-reattempts
+  compute-readiness
+  request-access
+  approve-request
+  decline-request
+  weekly-insight
+)
+for fn in "${functions[@]}"; do
+  info "→ $fn"
+  supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+done
+ok "All 7 edge functions deployed"
+
+step "Set edge function secrets"
+# Only set variables that are non-empty. Supabase secrets set fails on an
+# empty value, and we already warned about missing LLM keys above.
+secret_args=()
+add_secret() {
+  local key="$1"
+  local val="${!key:-}"
+  [[ -n "$val" ]] && secret_args+=("$key=$val")
+}
+add_secret RESEND_API_KEY
+add_secret MAIL_FROM
+add_secret OWNER_EMAIL
+add_secret VITE_APP_URL
+add_secret GROQ_API_KEY
+add_secret GEMINI_API_KEY
+add_secret OPENROUTER_API_KEY
+add_secret CEREBRAS_API_KEY
+
+if [[ ${#secret_args[@]} -gt 0 ]]; then
+  supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" "${secret_args[@]}"
+  ok "Set ${#secret_args[@]} secrets"
+else
+  info "Nothing to set."
+fi
+
+step "Print production URLs"
+project_url="https://${SUPABASE_PROJECT_REF}.supabase.co"
+echo "  Supabase project:      $project_url"
+echo "  Functions gateway:     $project_url/functions/v1"
+echo "  Dashboard:             https://supabase.com/dashboard/project/${SUPABASE_PROJECT_REF}"
+
+step "Vercel frontend deploy (manual step)"
+cat <<EOF
+Vercel is not automated by this script because it needs an interactive
+browser login. To deploy the frontend:
+
+  1. Install the CLI:      npx vercel --version
+  2. Link this repo:       npx vercel link
+  3. Add env vars for prod (paste values from Supabase Dashboard → API):
+       npx vercel env add VITE_SUPABASE_URL production
+       npx vercel env add VITE_SUPABASE_ANON_KEY production
+       npx vercel env add VITE_APP_URL production
+  4. Ship it:              npx vercel --prod
+
+After the first Vercel deploy, come back and update .deploy.env with the
+resulting VITE_APP_URL, then re-run this script so invite mails carry the
+right base URL.
+EOF
+
+step "Done"
+ok "Backend is live. See README.md → 'Access flow (production)' for the walkthrough."

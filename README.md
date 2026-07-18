@@ -95,25 +95,26 @@ CI runs all five on every push to `main`.
 
 ## Deploy
 
-See [`DEPLOY.md`](./DEPLOY.md) for the full production checklist. Short version:
+Full walkthrough is in [`DEPLOY.md`](./DEPLOY.md). Short version — every backend CLI call is wrapped in one script:
 
 ```bash
-# Supabase
-npx supabase link --project-ref <ref>
-npx supabase db push
-npx supabase functions deploy llm-router schedule-reattempts compute-readiness \
-  request-access approve-request decline-request weekly-insight
-npx supabase secrets set \
-  GROQ_API_KEY=... GEMINI_API_KEY=... OPENROUTER_API_KEY=... CEREBRAS_API_KEY=... \
-  RESEND_API_KEY=... MAIL_FROM='AIR Journal <no-reply@yourdomain.com>' \
-  OWNER_EMAIL=you@yourdomain.com VITE_APP_URL=https://yourapp.vercel.app
-
-# Vercel
-vercel env add VITE_SUPABASE_URL production
-vercel env add VITE_SUPABASE_ANON_KEY production
-vercel env add VITE_APP_URL production
-vercel --prod
+# One-time: sign up on Supabase, Resend, and the four LLM providers.
+cp .deploy.env.example .deploy.env       # fill every value; .deploy.env is gitignored
+supabase login                           # interactive; opens a browser
+bash scripts/deploy.sh                   # links, pushes migrations, deploys 7 edge fns, sets secrets
 ```
+
+For the frontend, deploy the built app to Vercel:
+
+```bash
+npx vercel link
+npx vercel env add VITE_SUPABASE_URL production
+npx vercel env add VITE_SUPABASE_ANON_KEY production
+npx vercel env add VITE_APP_URL production
+npx vercel --prod
+```
+
+After the first Vercel deploy, put the resulting URL into `.deploy.env` as `VITE_APP_URL` and re-run `bash scripts/deploy.sh` so invite emails link to your real domain.
 
 ## License
 
