@@ -1,4 +1,9 @@
-// 1:1 chat between paired buddies. Real-time via Supabase postgres_changes.
+// 1:1 chat between paired buddies. Full-fledged realtime over Supabase's
+// websocket channel:
+//   - postgres_changes INSERT   → new messages appear live
+//   - postgres_changes UPDATE   → read receipts propagate
+//   - presence (track)          → online dot for the peer
+//   - broadcast('typing')       → typing indicator, debounced
 //
 // Message kinds:
 //   text     — plain text bubble
@@ -6,10 +11,10 @@
 //              sender's outcome, pattern, root cause, notes and any analysis.
 //              Only the raw question (source, format, prompt, image, target
 //              time). The recipient sees the question fresh, no bias.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { AnimatePresence, motion } from 'motion/react';
-import { Image as ImageIcon, Send, ArrowUp, X } from 'lucide-react';
+import { Check, CheckCheck, Image as ImageIcon, Send, ArrowUp, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { db } from '@/lib/db';
 import type {
@@ -26,11 +31,13 @@ import { cn } from '@/lib/utils';
 interface Props {
   buddyId: string;
   meId: string;
-  peer: Pick<UserRow, 'id' | 'name' | 'email'>;
+  peer: Pick<UserRow, 'id' | 'name' | 'email' | 'username'>;
 }
 
 const TEXT_LIMIT = 4000;
 const MSG_PAGE_SIZE = 200;
+const TYPING_INTERVAL_MS = 1500;
+const TYPING_TIMEOUT_MS = 3500;
 
 /** Strip a QuestionRow down to what's safe to send to a buddy. */
 function safeQuestionRef(q: QuestionRow): SharedQuestionRef {
@@ -46,6 +53,32 @@ function safeQuestionRef(q: QuestionRow): SharedQuestionRef {
   };
 }
 
+function displayName(peer: Props['peer']): string {
+  const nm = (peer?.name || '').trim();
+  if (nm) return nm;
+  const un = (peer?.username || '').trim();
+  if (un) return `@${un}`;
+  return 'Buddy';
+}
+
+function firstName(peer: Props['peer']): string {
+  const nm = (peer?.name || '').trim();
+  if (nm) return nm.split(/\s+/)[0];
+  const un = (peer?.username || '').trim();
+  return un || 'buddy';
+}
+
+/** Merge a batch of rows into the messages array by id, preserving sort. */
+function mergeMessages(prev: BuddyMessageRow[], rows: BuddyMessageRow[]): BuddyMessageRow[] {
+  if (rows.length === 0) return prev;
+  const byId = new Map<string, BuddyMessageRow>();
+  for (const m of prev) byId.set(m.id, m);
+  for (const m of rows) byId.set(m.id, m);
+  return Array.from(byId.values()).sort((a, b) =>
+    a.created_at.localeCompare(b.created_at)
+  );
+}
+
 export default function BuddyChat({ buddyId, meId, peer }: Props) {
   const [messages, setMessages] = useState<BuddyMessageRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,12 +86,18 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
   const [sending, setSending] = useState(false);
   const [picker, setPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [peerOnline, setPeerOnline] = useState(false);
+  const [peerTyping, setPeerTyping] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const initialLoad = useRef(true);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const lastSentTypingAt = useRef(0);
+  const peerTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initial fetch + realtime subscribe.
   useEffect(() => {
     let cancelled = false;
+
     async function load() {
       setLoading(true);
       const { data, error } = await supabase
@@ -79,8 +118,11 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
     }
     void load();
 
-    const channel: RealtimeChannel = supabase
-      .channel(`buddy_messages:${buddyId}`)
+    const channel: RealtimeChannel = supabase.channel(`buddy:${buddyId}`, {
+      config: { presence: { key: meId } }
+    });
+
+    channel
       .on(
         'postgres_changes',
         {
@@ -91,25 +133,85 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
         },
         (payload) => {
           const row = payload.new as BuddyMessageRow;
+          setMessages((prev) => mergeMessages(prev, [row]));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'buddy_messages',
+          filter: `buddy_id=eq.${buddyId}`
+        },
+        (payload) => {
+          const row = payload.new as BuddyMessageRow;
           setMessages((prev) =>
-            prev.some((m) => m.id === row.id) ? prev : [...prev, row]
+            prev.map((m) => (m.id === row.id ? { ...m, ...row } : m))
           );
         }
       )
-      .subscribe();
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        setPeerOnline(Object.keys(state).some((k) => k !== meId));
+      })
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        const p = payload.payload as { from?: string } | undefined;
+        if (!p?.from || p.from === meId) return;
+        setPeerTyping(true);
+        if (peerTypingTimer.current) clearTimeout(peerTypingTimer.current);
+        peerTypingTimer.current = setTimeout(
+          () => setPeerTyping(false),
+          TYPING_TIMEOUT_MS
+        );
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void channel.track({ user_id: meId, online_at: new Date().toISOString() });
+        }
+      });
+
+    channelRef.current = channel;
 
     return () => {
       cancelled = true;
+      if (peerTypingTimer.current) clearTimeout(peerTypingTimer.current);
+      channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [buddyId]);
+  }, [buddyId, meId]);
+
+  // Mark peer's unread messages as read whenever new ones arrive and we're
+  // looking at the chat. Read receipts propagate via the UPDATE subscription.
+  const markRead = useCallback(async () => {
+    const unreadIds = messages
+      .filter((m) => m.sender_id !== meId && m.read_at === null)
+      .map((m) => m.id);
+    if (unreadIds.length === 0) return;
+    const now = new Date().toISOString();
+    setMessages((prev) =>
+      prev.map((m) => (unreadIds.includes(m.id) ? { ...m, read_at: now } : m))
+    );
+    const { error } = await supabase
+      .from('buddy_messages')
+      .update({ read_at: now })
+      .in('id', unreadIds);
+    if (error) {
+      // Roll back the optimistic read-flag so the next attempt tries again.
+      setMessages((prev) =>
+        prev.map((m) => (unreadIds.includes(m.id) ? { ...m, read_at: null } : m))
+      );
+    }
+  }, [messages, meId]);
+
+  useEffect(() => {
+    if (!loading) void markRead();
+  }, [loading, markRead]);
 
   // Auto-scroll to bottom on new messages / initial load.
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    // On first load, jump. After that, only scroll if we were already near
-    // the bottom (so the user isn't yanked away while reading history).
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
     if (initialLoad.current || nearBottom) {
       el.scrollTop = el.scrollHeight;
@@ -117,11 +219,19 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
     if (!loading && messages.length > 0) initialLoad.current = false;
   }, [messages, loading]);
 
+  function broadcastTyping() {
+    const ch = channelRef.current;
+    if (!ch) return;
+    const now = Date.now();
+    if (now - lastSentTypingAt.current < TYPING_INTERVAL_MS) return;
+    lastSentTypingAt.current = now;
+    void ch.send({ type: 'broadcast', event: 'typing', payload: { from: meId } });
+  }
+
   async function sendText() {
     const body = draft.trim();
     if (!body || sending) return;
     setSending(true);
-    // Optimistic append.
     const optimistic: BuddyMessageRow = {
       id: crypto.randomUUID(),
       buddy_id: buddyId,
@@ -132,7 +242,7 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
       created_at: new Date().toISOString(),
       read_at: null
     };
-    setMessages((m) => [...m, optimistic]);
+    setMessages((m) => mergeMessages(m, [optimistic]));
     setDraft('');
     const { error } = await supabase.from('buddy_messages').insert({
       id: optimistic.id,
@@ -143,8 +253,6 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
     });
     setSending(false);
     if (error) {
-      // Roll back the optimistic message and re-populate the draft so the
-      // user can retry.
       setMessages((m) => m.filter((row) => row.id !== optimistic.id));
       setDraft(body);
       setError(error.message);
@@ -167,7 +275,7 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
       created_at: new Date().toISOString(),
       read_at: null
     };
-    setMessages((m) => [...m, optimistic]);
+    setMessages((m) => mergeMessages(m, [optimistic]));
     const { error } = await supabase.from('buddy_messages').insert({
       id: optimistic.id,
       buddy_id: buddyId,
@@ -183,16 +291,29 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
   }
 
   const grouped = useMemo(() => groupByDay(messages), [messages]);
+  const nameToShow = displayName(peer);
 
   return (
-    <div className="flex h-[540px] max-h-[70vh] min-h-[420px] flex-col overflow-hidden rounded-lg border border-border bg-bg-raised">
+    <div className="flex h-full min-h-[420px] flex-col overflow-hidden rounded-lg border border-border bg-bg-raised">
       <header className="flex items-center gap-3 border-b border-border px-4 py-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-cobalt/15 font-display text-[13px] font-bold text-ink-cobalt">
-          {(peer.name ?? '?')[0]?.toUpperCase()}
-        </span>
+        <div className="relative">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-cobalt/15 font-display text-[13px] font-bold text-ink-cobalt">
+            {(nameToShow.replace(/^@/, '') || '?')[0].toUpperCase()}
+          </span>
+          <span
+            className={cn(
+              'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-bg-raised',
+              peerOnline ? 'bg-success' : 'bg-border'
+            )}
+            aria-label={peerOnline ? 'Online' : 'Offline'}
+            title={peerOnline ? 'Online' : 'Offline'}
+          />
+        </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[14px] font-semibold text-text">{peer.name}</p>
-          <p className="u-num truncate text-[11px] text-text-faint">{peer.email}</p>
+          <p className="truncate text-[14px] font-semibold text-text">{nameToShow}</p>
+          <p className="u-num truncate text-[11px] text-text-faint">
+            {peerTyping ? 'typing…' : peer.username ? `@${peer.username}` : peer.email || ''}
+          </p>
         </div>
       </header>
 
@@ -234,6 +355,11 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
             ))}
           </ul>
         )}
+        {peerTyping && !loading && (
+          <div className="mt-3 flex items-center gap-2 text-[11.5px] text-text-faint">
+            <TypingDots /> {firstName(peer)} is typing…
+          </div>
+        )}
       </div>
 
       <div className="border-t border-border px-3 py-3">
@@ -261,14 +387,17 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
           <div className="flex-1">
             <textarea
               value={draft}
-              onChange={(e) => setDraft(e.target.value.slice(0, TEXT_LIMIT))}
+              onChange={(e) => {
+                setDraft(e.target.value.slice(0, TEXT_LIMIT));
+                if (e.target.value.length > 0) broadcastTyping();
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   void sendText();
                 }
               }}
-              placeholder={`Message ${peer.name.split(' ')[0] || peer.name}…`}
+              placeholder={`Message ${firstName(peer)}…`}
               rows={1}
               className="block max-h-32 min-h-[40px] w-full resize-none rounded border border-border bg-bg-raised px-3 py-2 text-[13.5px] leading-snug text-text placeholder:text-text-faint focus:border-accent focus:shadow-[0_0_0_3px_theme(colors.accent.faint)] focus:outline-none"
             />
@@ -335,14 +464,31 @@ function MessageBubble({ msg, isMe }: { msg: BuddyMessageRow; isMe: boolean }) {
         )}
         <p
           className={cn(
-            'mt-1 px-1 text-[10.5px] tabular-nums text-text-faint',
-            isMe ? 'text-right' : 'text-left'
+            'mt-1 flex items-center gap-1 px-1 text-[10.5px] tabular-nums text-text-faint',
+            isMe ? 'justify-end' : 'justify-start'
           )}
         >
-          {time}
+          <span>{time}</span>
+          {isMe && (
+            msg.read_at ? (
+              <CheckCheck size={11} strokeWidth={2} className="text-accent" aria-label="Read" />
+            ) : (
+              <Check size={11} strokeWidth={2} aria-label="Sent" />
+            )
+          )}
         </p>
       </div>
     </motion.div>
+  );
+}
+
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-0.5" aria-hidden="true">
+      <span className="h-1 w-1 animate-bounce rounded-full bg-text-faint [animation-delay:-0.3s]" />
+      <span className="h-1 w-1 animate-bounce rounded-full bg-text-faint [animation-delay:-0.15s]" />
+      <span className="h-1 w-1 animate-bounce rounded-full bg-text-faint" />
+    </span>
   );
 }
 

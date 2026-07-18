@@ -1,15 +1,20 @@
-// /buddy — DM-style buddy page.
+// /buddy — DM-style buddy page with tabs.
 //
-// Two-column layout on desktop:
-//   Left  : buddy list (Insta DM style) + find/incoming panel above it
-//   Right : chat with the selected buddy (or "Start a chat" empty state)
-// On mobile: same panels stack, tapping a buddy pushes the chat in place.
+// Layout on desktop:
+//   Left  : tabbed list — Chats | Requests | Paused
+//   Right : BuddyChat for the selected buddy (or empty state)
+// On mobile: stack; tapping a buddy pushes the chat pane in place.
 //
-// Security notes stay:
-//   - Discovery is by exact username (edge fn returns 'no_such_user' when
-//     unknown so the requester gets clear feedback).
-//   - RLS on buddy_messages requires status='active' — pending/paused pairs
-//     never see chat.
+// Notes on structure that fix earlier bugs:
+//   - Peer name resolution uses list_buddy_peers() RPC; if the RPC fails or
+//     returns nothing we still synthesize a peer object from the buddies row
+//     so the chat can OPEN and the header shows a stable label
+//     (@ username fallback or 'Buddy'). Chat opening MUST NOT depend on the
+//     RPC succeeding — that was the previous silent-fail bug.
+//   - Buddy requests (incoming + outgoing pending) live inside this page in a
+//     dedicated Requests tab with a count badge — they never go to Settings.
+//   - A Realtime subscription on public.buddies keeps the tabs live: new
+//     incoming requests, accepts, and declines show up without a refresh.
 import {
   type FormEvent,
   useCallback,
@@ -29,6 +34,7 @@ import {
   UserPlus,
   X
 } from 'lucide-react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -47,18 +53,60 @@ interface BuddyRowExt extends BuddyRow {
   decline_reason: string | null;
 }
 
+type PeerLite = Pick<UserRow, 'id' | 'name' | 'email' | 'username'>;
+
 interface BuddyView {
   row: BuddyRowExt;
-  peer: Pick<UserRow, 'id' | 'name' | 'email' | 'username'> | null;
+  peer: PeerLite;
   last?: BuddyMessageRow | null;
 }
 
+type BuddyTab = 'chats' | 'requests' | 'paused';
+
 const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
+
+/** Build a stable placeholder peer object so the UI never has a null peer. */
+function placeholderPeer(peerId: string | null | undefined): PeerLite {
+  const safeId = (peerId ?? '').toString();
+  const short = safeId.slice(0, 6) || 'buddy';
+  return {
+    id: safeId,
+    name: `Buddy ${short}`,
+    email: '',
+    username: short
+  };
+}
+
+/** Never render a raw undefined/null in the peer's username or name. */
+function normalizePeer(p: PeerLite | undefined | null, peerId: string): PeerLite {
+  if (!p) return placeholderPeer(peerId);
+  const fallback = placeholderPeer(peerId);
+  return {
+    id: p.id || fallback.id,
+    name: (p.name && p.name.trim()) || fallback.name,
+    email: p.email ?? '',
+    username: (p.username && p.username.trim()) || fallback.username
+  };
+}
+
+/** Uniform display name across the buddy UI. */
+function peerDisplay(p: PeerLite): string {
+  const nm = (p.name || '').trim();
+  if (nm) return nm;
+  const un = (p.username || '').trim();
+  return un ? `@${un}` : 'Buddy';
+}
+
+/** @-handle for the preview line; falls back to 'buddy' if empty. */
+function peerHandle(p: PeerLite): string {
+  return (p.username || '').trim() || 'buddy';
+}
 
 export default function Buddy() {
   const { userId, sandbox } = useAuth();
   const [buddies, setBuddies] = useState<BuddyView[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [tab, setTab] = useState<BuddyTab>('chats');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uname, setUname] = useState('');
@@ -83,23 +131,31 @@ export default function Buddy() {
       return;
     }
     const rows = (data as BuddyRowExt[]) ?? [];
-    const peerIds = rows.map((r) => (r.user_a === userId ? r.user_b : r.user_a));
-    let peerMap = new Map<string, Pick<UserRow, 'id' | 'name' | 'email' | 'username'>>();
-    if (peerIds.length > 0) {
-      const { data: peers } = await supabase
-        .from('users')
-        .select('id, name, email, username')
-        .in('id', peerIds);
-      peerMap = new Map(
-        ((peers as Pick<UserRow, 'id' | 'name' | 'email' | 'username'>[]) ?? []).map((p) => [p.id, p])
-      );
-    }
-    const list: BuddyView[] = rows.map((r) => ({
-      row: r,
-      peer: peerMap.get(r.user_a === userId ? r.user_b : r.user_a) ?? null
-    }));
 
-    // Fetch last-message preview per active pair (small parallel calls)
+    // users RLS blocks SELECT of anyone but self; the security-definer RPC
+    // returns minimal profile info for peers we share a buddies row with.
+    // If the RPC errors (missing migration, network hiccup) we fall through
+    // with placeholder peers rather than blocking chat.
+    const peerMap = new Map<string, PeerLite>();
+    if (rows.length > 0) {
+      const { data: peers, error: peersErr } = await supabase.rpc('list_buddy_peers');
+      if (peersErr) {
+        console.warn('[buddy] list_buddy_peers failed:', peersErr.message);
+      }
+      for (const p of (peers as PeerLite[] | null) ?? []) {
+        peerMap.set(p.id, p);
+      }
+    }
+
+    const list: BuddyView[] = rows.map((r) => {
+      const peerId = r.user_a === userId ? r.user_b : r.user_a;
+      return {
+        row: r,
+        peer: normalizePeer(peerMap.get(peerId), peerId)
+      };
+    });
+
+    // Fetch last-message preview per active pair (small parallel calls).
     const activeRows = list.filter((v) => v.row.status === 'active').slice(0, 30);
     await Promise.all(
       activeRows.map(async (v) => {
@@ -128,6 +184,38 @@ export default function Buddy() {
       return;
     }
     void reload();
+  }, [userId, sandbox, reload]);
+
+  // Live tab updates: any change on public.buddies that includes us triggers
+  // a reload so incoming requests / accepts / declines land without refresh.
+  useEffect(() => {
+    if (!userId || sandbox || !supabaseConfigured) return;
+    const channel: RealtimeChannel = supabase
+      .channel(`buddies:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'buddies',
+          filter: `user_a=eq.${userId}`
+        },
+        () => void reload()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'buddies',
+          filter: `user_b=eq.${userId}`
+        },
+        () => void reload()
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [userId, sandbox, reload]);
 
   async function onSendRequest(e: FormEvent) {
@@ -187,25 +275,23 @@ export default function Buddy() {
       pushToast(error.message, 'neutral');
       return;
     }
-    pushToast(action === 'accept' ? 'Pair active. Say hi.' : 'Request declined.', 'success');
+    if (action === 'accept') {
+      pushToast('Pair active. Say hi.', 'success');
+      setActiveId(bId);
+      setTab('chats');
+      setMobileView('chat');
+    } else {
+      pushToast('Request declined.', 'success');
+    }
     void reload();
   }
 
-  const showLocalMsg = sandbox || !supabaseConfigured;
   const incoming = useMemo(
-    () =>
-      buddies.filter(
-        (b) =>
-          b.row.status === 'pending' && b.row.requested_by !== userId && b.peer !== null
-      ),
+    () => buddies.filter((b) => b.row.status === 'pending' && b.row.requested_by !== userId),
     [buddies, userId]
   );
   const outgoing = useMemo(
-    () =>
-      buddies.filter(
-        (b) =>
-          b.row.status === 'pending' && b.row.requested_by === userId && b.peer !== null
-      ),
+    () => buddies.filter((b) => b.row.status === 'pending' && b.row.requested_by === userId),
     [buddies, userId]
   );
   const paused = useMemo(() => buddies.filter((b) => b.row.status === 'paused'), [buddies]);
@@ -221,6 +307,8 @@ export default function Buddy() {
     [buddies]
   );
   const activeBuddy = active.find((b) => b.row.id === activeId) ?? null;
+
+  const showLocalMsg = sandbox || !supabaseConfigured;
 
   if (showLocalMsg) {
     return (
@@ -254,11 +342,6 @@ export default function Buddy() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {incoming.length > 0 && (
-            <span className="rounded-full border border-warn/40 bg-warn/5 px-2 py-0.5 text-[11px] font-medium text-warn">
-              {incoming.length} request{incoming.length === 1 ? '' : 's'}
-            </span>
-          )}
           <Button variant="ghost" size="sm" onClick={() => void reload()} disabled={loading}>
             <RefreshCcw size={11} strokeWidth={1.75} className="mr-1" />
             Refresh
@@ -325,54 +408,7 @@ export default function Buddy() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {incoming.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-          >
-            <Card>
-              <div className="border-b border-border px-4 py-2">
-                <p className="u-label">Incoming · {incoming.length}</p>
-              </div>
-              <ul className="divide-y divide-border">
-                {incoming.map((b) => (
-                  <li key={b.row.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                    <Avatar name={b.peer?.name ?? '?'} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13.5px] font-semibold text-text">
-                        {b.peer?.name}
-                      </p>
-                      <p className="u-num truncate text-[11.5px] text-text-faint">
-                        @{b.peer?.username}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => void onRespond(b.row.id, 'accept')}
-                      >
-                        <Check size={11} strokeWidth={2} className="mr-1" /> Accept
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void onRespond(b.row.id, 'decline')}
-                      >
-                        <X size={11} strokeWidth={2} className="mr-1" /> Decline
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-[300px_minmax(0,1fr)]">
         {/* Buddies list */}
         <div
           className={cn(
@@ -380,87 +416,52 @@ export default function Buddy() {
             mobileView === 'chat' ? 'hidden md:flex' : 'flex'
           )}
         >
-          <div className="border-b border-border px-3 py-2">
-            <p className="u-label">Buddies · {active.length}</p>
+          <div className="flex items-center gap-1 border-b border-border px-2 py-2">
+            <TabPill
+              on={tab === 'chats'}
+              onClick={() => setTab('chats')}
+              label="Chats"
+              count={active.length}
+            />
+            <TabPill
+              on={tab === 'requests'}
+              onClick={() => setTab('requests')}
+              label="Requests"
+              count={incoming.length + outgoing.length}
+              highlight={incoming.length > 0}
+            />
+            <TabPill
+              on={tab === 'paused'}
+              onClick={() => setTab('paused')}
+              label="Paused"
+              count={paused.length}
+            />
           </div>
-          {loading && active.length === 0 ? (
-            <p className="px-4 py-4 text-[12px] text-text-faint">Loading…</p>
-          ) : active.length === 0 ? (
-            <div className="flex flex-col items-start gap-3 p-4">
-              <p className="text-[12.5px] text-text-muted">
-                No active buddies yet. Send a request or accept an incoming one to start
-                chatting.
-              </p>
-              <Button size="sm" variant="primary" onClick={() => setShowAddPanel(true)}>
-                <MessageSquarePlus size={11} strokeWidth={2} className="mr-1" />
-                New buddy
-              </Button>
-            </div>
-          ) : (
-            <ul className="flex-1 overflow-y-auto">
-              {active.map((b) => (
-                <li key={b.row.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveId(b.row.id);
-                      setMobileView('chat');
-                    }}
-                    className={cn(
-                      'flex w-full items-center gap-3 px-3 py-3 text-left transition-colors',
-                      activeId === b.row.id
-                        ? 'bg-accent-faint/40'
-                        : 'hover:bg-bg-overlay/60'
-                    )}
-                  >
-                    <Avatar name={b.peer?.name ?? '?'} active={activeId === b.row.id} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <p className="truncate text-[13.5px] font-semibold text-text">
-                          {b.peer?.name}
-                        </p>
-                        {b.last && (
-                          <span className="u-num shrink-0 text-[10.5px] text-text-faint">
-                            {shortTime(b.last.created_at)}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-0.5 truncate text-[11.5px] text-text-faint">
-                        {b.last
-                          ? previewOf(b.last, b.last.sender_id === userId)
-                          : `@${b.peer?.username} · say hi`}
-                      </p>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
+
+          {tab === 'chats' && (
+            <ChatsTab
+              loading={loading}
+              active={active}
+              activeId={activeId}
+              userId={userId}
+              onPick={(id) => {
+                setActiveId(id);
+                setMobileView('chat');
+              }}
+              onNew={() => setShowAddPanel(true)}
+            />
           )}
-          {(outgoing.length > 0 || paused.length > 0) && (
-            <details className="border-t border-border/70 bg-bg-overlay/30 px-3 py-2 text-[11.5px] text-text-muted">
-              <summary className="cursor-pointer">
-                {outgoing.length + paused.length} not-yet-chatting
-              </summary>
-              <ul className="mt-2 flex flex-col gap-1">
-                {outgoing.map((b) => (
-                  <li key={b.row.id} className="flex items-center gap-2">
-                    <span className="u-num truncate">@{b.peer?.username}</span>
-                    <span className="ml-auto rounded-full border border-warn/40 bg-warn/5 px-1.5 py-0.5 text-[10px] text-warn">
-                      pending
-                    </span>
-                  </li>
-                ))}
-                {paused.map((b) => (
-                  <li key={b.row.id} className="flex items-center gap-2">
-                    <span className="u-num truncate">@{b.peer?.username}</span>
-                    <span className="ml-auto rounded-full border border-border bg-bg-overlay px-1.5 py-0.5 text-[10px] text-text-muted">
-                      paused
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </details>
+
+          {tab === 'requests' && (
+            <RequestsTab
+              incoming={incoming}
+              outgoing={outgoing}
+              onRespond={(id, action) => void onRespond(id, action)}
+              onNew={() => setShowAddPanel(true)}
+            />
           )}
+
+          {tab === 'paused' && <PausedTab rows={paused} />}
         </div>
 
         {/* Chat pane */}
@@ -470,7 +471,7 @@ export default function Buddy() {
             mobileView === 'list' ? 'hidden md:block' : 'block'
           )}
         >
-          {activeBuddy && activeBuddy.peer && userId ? (
+          {activeBuddy && userId ? (
             <div className="flex h-full min-h-0 flex-col">
               <div className="mb-2 flex items-center gap-2 md:hidden">
                 <button
@@ -518,17 +519,254 @@ export default function Buddy() {
   );
 }
 
+/* ------------------------------- tab panels ------------------------------- */
+
+function ChatsTab({
+  loading,
+  active,
+  activeId,
+  userId,
+  onPick,
+  onNew
+}: {
+  loading: boolean;
+  active: BuddyView[];
+  activeId: string | null;
+  userId: string | null;
+  onPick: (id: string) => void;
+  onNew: () => void;
+}) {
+  if (loading && active.length === 0) {
+    return <p className="px-4 py-4 text-[12px] text-text-faint">Loading…</p>;
+  }
+  if (active.length === 0) {
+    return (
+      <div className="flex flex-col items-start gap-3 p-4">
+        <p className="text-[12.5px] text-text-muted">
+          No active buddies yet. Send a request or accept an incoming one to start chatting.
+        </p>
+        <Button size="sm" variant="primary" onClick={onNew}>
+          <MessageSquarePlus size={11} strokeWidth={2} className="mr-1" />
+          New buddy
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <ul className="flex-1 overflow-y-auto">
+      {active.map((b) => {
+        const displayName = peerDisplay(b.peer);
+        return (
+          <li key={b.row.id}>
+            <button
+              type="button"
+              onClick={() => onPick(b.row.id)}
+              className={cn(
+                'flex w-full items-center gap-3 px-3 py-3 text-left transition-colors',
+                activeId === b.row.id ? 'bg-accent-faint/40' : 'hover:bg-bg-overlay/60'
+              )}
+            >
+              <Avatar name={displayName} active={activeId === b.row.id} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="truncate text-[13.5px] font-semibold text-text">
+                    {displayName}
+                  </p>
+                  {b.last && (
+                    <span className="u-num shrink-0 text-[10.5px] text-text-faint">
+                      {shortTime(b.last.created_at)}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-[11.5px] text-text-faint">
+                  {b.last
+                    ? previewOf(b.last, b.last.sender_id === userId)
+                    : `@${peerHandle(b.peer)} · say hi`}
+                </p>
+              </div>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function RequestsTab({
+  incoming,
+  outgoing,
+  onRespond,
+  onNew
+}: {
+  incoming: BuddyView[];
+  outgoing: BuddyView[];
+  onRespond: (id: string, action: 'accept' | 'decline') => void;
+  onNew: () => void;
+}) {
+  if (incoming.length === 0 && outgoing.length === 0) {
+    return (
+      <div className="flex flex-col items-start gap-3 p-4">
+        <p className="text-[12.5px] text-text-muted">
+          No pending requests. Add a buddy by username or wait for someone to send you one.
+        </p>
+        <Button size="sm" variant="primary" onClick={onNew}>
+          <UserPlus size={11} strokeWidth={2} className="mr-1" />
+          New buddy
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {incoming.length > 0 && (
+        <section>
+          <p className="u-label px-3 pb-1.5 pt-3">Incoming · {incoming.length}</p>
+          <ul className="divide-y divide-border">
+            {incoming.map((b) => {
+              const displayName = peerDisplay(b.peer);
+              return (
+                <li key={b.row.id} className="flex flex-wrap items-center gap-2 px-3 py-3">
+                  <Avatar name={displayName} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-semibold text-text">
+                      {displayName}
+                    </p>
+                    <p className="u-num truncate text-[11px] text-text-faint">
+                      @{b.peer.username}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => onRespond(b.row.id, 'accept')}
+                    >
+                      <Check size={11} strokeWidth={2} className="mr-1" /> Accept
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onRespond(b.row.id, 'decline')}
+                    >
+                      <X size={11} strokeWidth={2} />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+      {outgoing.length > 0 && (
+        <section className="border-t border-border/70">
+          <p className="u-label px-3 pb-1.5 pt-3">Sent · {outgoing.length}</p>
+          <ul className="divide-y divide-border">
+            {outgoing.map((b) => (
+              <li key={b.row.id} className="flex items-center gap-3 px-3 py-2.5">
+                <Avatar name={b.peer.name || `@${b.peer.username}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-semibold text-text">
+                    {b.peer.name || `@${b.peer.username}`}
+                  </p>
+                  <p className="u-num truncate text-[11px] text-text-faint">
+                    @{b.peer.username}
+                  </p>
+                </div>
+                <span className="rounded-full border border-warn/40 bg-warn/5 px-2 py-0.5 text-[10.5px] text-warn">
+                  pending
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function PausedTab({ rows }: { rows: BuddyView[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="p-4 text-[12.5px] text-text-muted">Nothing paused.</p>
+    );
+  }
+  return (
+    <ul className="flex-1 divide-y divide-border overflow-y-auto">
+      {rows.map((b) => (
+        <li key={b.row.id} className="flex items-center gap-3 px-3 py-2.5">
+          <Avatar name={b.peer.name || `@${b.peer.username}`} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-semibold text-text">
+              {b.peer.name || `@${b.peer.username}`}
+            </p>
+            <p className="u-num truncate text-[11px] text-text-faint">
+              @{b.peer.username}
+            </p>
+          </div>
+          <span className="rounded-full border border-border bg-bg-overlay px-2 py-0.5 text-[10.5px] text-text-muted">
+            paused
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/* -------------------------------- primitives ------------------------------- */
+
+function TabPill({
+  on,
+  onClick,
+  label,
+  count,
+  highlight = false
+}: {
+  on: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  highlight?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium transition-colors',
+        on
+          ? 'bg-accent-faint text-accent'
+          : 'text-text-muted hover:bg-bg-overlay/60 hover:text-text'
+      )}
+    >
+      {label}
+      {count > 0 && (
+        <span
+          className={cn(
+            'u-num rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+            highlight
+              ? 'bg-warn/15 text-warn'
+              : on
+                ? 'bg-accent/15 text-accent'
+                : 'bg-bg-overlay text-text-muted'
+          )}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function Avatar({ name, active = false }: { name: string; active?: boolean }) {
+  const initial = (name || '?').trim().replace(/^@/, '')[0]?.toUpperCase() ?? '?';
   return (
     <span
       className={cn(
         'flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-display text-[14px] font-bold',
-        active
-          ? 'bg-accent text-white'
-          : 'bg-ink-cobalt/15 text-ink-cobalt'
+        active ? 'bg-accent text-white' : 'bg-ink-cobalt/15 text-ink-cobalt'
       )}
     >
-      {(name ?? '?')[0].toUpperCase()}
+      {initial}
     </span>
   );
 }
@@ -536,8 +774,7 @@ function Avatar({ name, active = false }: { name: string; active?: boolean }) {
 function shortTime(iso: string): string {
   const then = new Date(iso);
   const now = new Date();
-  const sameDay =
-    then.toDateString() === now.toDateString();
+  const sameDay = then.toDateString() === now.toDateString();
   if (sameDay) {
     return then.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   }

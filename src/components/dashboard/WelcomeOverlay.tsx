@@ -76,7 +76,7 @@ export default function WelcomeOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [profile?.id, profile?.welcome_seen_at, sandbox]);
+  }, [profile, sandbox]);
 
   async function dismiss() {
     setVisible(false);

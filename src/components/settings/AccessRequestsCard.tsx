@@ -2,6 +2,7 @@
 // Shown as a Settings card. RLS is the authority; this card only *displays*
 // what the owner is allowed to select. Approve/Decline delegate to edge fns.
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, ChevronDown, Copy, RefreshCcw, X } from 'lucide-react';
 import { Card, CardHeader } from '@/components/ui/Card';
@@ -144,7 +145,7 @@ export default function AccessRequestsCard({ userId }: { userId: string | null }
   return (
     <Card id="requests">
       <CardHeader
-        title="Access requests"
+        title="Signup access requests"
         aside={
           <div className="flex items-center gap-2">
             <TabButton
@@ -175,6 +176,9 @@ export default function AccessRequestsCard({ userId }: { userId: string | null }
           </div>
         }
       />
+      <div className="border-b border-border/60 px-4 py-1.5 text-[11px] text-text-faint">
+        Outsiders asking for an invite to sign up. Buddy requests live in <Link to="/buddy" className="underline hover:text-text">/buddy → Requests</Link>.
+      </div>
       {error && (
         <div className="border-b border-border/60 px-4 py-2 text-[12px] text-warn">{error}</div>
       )}

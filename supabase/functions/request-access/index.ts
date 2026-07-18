@@ -68,6 +68,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: v.error }, 400);
   }
 
+  // Reject if the email already has an account. Guides duplicates to sign in
+  // instead of piling up owner-inbox requests for accounts that exist.
+  const { data: existingUser } = await admin
+    .from('users')
+    .select('id')
+    .ilike('email', v.email)
+    .maybeSingle();
+  if (existingUser) {
+    return json(
+      { ok: false, error: 'An account with this email already exists. Try signing in instead.' },
+      409
+    );
+  }
+
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '';
   const ua = req.headers.get('user-agent') ?? '';
   const ipHash = ip ? await sha256hex(`req:${ip}`) : null;

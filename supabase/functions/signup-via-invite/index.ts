@@ -82,6 +82,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .maybeSingle();
   if (taken) return json({ error: 'That username is taken. Pick another.' }, 409);
 
+  // Body-email dedup up front. Server-side trigger is the final authority
+  // (also checks auth.users), but a fast 409 here avoids the createUser call
+  // and gives the user a friendly, actionable error.
+  if (bodyEmail && EMAIL_RE.test(bodyEmail)) {
+    const { data: emailTaken } = await admin
+      .from('users')
+      .select('id')
+      .ilike('email', bodyEmail)
+      .maybeSingle();
+    if (emailTaken) {
+      return json(
+        { error: 'An account with this email already exists. Try signing in instead.' },
+        409
+      );
+    }
+  }
+
   if (!token) {
     return json({ error: 'Signup is invite-only. Ask the owner for an invite.' }, 403);
   }
@@ -104,6 +121,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } else {
     if (!EMAIL_RE.test(bodyEmail)) return json({ error: 'Email is required.' }, 400);
     resolvedEmail = bodyEmail;
+  }
+
+  // Final dedup check on the resolved email (catches the case where the
+  // invite-authoritative email already has an account, or where the caller
+  // supplied a valid-looking email that raced past our earlier check).
+  const { data: resolvedTaken } = await admin
+    .from('users')
+    .select('id')
+    .ilike('email', resolvedEmail)
+    .maybeSingle();
+  if (resolvedTaken) {
+    return json(
+      { error: 'An account with this email already exists. Try signing in instead.' },
+      409
+    );
   }
 
   // Create the auth user. email_confirm skips the confirmation loop; the
