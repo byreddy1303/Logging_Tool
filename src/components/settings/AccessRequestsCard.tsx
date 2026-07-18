@@ -20,6 +20,7 @@ type Tab = AccountRequestStatus;
 export default function AccessRequestsCard({ userId }: { userId: string | null }) {
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
   const [rows, setRows] = useState<AccountRequestRow[] | null>(null);
+  const [inviteUrls, setInviteUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('pending');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -70,7 +71,36 @@ export default function AccessRequestsCard({ userId }: { userId: string | null }
       return;
     }
     setError(null);
-    setRows((data as AccountRequestRow[]) ?? []);
+    const list = (data as AccountRequestRow[]) ?? [];
+    setRows(list);
+
+    // Load invite tokens for approved rows so we can show a copyable URL.
+    const inviteIds = list
+      .filter((r) => r.status === 'approved' && r.invite_id)
+      .map((r) => r.invite_id as string);
+    if (inviteIds.length === 0) {
+      setInviteUrls({});
+      return;
+    }
+    const { data: invites } = await supabase
+      .from('invites')
+      .select('id,token,expires_at')
+      .in('id', inviteIds);
+    if (!invites) return;
+    const now = Date.now();
+    const base =
+      typeof window !== 'undefined' ? `${window.location.origin}` : '';
+    const map: Record<string, string> = {};
+    for (const r of list) {
+      if (!r.invite_id) continue;
+      const inv = (invites as { id: string; token: string; expires_at: string }[]).find(
+        (i) => i.id === r.invite_id
+      );
+      if (!inv) continue;
+      if (new Date(inv.expires_at).getTime() < now) continue;
+      map[r.id] = `${base}/signup?invite=${encodeURIComponent(inv.token)}`;
+    }
+    setInviteUrls(map);
   }
 
   if (isOwner !== true) return null;
@@ -83,7 +113,10 @@ export default function AccessRequestsCard({ userId }: { userId: string | null }
       if (res.mail_sent) {
         pushToast(`Approved. Invite mailed to ${req.email}.`, 'success');
       } else {
-        pushToast(`Approved but mail failed: ${res.mail_error ?? 'unknown'}`, 'neutral');
+        pushToast(
+          `Approved. Mail failed (${res.mail_error ?? 'unknown'}) — copy the invite URL from the Approved tab and send it manually.`,
+          'neutral'
+        );
       }
       void reload();
       return;
@@ -178,6 +211,7 @@ export default function AccessRequestsCard({ userId }: { userId: string | null }
               >
                 <RequestRow
                   req={r}
+                  inviteUrl={inviteUrls[r.id]}
                   busy={busyId === r.id}
                   onApprove={() => void onApprove(r)}
                   onDecline={(reason, notify) => void onDecline(r, reason, notify)}
@@ -228,11 +262,13 @@ function TabButton({
 
 function RequestRow({
   req,
+  inviteUrl,
   busy,
   onApprove,
   onDecline
 }: {
   req: AccountRequestRow;
+  inviteUrl?: string;
   busy: boolean;
   onApprove: () => void;
   onDecline: (reason: string, notify: boolean) => void;
@@ -308,6 +344,16 @@ function RequestRow({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {req.status === 'approved' && inviteUrl && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded border border-success/30 bg-success/5 px-3 py-2">
+          <span className="u-label text-success shrink-0">invite url</span>
+          <code className="u-num flex-1 min-w-0 truncate text-[11.5px] text-text">
+            {inviteUrl}
+          </code>
+          <CopyButton value={inviteUrl} label="Copy invite URL" />
+        </div>
+      )}
 
       {isPending && (
         <div className="mt-3">
@@ -393,7 +439,7 @@ function StatusBadge({ status }: { status: AccountRequestStatus }) {
   return <Badge tone={spec.tone}>{spec.label}</Badge>;
 }
 
-function CopyButton({ value }: { value: string }) {
+function CopyButton({ value, label = 'Copy email' }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -407,8 +453,9 @@ function CopyButton({ value }: { value: string }) {
           // clipboard permission denied — nothing to do.
         }
       }}
-      aria-label="Copy email"
-      className="rounded p-1 text-text-faint hover:text-text"
+      aria-label={label}
+      title={copied ? 'Copied' : label}
+      className="rounded p-1 text-text-faint hover:text-text shrink-0"
     >
       {copied ? <Check size={12} strokeWidth={2} /> : <Copy size={12} strokeWidth={1.75} />}
     </button>
