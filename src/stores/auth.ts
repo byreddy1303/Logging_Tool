@@ -19,7 +19,13 @@ interface AuthState {
   enterSandbox: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateProfile: (patch: ProfilePatch) => Promise<{ error?: string }>;
 }
+
+/** Editable subset of the users row — everything the Settings page owns. */
+export type ProfilePatch = Partial<
+  Pick<UserRow, 'name' | 'exam_date' | 'target_rank' | 'sadhana_practice' | 'timezone'>
+>;
 
 const SANDBOX_PROFILE: UserRow = {
   id: '00000000-0000-4000-8000-00000000dev0',
@@ -45,10 +51,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     initialized = true;
 
     if (!supabaseConfigured) {
-      // Resume a previous sandbox session if one exists.
-      db.meta.get('sandbox').then((row) => {
+      // Resume a previous sandbox session if one exists. Prefer any saved
+      // profile overrides so Settings edits round-trip even offline.
+      db.meta.get('sandbox').then(async (row) => {
         if (row?.value) {
-          set({ status: 'signed_in', profile: SANDBOX_PROFILE, sandbox: true });
+          const stored = (await db.meta.get('sandbox_profile'))?.value as UserRow | undefined;
+          set({
+            status: 'signed_in',
+            profile: stored ? { ...SANDBOX_PROFILE, ...stored } : SANDBOX_PROFILE,
+            sandbox: true
+          });
         } else {
           set({ status: 'signed_out' });
         }
@@ -112,6 +124,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await supabase.auth.signOut();
     await clearLocalData();
     set({ status: 'signed_out', profile: null, user: null });
+  },
+
+  updateProfile: async (patch) => {
+    const { profile, sandbox, user } = get();
+    if (!profile) return { error: 'no profile loaded' };
+    const merged: UserRow = { ...profile, ...patch };
+    // Sandbox: persist to Dexie meta so the change survives reloads.
+    if (sandbox) {
+      await db.meta.put({ key: 'sandbox_profile', value: merged });
+      set({ profile: merged });
+      return {};
+    }
+    if (!user) return { error: 'not signed in' };
+    const { error } = await supabase.from('users').update(patch).eq('id', user.id);
+    if (error) return { error: error.message };
+    set({ profile: merged });
+    return {};
   }
 }));
 

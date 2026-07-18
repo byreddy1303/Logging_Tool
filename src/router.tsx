@@ -5,7 +5,6 @@ import LoadingScreen from '@/components/shared/LoadingScreen';
 import Shell from '@/components/layout/Shell';
 import Auth from '@/pages/Auth';
 import NotFound from '@/pages/NotFound';
-import Pending from '@/components/shared/Pending';
 import Dashboard from '@/pages/Dashboard';
 import SessionNew from '@/pages/SessionNew';
 import SessionActive from '@/pages/SessionActive';
@@ -21,6 +20,9 @@ import DoubtChat from '@/pages/DoubtChat';
 import Triangulate from '@/pages/Triangulate';
 import Formulas from '@/pages/Formulas';
 import TriggerDrill from '@/pages/TriggerDrill';
+import Settings from '@/pages/Settings';
+import Readiness from '@/pages/Readiness';
+import Buddy from '@/pages/Buddy';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -60,12 +62,13 @@ export const router = createBrowserRouter([
       { path: 'weekly-review', element: <WeeklyReview /> },
       { path: 'heatmap', element: <Heatmap /> },
       { path: 'calibration', element: <Calibration /> },
+      { path: 'readiness', element: <Readiness /> },
       { path: 'doubt', element: <DoubtChat /> },
       { path: 'triangulate', element: <Triangulate /> },
       { path: 'trigger-drill', element: <TriggerDrill /> },
       { path: 'formulas', element: <Formulas /> },
-      { path: 'buddy', element: <Pending step="S29" /> },
-      { path: 'settings', element: <Pending step="S39" /> }
+      { path: 'buddy', element: <Buddy /> },
+      { path: 'settings', element: <Settings /> }
     ]
   },
   { path: '*', element: <NotFound /> }

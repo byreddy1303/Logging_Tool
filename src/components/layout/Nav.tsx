@@ -10,6 +10,7 @@ import {
   CalendarCheck,
   Grid3x3,
   Target,
+  Compass,
   MessageSquare,
   Columns3,
   Zap,
@@ -59,7 +60,8 @@ const ANALYSIS: Item[] = [
     active: 'bg-ink-marigold/10 text-ink-marigold'
   },
   { to: '/heatmap', label: 'Heatmap', icon: Grid3x3, active: 'bg-ink-slate/10 text-ink-slate' },
-  { to: '/calibration', label: 'Calibration', icon: Target, active: 'bg-ink-teal/10 text-ink-teal' }
+  { to: '/calibration', label: 'Calibration', icon: Target, active: 'bg-ink-teal/10 text-ink-teal' },
+  { to: '/readiness', label: 'Readiness', icon: Compass, active: 'bg-ink-marigold/10 text-ink-marigold' }
 ];
 
 const LEARN: Item[] = [

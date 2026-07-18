@@ -240,3 +240,25 @@ export const REATTEMPT_FIRST_DELAY_DAYS = 3;
 export const LLM_DAILY_LIMIT = 100;
 
 export const EXAM_DATE_DEFAULT = '2027-02-06';
+
+/** Common IANA zones — enough for the Indian aspirant base + expats. */
+export const TIMEZONES: { value: string; label: string }[] = [
+  { value: 'Asia/Kolkata', label: 'Asia / Kolkata (IST, UTC+5:30)' },
+  { value: 'Asia/Colombo', label: 'Asia / Colombo (UTC+5:30)' },
+  { value: 'Asia/Kathmandu', label: 'Asia / Kathmandu (UTC+5:45)' },
+  { value: 'Asia/Dhaka', label: 'Asia / Dhaka (UTC+6)' },
+  { value: 'Asia/Dubai', label: 'Asia / Dubai (UTC+4)' },
+  { value: 'Asia/Singapore', label: 'Asia / Singapore (UTC+8)' },
+  { value: 'Europe/London', label: 'Europe / London (UTC±0)' },
+  { value: 'Europe/Berlin', label: 'Europe / Berlin (UTC+1)' },
+  { value: 'America/New_York', label: 'America / New York (UTC−5)' },
+  { value: 'America/Chicago', label: 'America / Chicago (UTC−6)' },
+  { value: 'America/Los_Angeles', label: 'America / Los Angeles (UTC−8)' },
+  { value: 'UTC', label: 'UTC (no offset)' }
+];
+
+/** Invite tokens live for a week per BUILD.md F6.1 — same value used server-side. */
+export const INVITE_TTL_DAYS = 7;
+
+/** Days after which the D3/D10/D30 formula review ladder rolls forward. */
+export const FORMULA_REVIEW_INTERVALS = [3, 10, 30] as const;
