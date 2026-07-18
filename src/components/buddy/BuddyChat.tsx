@@ -237,6 +237,18 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
       </div>
 
       <div className="border-t border-border px-3 py-3">
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-text-muted">
+          <button
+            type="button"
+            onClick={() => setPicker(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-bg-raised px-3 py-1 font-medium text-text-muted transition-colors hover:-translate-y-px hover:border-border-hover hover:text-text"
+          >
+            <ImageIcon size={12} strokeWidth={1.75} /> Share a question
+          </button>
+          <span className="text-[11px] text-text-faint">
+            No outcome, pattern, or tags cross over.
+          </span>
+        </div>
         <div className="flex items-end gap-2">
           <button
             type="button"

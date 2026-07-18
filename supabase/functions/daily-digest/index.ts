@@ -1,0 +1,357 @@
+// POST /functions/v1/daily-digest
+// Body (optional): { user_id?: uuid, dry_run?: boolean, force?: boolean }
+//
+// When called by cron with no body, loops every user whose
+// digest_hour_local matches the "current local hour" AND hasn't received
+// today's digest yet. When called with {user_id}, generates + sends just
+// for that user (used for testing + Settings "Send now" button).
+//
+// Content per digest:
+//   greeting        — time-of-day + first name
+//   quote           — deterministic per-day pick, one per user
+//   re_attempts     — count + up-to-8 lines grouped by subject
+//   planner_items   — today's plan_items_due_on, minus completed today
+//   weekly_fix      — Mondays only, latest 'this_weeks_fix' if present
+//
+// Delivery: email via Gmail SMTP (proven), WhatsApp via Meta template.
+// Failures are logged per-user; the loop keeps going.
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { corsHeaders, json } from '../_shared/cors.ts';
+import { sendEmail } from '../_shared/email.ts';
+import { sendWhatsAppTemplate, waConfigured } from '../_shared/wa.ts';
+import { greetingForHour, pickQuoteForDay } from '../_shared/quotes.ts';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+declare const Deno: any;
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const APP_URL = Deno.env.get('VITE_APP_URL') ?? '';
+
+const admin = createClient(SUPABASE_URL, SERVICE, {
+  auth: { persistSession: false, autoRefreshToken: false }
+});
+
+interface UserForDigest {
+  id: string;
+  name: string;
+  email: string;
+  timezone: string;
+  phone_e164: string | null;
+  digest_email_enabled: boolean;
+  digest_whatsapp_enabled: boolean;
+  digest_hour_local: number;
+  wa_opted_in_at: string | null;
+  last_digest_sent_on: string | null;
+}
+
+function localHourAndDate(now: Date, tz: string): { hour: number; isoDate: string; weekday: number } {
+  // Best-effort local time; if tz is invalid, fall back to UTC.
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', hour12: false,
+      weekday: 'short'
+    }).formatToParts(now);
+    const map: Record<string, string> = {};
+    for (const p of parts) map[p.type] = p.value;
+    const isoDate = `${map.year}-${map.month}-${map.day}`;
+    const hour = parseInt(map.hour === '24' ? '0' : map.hour, 10);
+    const wkMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const weekday = wkMap[map.weekday] ?? now.getUTCDay();
+    return { hour, isoDate, weekday };
+  } catch {
+    return {
+      hour: now.getUTCHours(),
+      isoDate: now.toISOString().slice(0, 10),
+      weekday: now.getUTCDay()
+    };
+  }
+}
+
+Deno.serve(async (req: Request): Promise<Response> => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  let body: { user_id?: string; dry_run?: boolean; force?: boolean } = {};
+  if (req.method === 'POST') {
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      // no body is fine — cron path.
+    }
+  }
+
+  const dryRun = body.dry_run === true;
+  const force = body.force === true;
+  const now = new Date();
+
+  // Load candidates
+  let users: UserForDigest[] = [];
+  if (body.user_id) {
+    const { data } = await admin
+      .from('users')
+      .select('id, name, email, timezone, phone_e164, digest_email_enabled, digest_whatsapp_enabled, digest_hour_local, wa_opted_in_at, last_digest_sent_on')
+      .eq('id', body.user_id)
+      .limit(1);
+    users = (data as UserForDigest[]) ?? [];
+  } else {
+    const { data } = await admin
+      .from('users')
+      .select('id, name, email, timezone, phone_e164, digest_email_enabled, digest_whatsapp_enabled, digest_hour_local, wa_opted_in_at, last_digest_sent_on')
+      .or('digest_email_enabled.eq.true,digest_whatsapp_enabled.eq.true')
+      .limit(1000);
+    users = (data as UserForDigest[]) ?? [];
+  }
+
+  const report: Array<Record<string, unknown>> = [];
+  for (const u of users) {
+    const tz = u.timezone || 'Asia/Kolkata';
+    const { hour, isoDate, weekday } = localHourAndDate(now, tz);
+
+    if (!force) {
+      if (hour !== u.digest_hour_local) {
+        report.push({ user: u.id, skipped: 'wrong_hour', hour, want: u.digest_hour_local });
+        continue;
+      }
+      if (u.last_digest_sent_on === isoDate) {
+        report.push({ user: u.id, skipped: 'already_sent' });
+        continue;
+      }
+    }
+
+    const digest = await buildDigest(u, isoDate, hour, weekday);
+    if (dryRun) {
+      report.push({ user: u.id, dry: true, digest });
+      continue;
+    }
+    let email_ok = false;
+    let wa_ok = false;
+    let email_err: string | undefined;
+    let wa_err: string | undefined;
+
+    if (u.digest_email_enabled && u.email) {
+      const res = await sendEmail({
+        to: u.email,
+        subject: `Your AIR Journal · ${isoDate}`,
+        html: digest.html
+      });
+      email_ok = res.ok;
+      if (!res.ok) email_err = res.error;
+    }
+
+    if (u.digest_whatsapp_enabled && u.phone_e164 && waConfigured()) {
+      const res = await sendWhatsAppTemplate({
+        to: u.phone_e164,
+        parameters: digest.wa_params
+      });
+      wa_ok = res.ok;
+      if (!res.ok) wa_err = res.error;
+    }
+
+    if (email_ok || wa_ok) {
+      await admin.from('users').update({ last_digest_sent_on: isoDate }).eq('id', u.id);
+    }
+    report.push({ user: u.id, email_ok, wa_ok, email_err, wa_err });
+  }
+
+  return json({ ok: true, count: users.length, report });
+});
+
+interface Digest {
+  html: string;
+  wa_params: string[];
+  summary: string;
+}
+
+async function buildDigest(u: UserForDigest, isoDate: string, hour: number, weekday: number): Promise<Digest> {
+  const firstName = (u.name ?? '').split(/\s+/)[0] ?? '';
+  const greeting = greetingForHour(hour, firstName);
+  const quote = pickQuoteForDay(isoDate, u.id);
+
+  // Re-attempts due today (not yet done)
+  const { data: reattempts } = await admin
+    .from('reattempts')
+    .select('id, question_id, stage')
+    .eq('user_id', u.id)
+    .lte('scheduled_date', isoDate)
+    .is('result', null);
+  const reAttemptRows = (reattempts as { id: string; question_id: string; stage: string }[]) ?? [];
+
+  let subjectCounts: { subject: string; count: number }[] = [];
+  let sampleTitles: string[] = [];
+  if (reAttemptRows.length > 0) {
+    const qids = reAttemptRows.map((r) => r.question_id);
+    const { data: qs } = await admin
+      .from('questions')
+      .select('id, subject, question_text')
+      .in('id', qids);
+    const map = new Map<string, number>();
+    ((qs as { id: string; subject: string; question_text: string | null }[]) ?? []).forEach((q) => {
+      map.set(q.subject, (map.get(q.subject) ?? 0) + 1);
+      if (sampleTitles.length < 6 && q.question_text) {
+        sampleTitles.push(`${q.subject}: ${q.question_text.slice(0, 80)}`);
+      }
+    });
+    subjectCounts = Array.from(map, ([subject, count]) => ({ subject, count })).sort(
+      (a, b) => b.count - a.count
+    );
+  }
+
+  // Planner items due today, minus completed
+  const { data: plannerDue } = await admin.rpc('plan_items_due_on', {
+    uid: u.id,
+    on_date: isoDate
+  });
+  const planItems =
+    (plannerDue as { id: string; title: string; subject: string | null; target_min: number | null }[]) ?? [];
+  const { data: completions } = await admin
+    .from('plan_item_completions')
+    .select('item_id')
+    .eq('user_id', u.id)
+    .eq('on_date', isoDate);
+  const doneIds = new Set(((completions as { item_id: string }[]) ?? []).map((c) => c.item_id));
+  const openItems = planItems.filter((i) => !doneIds.has(i.id));
+
+  // Weekly fix — only on Mondays (ISO weekday 1). JS getUTCDay/Intl short: Mon=1.
+  let weeklyFix: string | null = null;
+  if (weekday === 1) {
+    const { data: wr } = await admin
+      .from('weekly_reviews')
+      .select('this_weeks_fix, week_start')
+      .eq('user_id', u.id)
+      .order('week_start', { ascending: false })
+      .limit(1);
+    weeklyFix = ((wr as { this_weeks_fix: string | null }[]) ?? [])[0]?.this_weeks_fix ?? null;
+  }
+
+  const summaryLine =
+    reAttemptRows.length > 0
+      ? `${reAttemptRows.length} re-attempt${reAttemptRows.length === 1 ? '' : 's'} due · ${openItems.length} planner item${openItems.length === 1 ? '' : 's'}${weeklyFix ? ` · fix: ${weeklyFix}` : ''}`
+      : openItems.length > 0
+        ? `Clean re-attempt queue · ${openItems.length} planner item${openItems.length === 1 ? '' : 's'} today`
+        : `Free morning. No re-attempts, no planner load. Recover.`;
+
+  const html = renderEmail({
+    greeting,
+    quote,
+    isoDate,
+    subjectCounts,
+    sampleTitles,
+    reAttemptTotal: reAttemptRows.length,
+    openItems,
+    weeklyFix,
+    appUrl: APP_URL || 'https://air-journal-omega.vercel.app'
+  });
+
+  // WhatsApp: 4 params matching template placeholders. Kalyan will name
+  // the Meta-approved template's variables in this order.
+  const wa_params = [
+    firstName || 'friend',
+    String(reAttemptRows.length),
+    String(openItems.length),
+    (weeklyFix ?? quote).slice(0, 200)
+  ];
+
+  return { html, wa_params, summary: summaryLine };
+}
+
+function esc(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderEmail(args: {
+  greeting: string;
+  quote: string;
+  isoDate: string;
+  subjectCounts: { subject: string; count: number }[];
+  sampleTitles: string[];
+  reAttemptTotal: number;
+  openItems: { id: string; title: string; subject: string | null; target_min: number | null }[];
+  weeklyFix: string | null;
+  appUrl: string;
+}): string {
+  const {
+    greeting,
+    quote,
+    isoDate,
+    subjectCounts,
+    sampleTitles,
+    reAttemptTotal,
+    openItems,
+    weeklyFix,
+    appUrl
+  } = args;
+
+  const reBlock =
+    reAttemptTotal === 0
+      ? `<p style="margin:0 0 8px 0;font-size:13px;color:#665D7E;">No re-attempts due today. Enjoy the clean queue.</p>`
+      : `
+        <p style="margin:0 0 6px 0;font-size:13px;font-weight:600;color:#241E35;">${reAttemptTotal} question${reAttemptTotal === 1 ? '' : 's'} due for re-attempt.</p>
+        <ul style="margin:0 0 10px 18px;padding:0;font-size:13px;color:#665D7E;line-height:1.7;">
+          ${subjectCounts.slice(0, 6).map((s) => `<li>${esc(s.subject)} — <span style="font-family:monospace;color:#241E35;">${s.count}</span></li>`).join('')}
+        </ul>
+        ${sampleTitles.length > 0 ? `
+        <details style="margin:0 0 10px 0;">
+          <summary style="cursor:pointer;font-size:11.5px;color:#9C94AF;">Sample questions</summary>
+          <ul style="margin:8px 0 0 18px;padding:0;font-size:12px;color:#665D7E;line-height:1.65;">
+            ${sampleTitles.map((t) => `<li>${esc(t)}</li>`).join('')}
+          </ul>
+        </details>` : ''}
+      `;
+
+  const planBlock =
+    openItems.length === 0
+      ? `<p style="margin:0 0 8px 0;font-size:13px;color:#665D7E;">No planner items open for today. Add one from the planner if you want an anchor.</p>`
+      : `
+        <ul style="margin:0 0 10px 18px;padding:0;font-size:13px;color:#241E35;line-height:1.75;">
+          ${openItems.slice(0, 12).map((i) => `<li>${esc(i.title)}${i.subject ? ` <span style="color:#665D7E;font-size:11.5px;">· ${esc(i.subject)}</span>` : ''}${i.target_min ? ` <span style="font-family:monospace;color:#9C94AF;font-size:11.5px;">${i.target_min}m</span>` : ''}</li>`).join('')}
+        </ul>
+      `;
+
+  const fixBlock = weeklyFix
+    ? `
+      <div style="margin:8px 0 16px 0;padding:12px 14px;background:#FBF3CE;border-left:3px solid #C08A00;border-radius:6px;">
+        <p style="margin:0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#C08A00;">this week's fix</p>
+        <p style="margin:4px 0 0 0;font-size:14px;color:#241E35;font-weight:600;">${esc(weeklyFix)}</p>
+      </div>`
+    : '';
+
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#FAF6EC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#241E35;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FAF6EC;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border:1px solid #E8E0CC;border-radius:16px;overflow:hidden;">
+        <tr><td style="padding:24px 30px 4px 30px;border-left:3px solid #E14B32;">
+          <p style="margin:0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#665D7E;">AIR Journal · ${esc(isoDate)}</p>
+        </td></tr>
+        <tr><td style="padding:12px 30px 4px 30px;">
+          <p style="margin:0;font-size:20px;font-weight:700;line-height:1.25;">${esc(greeting)}</p>
+        </td></tr>
+        <tr><td style="padding:6px 30px 18px 30px;">
+          <p style="margin:0 0 12px 0;font-size:15px;font-style:italic;line-height:1.55;color:#241E35;">
+            <span style="background:linear-gradient(180deg,transparent 62%,#FBE8B0 62%,#FBE8B0 92%,transparent 92%);padding:0 2px;">${esc(quote)}</span>
+          </p>
+          ${fixBlock}
+          <p style="margin:16px 0 4px 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#665D7E;">re-attempts due today</p>
+          ${reBlock}
+          <p style="margin:12px 0 4px 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#665D7E;">planner · today</p>
+          ${planBlock}
+          <p style="margin:18px 0 0 0;">
+            <a href="${esc(appUrl)}" style="display:inline-block;padding:10px 20px;background:#E14B32;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:13.5px;">Open AIR Journal</a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:14px 30px;border-top:1px solid #E8E0CC;background:#F2ECDD;font-size:11px;color:#9C94AF;">
+          Turn off digest emails in Settings · one message per day, at your chosen local hour.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
