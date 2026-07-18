@@ -8,9 +8,10 @@ import { AlertCircle, ImageIcon, Trash2, UploadCloud } from 'lucide-react';
 import {
   SUBJECTS,
   SOURCE_KINDS,
+  SOURCE_KIND_BY_VALUE,
   PYQ_TWO_SETS_FROM,
   QUESTION_FORMATS,
-  pyqYears,
+  examYears,
   type QuestionFormat,
   type SourceKind
 } from '@/lib/constants';
@@ -24,7 +25,6 @@ import { Select } from '@/components/ui/Select';
 import { Kbd } from '@/components/ui/Kbd';
 import type { SourceDraft } from '@/components/tags/sourceDraft';
 
-const YEARS = pyqYears();
 
 function MarksChip({
   value,
@@ -118,10 +118,23 @@ export default function SourceStep({
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const spec = SOURCE_KIND_BY_VALUE[draft.kind];
   const isPyq = draft.kind === 'pyq';
-  const yearHasSets = draft.year != null && draft.year >= PYQ_TWO_SETS_FROM;
+  const isYearBased = !!spec.hasYear;
+  const yearHasSets = isPyq && draft.year != null && draft.year >= PYQ_TWO_SETS_FROM;
   const subtopics = useMemo(() => subtopicsFor(draft.subject), [draft.subject]);
   const activeSubtopicSpec = subtopics.find((s) => s.value === draft.subtopic);
+  const yearOptions = useMemo(() => examYears(spec), [spec]);
+
+  // Snap year into the exam's valid range when the kind switches.
+  useEffect(() => {
+    if (!isYearBased) return;
+    if (draft.year == null) return;
+    const earliest = spec.earliestYear ?? yearOptions[yearOptions.length - 1] ?? draft.year;
+    if (draft.year < earliest || draft.year > (yearOptions[0] ?? draft.year)) {
+      setDraft((d) => ({ ...d, year: yearOptions[0] ?? null }));
+    }
+  }, [draft.kind, isYearBased, spec.earliestYear, yearOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isPyq) return;
@@ -150,8 +163,6 @@ export default function SourceStep({
     !uploading
   );
 
-  const yearOptions = useMemo(() => YEARS, []);
-
   async function pickImage(file: File | undefined) {
     if (!file) return;
     setImageError(null);
@@ -169,14 +180,16 @@ export default function SourceStep({
   }
 
   function submit() {
-    // Normalize: non-PYQ drops year+set; PYQ without year still allowed (user may not remember)
+    // Normalize: non-year-based sources drop year+set; year-based sources keep year;
+    // only GATE PYQ from 2014+ carries a Set 1/2 flag. Year-based sources are
+    // unambiguous by (year, question #), so no image is attached — the rest can.
     const normalized: SourceDraft = {
       ...draft,
       subtopic: draft.subtopic?.trim() ? draft.subtopic.trim() : null,
-      year: isPyq ? draft.year : null,
+      year: isYearBased ? draft.year : null,
       set: isPyq && yearHasSets ? draft.set : null,
       questionNumber: draft.questionNumber?.trim() ? draft.questionNumber.trim() : null,
-      imageDataUrl: isPyq ? null : draft.imageDataUrl // PYQs don't attach an image (source is unambiguous)
+      imageDataUrl: isYearBased ? null : draft.imageDataUrl
     };
     onSubmit(normalized);
   }
@@ -247,12 +260,12 @@ export default function SourceStep({
         ) : null}
       </div>
 
-      {isPyq ? (
+      {isYearBased ? (
         <div className="flex flex-col gap-3 rounded border border-border/70 bg-bg-overlay/40 px-3 py-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[160px_1fr]">
             <div className="flex flex-col gap-1.5">
               <label className="u-label" htmlFor="src-year">
-                Year
+                {spec.label} year
               </label>
               <Select
                 id="src-year"
@@ -272,7 +285,7 @@ export default function SourceStep({
                 ))}
               </Select>
             </div>
-            {yearHasSets && (
+            {isPyq && yearHasSets && (
               <div className="flex flex-col gap-1.5">
                 <span className="u-label">Set</span>
                 <div className="flex flex-wrap gap-2">
@@ -290,7 +303,7 @@ export default function SourceStep({
               </div>
             )}
           </div>
-          {draft.year != null && !yearHasSets && (
+          {isPyq && draft.year != null && !yearHasSets && (
             <p className="text-[12px] text-text-faint">
               GATE {draft.year} was a single-set exam — sets only started in {PYQ_TWO_SETS_FROM}.
             </p>

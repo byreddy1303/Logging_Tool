@@ -1,15 +1,20 @@
-// Standalone logging page — every field the tag flow captures is available
-// here for questions solved outside a timed session (browsing a PYQ paper,
-// scrolling GATE Overflow, thinking through a doubt). Date defaults to
-// today, but the user can back-date if they're catching up.
+// Standalone logging page with three states, driven by the persisted log store:
 //
-// A "just logged" list at the bottom shows the current session of edits
-// so nothing feels lost. Old entries are also editable/deletable from here.
-import { useMemo, useState } from 'react';
+//   idle   → landing card asks "single question or multi-question batch?"
+//   single → one-shot entry, saves and returns to landing
+//   multi  → sticky batch entry: subject / source / marks preserved between
+//            saves, all rows share one session_id, "End log session" closes
+//            the batch and returns to landing.
+//
+// State survives navigation and reloads; leaving mid-flow does not lose the
+// in-progress draft. Multi-mode also creates a real SessionRow (with
+// target_duration_min = 0 — a marker for "log-only session") so the group
+// appears in the Journal's Recent-sessions strip.
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { motion } from 'motion/react';
-import { CheckCircle2, Pencil } from 'lucide-react';
-import type { QuestionRow } from '@/types';
+import { CheckCircle2, Pencil, PenLine, PlayCircle, StopCircle } from 'lucide-react';
+import type { QuestionRow, SessionRow } from '@/types';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +25,7 @@ import { db } from '@/lib/db';
 import { writeLocal, deleteLocal } from '@/lib/sync';
 import { needsReattempt, scheduleReattempt } from '@/lib/reattempt';
 import { useAuth } from '@/hooks/useAuth';
+import { useLogStore } from '@/stores/log';
 import { OUTCOME_BY_CODE } from '@/lib/constants';
 import { cn, formatDate, nowISO, plural, secondsToClock, todayISO, uuid } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
@@ -60,26 +66,65 @@ export default function Log() {
   const { userId } = useAuth();
   const today = todayISO();
 
-  const [draft, setDraft] = useState<EditorDraft>(() => emptyDraft(DEFAULT_SUBJECT, today));
-  const [saving, setSaving] = useState(false);
-  const [flash, setFlash] = useState<string | null>(null); // last-saved id
+  const {
+    mode,
+    sessionId,
+    startedAt,
+    loggedCount,
+    draft: persistedDraft,
+    beginSingle,
+    beginMulti,
+    bumpLogged,
+    setDraft,
+    end
+  } = useLogStore();
 
+  // Local mirror of the persisted draft: keeps typing responsive while the
+  // debounced setDraft call writes to localStorage.
+  const [draft, setLocalDraft] = useState<EditorDraft>(
+    () => persistedDraft ?? emptyDraft(DEFAULT_SUBJECT, today)
+  );
+
+  // Sync local ⇢ store on any keystroke (small enough to not need debounce).
+  useEffect(() => {
+    if (mode === 'idle') return;
+    setDraft(draft);
+  }, [draft, mode, setDraft]);
+
+  // Rehydrate on mount: if there's a persisted draft, prefer it over the
+  // freshly-generated blank one.
+  useEffect(() => {
+    if (persistedDraft) setLocalDraft(persistedDraft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [saving, setSaving] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  // Edit dialog for the "just logged" table.
   const [editRow, setEditRow] = useState<QuestionRow | null>(null);
   const [editDraft, setEditDraft] = useState<EditorDraft | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const activeSession = useLiveQuery(
+    async () => (sessionId ? (await db.sessions.get(sessionId)) ?? null : null),
+    [sessionId],
+    null
+  );
+
+  // Recent standalone rows plus the current multi-batch rows.
   const recent = useLiveQuery(
     async () => {
       if (!userId) return [] as QuestionRow[];
       const rows = await db.questions
         .where('user_id')
         .equals(userId)
-        .filter((q) => q.session_id === null)
+        .filter((q) => q.session_id === null || q.session_id === sessionId)
         .sortBy('created_at');
       return rows.reverse().slice(0, 25);
     },
-    [userId],
+    [userId, sessionId],
     []
   );
 
@@ -92,19 +137,35 @@ export default function Log() {
     return map;
   }, [recent]);
 
-  const canSave = draft.outcome !== undefined && !!draft.subject && draft.timeSpentSec >= 0;
+  const canSave = !!draft.subject;
 
-  async function saveNew() {
+  async function startMulti() {
+    if (!userId) return;
+    const row: SessionRow = {
+      id: uuid(),
+      user_id: userId,
+      date: today,
+      subject: draft.subject || DEFAULT_SUBJECT,
+      target_duration_min: 0, // marker for "log batch" (no timer)
+      actual_duration_min: null,
+      insight: null,
+      sadhana_done: false,
+      interruptions_count: 0,
+      created_at: nowISO()
+    };
+    await writeLocal('sessions', row);
+    beginMulti(row.id);
+    setLocalDraft(emptyDraft(row.subject, today));
+  }
+
+  async function save() {
     if (!userId || !canSave || saving) return;
     setSaving(true);
     try {
-      // Build a blank row and merge the draft — this reuses the same field-mapping
-      // as the Journal edit path (source_ref/target_time/etc.) so nothing drifts.
-      const nowIso = nowISO();
       const skeleton: QuestionRow = {
         id: uuid(),
         user_id: userId,
-        session_id: null,
+        session_id: mode === 'multi' ? sessionId : null,
         subject: draft.subject,
         subtopic: null,
         source_year: null,
@@ -119,28 +180,51 @@ export default function Log() {
         root_cause: null,
         mark_decision: null,
         mark_correct: null,
-        // Preserve the wall-clock so back-dated rows still get a valid ISO.
-        created_at: `${draft.createdDate}T${nowIso.slice(11)}`
+        created_at: `${draft.createdDate}T${nowISO().slice(11)}`
       };
       const row = applyDraftToRow(skeleton, draft);
       await writeLocal('questions', row);
       if (row.pattern_name) await reconcilePattern(userId, row.subject, row.pattern_name);
       if (needsReattempt(row.outcome)) await scheduleReattempt(userId, row.id);
       setFlash(row.id);
-      // Reset for the next entry but keep subject / source kind sticky —
-      // most people log multiple questions from the same source in a row.
-      setDraft((d) => ({
-        ...emptyDraft(d.subject, today),
-        sourceKind: d.sourceKind,
-        sourceYear: d.sourceYear,
-        sourceSet: d.sourceSet,
-        format: d.format,
-        marks: d.marks
-      }));
-      setTimeout(() => setFlash(null), 2500);
+      setTimeout(() => setFlash(null), 2200);
+
+      if (mode === 'multi') {
+        bumpLogged();
+        // Sticky context — keep subject/source/marks/format, blank the rest.
+        setLocalDraft({
+          ...emptyDraft(draft.subject, today),
+          sourceKind: draft.sourceKind,
+          sourceYear: draft.sourceYear,
+          sourceSet: draft.sourceSet,
+          format: draft.format,
+          marks: draft.marks
+        });
+      } else {
+        // Single mode → close the entry and return to landing.
+        end();
+        setLocalDraft(emptyDraft(DEFAULT_SUBJECT, today));
+      }
     } finally {
       setSaving(false);
     }
+  }
+
+  async function endMulti() {
+    if (!userId || !sessionId) return;
+    const row = await db.sessions.get(sessionId);
+    if (row) {
+      const tagged = await db.questions.where('session_id').equals(sessionId).count();
+      if (tagged === 0) {
+        await deleteLocal('sessions', sessionId);
+      } else {
+        const mins =
+          startedAt != null ? Math.max(1, Math.round((Date.now() - startedAt) / 60_000)) : 1;
+        await writeLocal('sessions', { ...row, actual_duration_min: mins });
+      }
+    }
+    end();
+    setLocalDraft(emptyDraft(DEFAULT_SUBJECT, today));
   }
 
   function openEdit(row: QuestionRow) {
@@ -173,56 +257,156 @@ export default function Log() {
     }
   }
 
+  const showEntry = mode !== 'idle';
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Log a question"
-        description="One-off entries outside a timed session. Same fields as Journal — every one is optional except subject and outcome."
+        description={
+          mode === 'multi' ? (
+            <>
+              Batch session — <span className="u-num">{loggedCount}</span>{' '}
+              {plural(loggedCount, 'logged')}
+              {startedAt && (
+                <>
+                  {' '}
+                  ·{' '}
+                  <span className="u-num">
+                    {secondsToClock(Math.round((Date.now() - startedAt) / 1000))}
+                  </span>{' '}
+                  elapsed
+                </>
+              )}
+            </>
+          ) : mode === 'single' ? (
+            <>Single entry — saves once, then returns here.</>
+          ) : (
+            <>
+              One-off entries outside a timed session. Same fields as Journal — subject and
+              outcome are enough.
+            </>
+          )
+        }
       />
 
-      <Card>
-        <CardHeader
-          title="New entry"
-          aside={
-            flash && (
-              <motion.span
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-1 text-[12px] text-success"
-              >
-                <CheckCircle2 size={12} strokeWidth={2} />
-                saved
-              </motion.span>
-            )
-          }
-        />
-        <CardBody className="flex flex-col gap-4">
-          <QuestionEditor draft={draft} onChange={setDraft} />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-            <p className="text-[12px] text-text-faint">
-              Date defaults to today · Subject and outcome are enough — leave the rest blank if
-              you don't have it.
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => setDraft(emptyDraft(DEFAULT_SUBJECT, today))}
-                disabled={saving}
-              >
-                Reset
-              </Button>
-              <Button variant="primary" onClick={() => void saveNew()} disabled={!canSave || saving}>
-                {saving ? 'Saving…' : 'Log question'}
+      {mode === 'idle' && (
+        <Card>
+          <CardHeader title="How are you logging?" />
+          <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={beginSingle}
+              className="flex flex-col items-start gap-2 rounded border border-border bg-bg-raised px-4 py-4 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:border-border-hover hover:shadow-card active:translate-y-0"
+            >
+              <span className="flex items-center gap-2 font-display text-[15px] font-semibold text-text">
+                <PenLine size={16} strokeWidth={1.75} className="text-accent" />
+                Single question
+              </span>
+              <span className="text-[12px] text-text-muted">
+                One entry, saves, back to this page.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void startMulti()}
+              className="flex flex-col items-start gap-2 rounded border border-border bg-bg-raised px-4 py-4 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:border-border-hover hover:shadow-card active:translate-y-0"
+            >
+              <span className="flex items-center gap-2 font-display text-[15px] font-semibold text-text">
+                <PlayCircle size={16} strokeWidth={1.75} className="text-ink-teal" />
+                Batch (multiple questions)
+              </span>
+              <span className="text-[12px] text-text-muted">
+                Sticky subject / source across saves. Group is stored as a session — end
+                when you're done. Progress survives navigation.
+              </span>
+            </button>
+          </CardBody>
+        </Card>
+      )}
+
+      {showEntry && (
+        <Card>
+          <CardHeader
+            title={mode === 'multi' ? 'New entry (batch)' : 'New entry'}
+            aside={
+              flash ? (
+                <motion.span
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="flex items-center gap-1 text-[12px] text-success"
+                >
+                  <CheckCircle2 size={12} strokeWidth={2} />
+                  saved
+                </motion.span>
+              ) : (
+                <span className="u-num text-[11px] text-text-faint">
+                  date defaults to today
+                </span>
+              )
+            }
+          />
+          <CardBody className="flex flex-col gap-4">
+            <QuestionEditor draft={draft} onChange={setLocalDraft} />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              {mode === 'multi' ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void endMulti()}
+                  disabled={saving}
+                  className="text-danger hover:text-danger"
+                >
+                  <StopCircle size={14} strokeWidth={1.75} className="mr-1" />
+                  End log session
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    end();
+                    setLocalDraft(emptyDraft(DEFAULT_SUBJECT, today));
+                  }}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+              )}
+              <Button variant="primary" onClick={() => void save()} disabled={!canSave || saving}>
+                {saving
+                  ? 'Saving…'
+                  : mode === 'multi'
+                    ? 'Save & next'
+                    : 'Save entry'}
               </Button>
             </div>
-          </div>
-        </CardBody>
-      </Card>
+          </CardBody>
+        </Card>
+      )}
+
+      {mode === 'multi' && activeSession && (
+        <Card>
+          <CardBody className="flex flex-wrap items-center gap-3 text-[12px] text-text-muted">
+            <span className="flex items-center gap-1.5">
+              <span className={cn('h-1.5 w-1.5 rounded-full', subjectInk(activeSession.subject).dot)} />
+              <span className="font-medium">{activeSession.subject}</span>
+            </span>
+            <span className="text-text-faint">
+              · session id {activeSession.id.slice(0, 8)} · started{' '}
+              {formatDate(activeSession.date, 'dd MMM')}
+            </span>
+            <span className="ml-auto text-text-faint">
+              Leave and come back — this batch stays open until you end it.
+            </span>
+          </CardBody>
+        </Card>
+      )}
 
       <Card>
         <CardHeader
-          title="Just logged"
+          title={mode === 'multi' ? 'Logged in this batch + recent' : 'Just logged'}
           aside={
             recent.length > 0 ? (
               <span className="u-num text-[12px] text-text-faint">
@@ -234,8 +418,8 @@ export default function Log() {
         />
         {recent.length === 0 ? (
           <Empty
-            title="Nothing standalone yet"
-            hint="Entries saved here appear below and in the Journal — where a source-kind filter separates session logs from standalone ones."
+            title="Nothing yet"
+            hint="Entries appear here and in the Journal — filter by Standalone or by the session id above."
             className="border-0 py-8"
           />
         ) : (
@@ -258,8 +442,15 @@ export default function Log() {
                   const spec = OUTCOME_BY_CODE[q.outcome];
                   const ink = subjectInk(q.subject);
                   const over = q.time_spent_sec > q.target_time_sec;
+                  const inBatch = mode === 'multi' && q.session_id === sessionId;
                   return (
-                    <tr key={q.id} className="hover:bg-bg-overlay/40">
+                    <tr
+                      key={q.id}
+                      className={cn(
+                        'hover:bg-bg-overlay/40',
+                        inBatch && 'bg-accent-faint/25'
+                      )}
+                    >
                       <td className="u-num whitespace-nowrap px-3 py-2 text-[11px] text-text-faint">
                         {formatDate(q.created_at.slice(0, 10), 'dd MMM yy')}
                       </td>

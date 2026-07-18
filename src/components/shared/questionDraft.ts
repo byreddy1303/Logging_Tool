@@ -7,13 +7,14 @@ import {
   PYQ_TWO_SETS_FROM,
   QUESTION_FORMATS,
   SOURCE_KINDS,
+  SOURCE_KIND_BY_VALUE,
   buildSourceRef,
-  pyqYears,
+  examYears,
   type QuestionFormat,
   type SourceKind
 } from '@/lib/constants';
 
-const YEARS = pyqYears();
+const GATE_PYQ_YEARS = examYears(SOURCE_KIND_BY_VALUE.pyq);
 
 export interface EditorDraft {
   subject: string;
@@ -97,7 +98,7 @@ export function draftFromRow(row: QuestionRow): EditorDraft {
 }
 
 export function emptyDraft(subject: string, today: string): EditorDraft {
-  const defaultYear = YEARS[0] ?? null;
+  const defaultYear = GATE_PYQ_YEARS[0] ?? null;
   return {
     subject,
     subtopic: null,
@@ -125,21 +126,22 @@ export function applyDraftToRow(row: QuestionRow, draft: EditorDraft): QuestionR
     ? `${draft.createdDate}${originalTime}`
     : `${draft.createdDate}T00:00:00.000Z`;
   const target = draft.marks != null ? MARKS_TARGET_SEC[draft.marks] : DEFAULT_TARGET_TIME_SEC;
+  const spec = SOURCE_KIND_BY_VALUE[draft.sourceKind];
+  const isYearBased = !!spec.hasYear;
+  const isPyq = draft.sourceKind === 'pyq';
   return {
     ...row,
     subject: draft.subject,
     subtopic: draft.subtopic,
-    source_year: draft.sourceKind === 'pyq' ? draft.sourceYear : null,
+    source_year: isYearBased ? draft.sourceYear : null,
     source_ref: buildSourceRef(
       draft.sourceKind,
-      draft.sourceKind === 'pyq' ? draft.sourceYear : null,
-      draft.sourceKind === 'pyq' && (draft.sourceYear ?? 0) >= PYQ_TWO_SETS_FROM
-        ? draft.sourceSet
-        : null,
+      isYearBased ? draft.sourceYear : null,
+      isPyq && (draft.sourceYear ?? 0) >= PYQ_TWO_SETS_FROM ? draft.sourceSet : null,
       draft.questionNumber,
       draft.format
     ),
-    image_url: draft.sourceKind === 'pyq' ? null : draft.imageDataUrl,
+    image_url: isYearBased ? null : draft.imageDataUrl,
     time_spent_sec: draft.timeSpentSec,
     target_time_sec: target,
     outcome: draft.outcome,

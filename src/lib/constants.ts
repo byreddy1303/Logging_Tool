@@ -109,6 +109,13 @@ export const MARK_DECISIONS: { value: MarkDecision; label: string }[] = [
 
 export type SourceKind =
   | 'pyq'
+  | 'isro'
+  | 'barc'
+  | 'drdo'
+  | 'nielit'
+  | 'tifr'
+  | 'isi'
+  | 'cmi'
   | 'go_quiz'
   | 'go_dpp'
   | 'go_weekly'
@@ -121,15 +128,28 @@ export interface SourceKindSpec {
   label: string;
   /** Canonical string prefix stored in `questions.source_ref`. */
   refPrefix: string;
+  /** Whether the source is a year-based exam (surfaces a Year picker in the tag flow). */
+  hasYear?: boolean;
+  /** Earliest useful year for the year dropdown (default: current − 35). */
+  earliestYear?: number;
 }
 
+// GATE PYQ + prestige CS exams the same aspirants also prepare for. All year-
+// tagged; only GATE has Set 1 / Set 2 (from 2014).
 export const SOURCE_KINDS: SourceKindSpec[] = [
-  { value: 'pyq', key: '1', label: 'PYQ', refPrefix: 'PYQ' },
-  { value: 'go_quiz', key: '2', label: 'Go Classes Quiz', refPrefix: 'Go Classes Quiz' },
-  { value: 'go_dpp', key: '3', label: 'Go Classes DPP', refPrefix: 'Go Classes DPP' },
-  { value: 'go_weekly', key: '4', label: 'Go Classes Weekly Quiz', refPrefix: 'Go Classes Weekly Quiz' },
-  { value: 'gate_overflow', key: '5', label: 'GATE Overflow', refPrefix: 'GATE Overflow' },
-  { value: 'other', key: '6', label: 'Other', refPrefix: 'Other' }
+  { value: 'pyq', key: '1', label: 'GATE PYQ', refPrefix: 'GATE PYQ', hasYear: true, earliestYear: 1991 },
+  { value: 'isro', key: '2', label: 'ISRO Scientist/Engineer', refPrefix: 'ISRO', hasYear: true, earliestYear: 2007 },
+  { value: 'barc', key: '3', label: 'BARC OCES/DGFS', refPrefix: 'BARC', hasYear: true, earliestYear: 2005 },
+  { value: 'drdo', key: '4', label: 'DRDO CEPTAM', refPrefix: 'DRDO', hasYear: true, earliestYear: 2008 },
+  { value: 'nielit', key: '5', label: 'NIELIT Scientist-B', refPrefix: 'NIELIT', hasYear: true, earliestYear: 2015 },
+  { value: 'tifr', key: '6', label: 'TIFR GS (Computer Science)', refPrefix: 'TIFR', hasYear: true, earliestYear: 2005 },
+  { value: 'isi', key: '7', label: 'ISI JRF (Computer Science)', refPrefix: 'ISI', hasYear: true, earliestYear: 2005 },
+  { value: 'cmi', key: '8', label: 'CMI MSc CS Entrance', refPrefix: 'CMI', hasYear: true, earliestYear: 2010 },
+  { value: 'go_quiz', key: '9', label: 'Go Classes Quiz', refPrefix: 'Go Classes Quiz' },
+  { value: 'go_dpp', key: '0', label: 'Go Classes DPP', refPrefix: 'Go Classes DPP' },
+  { value: 'go_weekly', key: 'w', label: 'Go Classes Weekly Quiz', refPrefix: 'Go Classes Weekly Quiz' },
+  { value: 'gate_overflow', key: 'o', label: 'GATE Overflow', refPrefix: 'GATE Overflow' },
+  { value: 'other', key: '.', label: 'Other', refPrefix: 'Other' }
 ];
 
 export const SOURCE_KIND_BY_VALUE: Record<SourceKind, SourceKindSpec> = Object.fromEntries(
@@ -139,15 +159,25 @@ export const SOURCE_KIND_BY_VALUE: Record<SourceKind, SourceKindSpec> = Object.f
 /** GATE CS started running two sets in 2014. */
 export const PYQ_TWO_SETS_FROM = 2014;
 
-/** Descending list of PYQ years — earliest 35 years back from the last completed exam. */
-export function pyqYears(now: Date = new Date()): number[] {
+/** Descending year list for a given exam source (defaults to GATE PYQ range). */
+export function examYears(
+  spec?: SourceKindSpec | null,
+  now: Date = new Date()
+): number[] {
   const currentYear = now.getFullYear();
   const lastExamYear =
-    now.getMonth() > 1 || (now.getMonth() === 1 && now.getDate() >= 10) ? currentYear : currentYear - 1;
-  const earliest = lastExamYear - 35;
+    now.getMonth() > 1 || (now.getMonth() === 1 && now.getDate() >= 10)
+      ? currentYear
+      : currentYear - 1;
+  const earliest = spec?.earliestYear ?? lastExamYear - 35;
   const out: number[] = [];
   for (let y = lastExamYear; y >= earliest; y--) out.push(y);
   return out;
+}
+
+/** Descending list of GATE PYQ years — kept for backward-compat callers. */
+export function pyqYears(now: Date = new Date()): number[] {
+  return examYears(SOURCE_KINDS.find((s) => s.value === 'pyq'), now);
 }
 
 /** Build a canonical `source_ref` string from parsed pieces. */
@@ -160,8 +190,10 @@ export function buildSourceRef(
 ): string {
   const spec = SOURCE_KIND_BY_VALUE[kind];
   const parts: string[] = [spec.refPrefix];
-  if (kind === 'pyq' && year != null) {
-    const yearPart = set != null ? `${year} Set ${set}` : `${year}`;
+  if (spec.hasYear && year != null) {
+    // Set 1/Set 2 only applies to GATE PYQ from 2014 onward.
+    const yearPart =
+      kind === 'pyq' && set != null && year >= PYQ_TWO_SETS_FROM ? `${year} Set ${set}` : `${year}`;
     parts.push(yearPart);
   }
   if (questionNumber && questionNumber.trim()) parts.push(questionNumber.trim());

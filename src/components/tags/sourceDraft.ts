@@ -3,7 +3,8 @@
 // (keeps React Fast Refresh happy).
 import {
   PYQ_TWO_SETS_FROM,
-  pyqYears,
+  SOURCE_KIND_BY_VALUE,
+  examYears,
   type QuestionFormat,
   type SourceKind
 } from '@/lib/constants';
@@ -21,7 +22,7 @@ export interface SourceDraft {
 }
 
 export function makeInitialSource(subject: string): SourceDraft {
-  const years = pyqYears();
+  const years = examYears(SOURCE_KIND_BY_VALUE.pyq);
   const defaultYear = years[0] ?? null;
   return {
     subject,

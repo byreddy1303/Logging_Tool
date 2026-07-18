@@ -13,8 +13,9 @@ import {
   QUESTION_FORMATS,
   ROOT_CAUSES,
   SOURCE_KINDS,
+  SOURCE_KIND_BY_VALUE,
   SUBJECTS,
-  pyqYears,
+  examYears,
   type SourceKind
 } from '@/lib/constants';
 import { subtopicsFor } from '@/lib/subtopics';
@@ -25,8 +26,6 @@ import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
 import type { EditorDraft } from '@/components/shared/questionDraft';
-
-const YEARS = pyqYears();
 
 interface ChipProps<T> {
   value: T;
@@ -71,8 +70,11 @@ export default function QuestionEditor({
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const spec = SOURCE_KIND_BY_VALUE[draft.sourceKind];
   const isPyq = draft.sourceKind === 'pyq';
-  const yearHasSets = draft.sourceYear != null && draft.sourceYear >= PYQ_TWO_SETS_FROM;
+  const isYearBased = !!spec.hasYear;
+  const yearHasSets = isPyq && draft.sourceYear != null && draft.sourceYear >= PYQ_TWO_SETS_FROM;
+  const yearOptions = examYears(spec);
   const subtopics = subtopicsFor(draft.subject);
 
   // When subject changes, clear a subtopic that no longer applies.
@@ -154,23 +156,23 @@ export default function QuestionEditor({
         </Field>
       </div>
 
-      {/* PYQ-only or image-upload subblock */}
-      {isPyq ? (
+      {/* Year subblock for exam sources; image subblock for everything else */}
+      {isYearBased ? (
         <div className="flex flex-wrap items-end gap-3 rounded border border-border/70 bg-bg-overlay/40 px-3 py-3">
-          <Field label="Year" className="min-w-[140px]">
+          <Field label={`${spec.label} year`} className="min-w-[160px]">
             <Select
               value={draft.sourceYear ?? ''}
               onChange={(e) => set('sourceYear', e.target.value ? Number(e.target.value) : null)}
             >
               <option value="">Don't remember</option>
-              {YEARS.map((y) => (
+              {yearOptions.map((y) => (
                 <option key={y} value={y}>
                   {y}
                 </option>
               ))}
             </Select>
           </Field>
-          {yearHasSets && (
+          {isPyq && yearHasSets && (
             <Field label="Set">
               <div className="flex items-center gap-1.5">
                 <Chip label="Set 1" active={draft.sourceSet === 1} onClick={() => set('sourceSet', 1)} value={1} />
@@ -178,7 +180,7 @@ export default function QuestionEditor({
               </div>
             </Field>
           )}
-          {draft.sourceYear != null && !yearHasSets && (
+          {isPyq && draft.sourceYear != null && !yearHasSets && (
             <p className="text-[11px] text-text-faint">
               GATE {draft.sourceYear} was single-set (sets from {PYQ_TWO_SETS_FROM}).
             </p>
