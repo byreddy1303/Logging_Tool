@@ -66,6 +66,7 @@ function makeDeps(overrides: Partial<RouterDeps> = {}): {
     },
     logTriangulate: async (r) => {
       triangulateLog.push(r);
+      return `tri-${triangulateLog.length}`;
     },
     apiKeys: { groq: 'g', gemini: 'gm', openrouter: 'or', cerebras: 'c' },
     providerCalls,
@@ -351,9 +352,11 @@ describe('handler: dispatch + logging', () => {
       openrouter_resp: 'o'
     });
     const body = (await resp.json()) as {
+      triangulate_id: string;
       responses: { provider: string; response: string }[];
     };
     expect(body.responses.map((r) => r.provider)).toEqual(['groq', 'gemini', 'openrouter']);
+    expect(body.triangulate_id).toBe('tri-1');
   });
 
   it('triangulate survives one provider failing — still charges 3 credits', async () => {

@@ -18,6 +18,7 @@ import Heatmap from '@/pages/Heatmap';
 import Calibration from '@/pages/Calibration';
 import Log from '@/pages/Log';
 import DoubtChat from '@/pages/DoubtChat';
+import Triangulate from '@/pages/Triangulate';
 
 const DevPrimitives = lazy(() => import('@/pages/DevPrimitives'));
 
@@ -58,7 +59,7 @@ export const router = createBrowserRouter([
       { path: 'heatmap', element: <Heatmap /> },
       { path: 'calibration', element: <Calibration /> },
       { path: 'doubt', element: <DoubtChat /> },
-      { path: 'triangulate', element: <Pending step="S21" /> },
+      { path: 'triangulate', element: <Triangulate /> },
       { path: 'trigger-drill', element: <Pending step="S24" /> },
       { path: 'formulas', element: <Pending step="S23" /> },
       { path: 'buddy', element: <Pending step="S29" /> },

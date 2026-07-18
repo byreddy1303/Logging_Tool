@@ -30,6 +30,7 @@ export interface LLMSingleResponse {
 
 export interface LLMTriangulateResponse {
   use_case: 'triangulate';
+  triangulate_id: string;
   responses: {
     provider: 'groq' | 'gemini' | 'openrouter';
     model: string;

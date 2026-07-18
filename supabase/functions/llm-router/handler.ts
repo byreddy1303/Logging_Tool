@@ -33,8 +33,9 @@ export interface RouterDeps {
   bumpUsage: (userId: string) => Promise<void>;
   /** Log a single-provider response to `doubt_sessions`. */
   logDoubtSession: (row: DoubtSessionRow) => Promise<void>;
-  /** Log a fan-out response to `triangulate_logs`. */
-  logTriangulate: (row: TriangulateRow) => Promise<void>;
+  /** Log a fan-out response to `triangulate_logs`. Returns the row id so the
+   *  client can update `user_conclusion` when the user saves. */
+  logTriangulate: (row: TriangulateRow) => Promise<string>;
   /** API keys, keyed by provider. */
   apiKeys: Record<Provider, string>;
   /** Per-provider call function. Injectable so tests can stub network. */
@@ -149,7 +150,7 @@ export async function handle(req: Request, deps: RouterDeps): Promise<Response> 
       s.status === 'fulfilled' ? s.value.latencyMs : null;
 
     const [g, m, o] = settled;
-    await deps.logTriangulate({
+    const triangulateId = await deps.logTriangulate({
       user_id: user.id,
       prompt: body.prompt,
       groq_resp: readResp(g),
@@ -159,6 +160,7 @@ export async function handle(req: Request, deps: RouterDeps): Promise<Response> 
 
     return json({
       use_case: useCase,
+      triangulate_id: triangulateId,
       responses: [
         { provider: 'groq', model: route[0].model, response: readResp(g), latency_ms: readLat(g) },
         { provider: 'gemini', model: route[1].model, response: readResp(m), latency_ms: readLat(m) },

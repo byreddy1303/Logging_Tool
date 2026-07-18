@@ -52,7 +52,13 @@ Deno.serve((req: Request) =>
       await admin.from('doubt_sessions').insert(row);
     },
     async logTriangulate(row: TriangulateRow) {
-      await admin.from('triangulate_logs').insert(row);
+      const { data, error } = await admin
+        .from('triangulate_logs')
+        .insert(row)
+        .select('id')
+        .single();
+      if (error || !data?.id) throw new Error(error?.message ?? 'triangulate insert failed');
+      return data.id as string;
     },
     apiKeys
   })
