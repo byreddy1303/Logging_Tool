@@ -14,3 +14,8 @@ supabase/functions/**/.env
 coverage
 playwright-report
 test-results
+
+# Build artefacts that leak from tsc / vite type-checking
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

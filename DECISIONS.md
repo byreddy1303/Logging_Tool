@@ -75,3 +75,13 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 **Chose**: build S25 (Weekly review) and later analytics/PWA steps ahead of S18–S24.
 **Rejected**: strict S18 → S44 order per CLAUDE.md.
 **Reason**: S18 rate-limit logic can be written and unit-tested with mocked fetch, but the provider adapters (Groq / Gemini / OpenRouter / Cerebras) can't be end-to-end verified without secrets, and S20–S24 UI is worthless without a working router. The tagging + weekly-review + re-attempt loop stands on its own — that's the mistake-surface engine. LLM assist is an augment; it will slot in later without churning the pages we ship now.
+
+## 2026-07-18 — Scope amendment: production access flow + first-run UX + ambient insight (user-directed)
+**Chose**: append three feature blocks to §7 — F1.4 request-access + email approval, F3.5 dashboard hero (name greeting + rotating one-liner + Groq weekly-read card), F8.5 production hardening (rate limits, deliverability, isolation audit, ops docs) — plus a first-run onboarding pass across every empty state so a stranger can gain value without reading BUILD.md.
+**Rejected**: honouring §7 as frozen; deferring "aesthetic + production-ready + stranger-friendly" to a v2.
+**Reason**: user's product standard is "production-ready features, not half-baked, easy for someone who knows nothing." Same precedent as the 2026-07-17 sunlit pivot — user is the authority; contract amends by explicit direction, not silent creep. Non-negotiables (§2), hard bans (§17), invite-only auth stay intact — the /request-access flow does not create accounts, it only lets outsiders ASK; owner still approves.
+
+## 2026-07-18 — Email delivery via Resend, owner via env
+**Chose**: Resend (esm.sh import in Deno edge functions) for owner-notify + invite-send + decline-send. Owner email lives in `OWNER_EMAIL` edge secret; owner identity in-DB is "first signed-up user" via `public.is_owner()` SQL helper.
+**Rejected**: Supabase Auth's built-in SMTP (limited, and unrelated to transactional mail), Gmail SMTP via edge fn (deliverability worst, app-password fragile), SendGrid (older SDK, 100/day cap).
+**Reason**: Resend has the best Deno DX, 3k free/mo covers the growth curve for a niche personal tool, and DKIM/SPF setup is a one-time onboarding. `is_owner()` avoids adding an `is_owner` column while keeping RLS enforceable server-side.

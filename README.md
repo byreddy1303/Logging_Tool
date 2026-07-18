@@ -4,7 +4,7 @@ Local-first, multi-user GATE PYQ analysis app. Captures every solved question as
 
 Built for GATE 2027 CS, targeting AIR <100.
 
-## Quick start
+## Quick start (development)
 
 ```bash
 npm install
@@ -16,9 +16,51 @@ npx supabase start                # local Postgres + Studio at http://localhost:
 npm run dev                       # app at http://localhost:5173
 ```
 
+Open `http://localhost:5173/dev/primitives` to preview the design system in dev.
+
+## First-time user journey
+
+1. Visit `/request-access` — asks for name, email, purpose.
+2. Owner (you) receives an email; approves from **Settings → Access requests**.
+3. Approval creates an invite; requester receives a one-time link that expires in 7 days.
+4. Sign-in via magic link or Google OAuth. Dashboard opens with a walkthrough.
+5. First session → tag 5 questions → re-attempts populate automatically.
+
+The **first person to sign up becomes the owner** (bootstrap in `20260717000005_invite_signup.sql`). Every account after that must arrive via invite. Public sign-up is blocked at the database trigger; there is no way around it from the client.
+
+## Access flow (production)
+
+```
+outsider →  /request-access                              (public form)
+         →  edge fn "request-access"                     (validates + rate-limits)
+         →  account_requests row (pending)               (RLS: owner-only reads)
+         →  Resend mail to OWNER_EMAIL                   (with admin panel link)
+
+owner    →  Settings → Access requests → Approve          (owner-only card)
+         →  edge fn "approve-request"                    (JWT-authenticated)
+         →  approve_account_request() atomic RPC          (creates invite)
+         →  Resend mail to requester                     (with invite URL)
+
+requester →  invite URL → /auth?invite=<token>            (magic link + token in metadata)
+          →  trigger validates token                     (server-side)
+          →  auth.users row created                      (account exists)
+          →  handle_new_user() provisions profile        (public.users row)
+```
+
+Owner concept: `public.is_owner(uid)` returns true when `uid` matches the earliest-created `public.users` row. All owner-only surfaces (admin card, approve/decline edge functions) rely on this.
+
+## Isolation
+
+Each account's data is fully separate:
+
+- **Server**: RLS policies on every user-owned table (`user_id = auth.uid()` on select/insert/update/delete).
+- **Client**: on sign-out, `wipeLocalState()` (see `src/lib/isolation.ts`) drops all Dexie tables, resets zustand stores, and sweeps every `air.*` localStorage key. Non-app keys are left alone.
+- **Verified by** `src/__tests__/isolation.test.ts`.
+
 ## Docs
 
 - [`BUILD.md`](./BUILD.md) — Master build specification. Everything technical lives here.
+- [`DEPLOY.md`](./DEPLOY.md) — Production deployment walkthrough (Supabase + Vercel + Resend).
 - [`CLAUDE.md`](./CLAUDE.md) — Autonomy contract for AI-assisted builds.
 - [`FROZEN.md`](./FROZEN.md) — Feature-freeze commitment (2026-10-31).
 - [`DECISIONS.md`](./DECISIONS.md) — Log of choices made mid-build.
@@ -32,17 +74,47 @@ The tool compresses your mistake surface. It does not replace your reasoning.
 - Wrong / slow / guessed answers auto-enter a spaced re-attempt ladder (3 → 10 → 30 days).
 - LLMs assist with doubt-clearing and variation generation. **LLMs never tag your data.**
 - Weekly, you write ONE upstream weakness to fix that week. The tool shows its own guess only after you write yours.
+- No streaks, no push notifications, no gamified reward loops, no third-party analytics.
 
 ## Stack
 
-React 18 + Vite + TypeScript · Tailwind · Zustand · Dexie · React Query · Supabase (Postgres + Auth + Edge Functions) · Groq + Gemini + OpenRouter + Cerebras (all free tiers).
+React 18 + Vite + TypeScript · Tailwind · Zustand · Dexie · React Query · Supabase (Postgres 15 + Auth + Edge Functions) · Groq + Gemini + OpenRouter + Cerebras (all free tiers) · Resend (transactional mail, free tier).
 
-Total monthly cost for 2 users: ₹0.
+Total monthly cost at low volumes: ₹0. See `DEPLOY.md` for the scaling thresholds where paid tiers kick in.
+
+## Testing
+
+```bash
+npm run typecheck        # strict TypeScript
+npm run lint             # ESLint (0 warnings tolerated)
+npm run test             # Vitest — unit + isolation + LLM router + reattempt ladder
+npm run test:e2e         # Playwright — auth, tag flow, offline sync, buddy invite
+```
+
+CI runs all five on every push to `main`.
 
 ## Deploy
 
-See [`BUILD.md`](./BUILD.md) §12.
+See [`DEPLOY.md`](./DEPLOY.md) for the full production checklist. Short version:
+
+```bash
+# Supabase
+npx supabase link --project-ref <ref>
+npx supabase db push
+npx supabase functions deploy llm-router schedule-reattempts compute-readiness \
+  request-access approve-request decline-request weekly-insight
+npx supabase secrets set \
+  GROQ_API_KEY=... GEMINI_API_KEY=... OPENROUTER_API_KEY=... CEREBRAS_API_KEY=... \
+  RESEND_API_KEY=... MAIL_FROM='AIR Journal <no-reply@yourdomain.com>' \
+  OWNER_EMAIL=you@yourdomain.com VITE_APP_URL=https://yourapp.vercel.app
+
+# Vercel
+vercel env add VITE_SUPABASE_URL production
+vercel env add VITE_SUPABASE_ANON_KEY production
+vercel env add VITE_APP_URL production
+vercel --prod
+```
 
 ## License
 
-Private.
+Private. Not for redistribution.
