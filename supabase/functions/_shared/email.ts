@@ -12,7 +12,9 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const Deno: any;
 
-import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
+// Supabase Edge Functions support npm: imports; nodemailer works well
+// against Gmail over TCP:465 from the Deno runtime.
+import nodemailer from 'npm:nodemailer@6.9.14';
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
@@ -47,29 +49,23 @@ async function sendViaGmail(input: SendEmailInput): Promise<SendEmailResult> {
   const fromHeader = Deno.env.get('MAIL_FROM') || `AIR Journal <${user}>`;
   const { from } = normalizeFrom(fromHeader, user);
 
-  const client = new SMTPClient({
-    connection: {
-      hostname: 'smtp.gmail.com',
-      port: 465,
-      tls: true,
-      auth: { username: user, password: pass }
-    }
-  });
-
   try {
-    await client.send({
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user, pass }
+    });
+    const info = await transporter.sendMail({
       from,
       to: input.to,
       subject: input.subject,
-      content: 'This email is best viewed in an HTML-capable client.',
       html: input.html,
       replyTo: input.reply_to
     });
-    return { ok: true, provider: 'gmail' };
+    return { ok: true, provider: 'gmail', id: info?.messageId };
   } catch (e) {
-    return { ok: false, provider: 'gmail', error: (e as Error).message.slice(0, 200) };
-  } finally {
-    await client.close().catch(() => {});
+    return { ok: false, provider: 'gmail', error: (e as Error).message.slice(0, 300) };
   }
 }
 
