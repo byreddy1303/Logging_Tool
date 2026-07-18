@@ -139,12 +139,6 @@ export default function Auth() {
                     Ask for one
                   </Link>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-text-muted">First-time owner setup?</span>
-                  <Link to="/signup" className="font-medium text-accent hover:underline">
-                    Bootstrap
-                  </Link>
-                </div>
               </div>
             </>
           ) : (

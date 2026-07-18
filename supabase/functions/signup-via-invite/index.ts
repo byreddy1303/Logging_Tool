@@ -1,15 +1,11 @@
 // POST /functions/v1/signup-via-invite
-// Body: {invite_token?, email?, username, pin, name?}
+// Body: {invite_token, username, pin, name?, email?}
 //
-// Atomic account creation for the invite+PIN model.
-//
-// Two paths:
-//   1. INVITED — invite_token is valid & unused. Email is looked up from the
-//      linked account_requests row (or falls back to body.email). Any email
-//      in the body must match the invite; we don't let the requester pivot.
-//   2. BOOTSTRAP — no invite_token. Only allowed when public.users is empty.
-//      Body must supply an email (Supabase Auth requires one). The first
-//      account is the owner.
+// Atomic account creation for the invite+PIN model. Invite-only:
+//   invite_token must resolve to an unused, unexpired invite. Email is looked
+//   up from the linked account_requests row (or falls back to body.email if
+//   the invite was hand-issued). Any email in the body must match the invite;
+//   we don't let the requester pivot.
 //
 // PIN is stored as the Supabase Auth password (6-digit numeric). Client then
 // calls signInWithPassword to obtain a session, or we can shortcut by
@@ -86,39 +82,28 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .maybeSingle();
   if (taken) return json({ error: 'That username is taken. Pick another.' }, 409);
 
+  if (!token) {
+    return json({ error: 'Signup is invite-only. Ask the owner for an invite.' }, 403);
+  }
+
+  const { invite, request } = await inviteBundle(token);
+  if (!invite) return json({ error: 'Invite not found.' }, 400);
+  if (invite.used_by) return json({ error: 'Invite already used.' }, 400);
+  if (new Date(invite.expires_at).getTime() < Date.now())
+    return json({ error: 'Invite expired.' }, 400);
+
+  // Prefer the email locked into the request; fall back to body.email only if
+  // the invite was hand-issued (not via account_requests).
   let resolvedEmail = '';
-  let bootstrap = false;
-
-  if (token) {
-    const { invite, request } = await inviteBundle(token);
-    if (!invite) return json({ error: 'Invite not found.' }, 400);
-    if (invite.used_by) return json({ error: 'Invite already used.' }, 400);
-    if (new Date(invite.expires_at).getTime() < Date.now())
-      return json({ error: 'Invite expired.' }, 400);
-
-    // Prefer the email locked into the request; fall back to body.email
-    // only if the invite was hand-issued (not via account_requests).
-    const authoritativeEmail = (request?.email ?? '').toLowerCase();
-    if (authoritativeEmail) {
-      if (bodyEmail && bodyEmail !== authoritativeEmail) {
-        return json({ error: 'This invite is for a different email address.' }, 400);
-      }
-      resolvedEmail = authoritativeEmail;
-    } else {
-      if (!EMAIL_RE.test(bodyEmail)) return json({ error: 'Email is required.' }, 400);
-      resolvedEmail = bodyEmail;
+  const authoritativeEmail = (request?.email ?? '').toLowerCase();
+  if (authoritativeEmail) {
+    if (bodyEmail && bodyEmail !== authoritativeEmail) {
+      return json({ error: 'This invite is for a different email address.' }, 400);
     }
+    resolvedEmail = authoritativeEmail;
   } else {
-    // Bootstrap path — only if no users exist yet.
-    const { count } = await admin
-      .from('users')
-      .select('id', { count: 'exact', head: true });
-    if ((count ?? 0) > 0) {
-      return json({ error: 'Signup is invite-only. Ask the owner for an invite.' }, 403);
-    }
     if (!EMAIL_RE.test(bodyEmail)) return json({ error: 'Email is required.' }, 400);
     resolvedEmail = bodyEmail;
-    bootstrap = true;
   }
 
   // Create the auth user. email_confirm skips the confirmation loop; the
@@ -131,7 +116,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     user_metadata: {
       username,
       name: displayName || username,
-      invite_token: token || undefined
+      invite_token: token
     }
   });
 
@@ -153,7 +138,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
   return json({
     ok: true,
     user_id: created.user.id,
-    email: resolvedEmail,
-    bootstrap
+    email: resolvedEmail
   });
 });

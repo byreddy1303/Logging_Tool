@@ -1,9 +1,6 @@
-// /signup — Two modes:
-//   INVITED     : URL carries ?invite=<token>. Email is locked to the request.
-//   BOOTSTRAP   : No invite. Only works when no users exist yet (first owner).
-//
-// Fields: name, username, PIN, confirm PIN. Email is asked only in bootstrap
-// mode; in invite mode it's already known and shown read-only-ish for clarity.
+// /signup — invite-only. Reached with ?invite=<token>. Anyone landing here
+// without a token is shown the "invite required" panel and sent to
+// /request-access. The old bootstrap path (first user becomes owner) is gone.
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
@@ -22,7 +19,6 @@ type SubmitState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'error'; mes
 
 const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
 const PIN_RE = /^\d{6}$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Signup() {
   const { status } = useAuth();
@@ -33,7 +29,6 @@ export default function Signup() {
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [usernameTouched, setUsernameTouched] = useState(false);
   const [pin, setPin] = useState('');
@@ -47,14 +42,13 @@ export default function Signup() {
     return raw.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32);
   }
 
-  // Auto-suggest a username from email localpart (or name) until the user
-  // types into the field themselves.
+  // Auto-suggest a username from the display name until the user types into
+  // the field themselves.
   useEffect(() => {
     if (usernameTouched) return;
-    const source = !invited && email.trim() ? email.split('@')[0] : name;
-    const suggested = sanitizeUsername(source);
+    const suggested = sanitizeUsername(name);
     if (suggested.length >= 3) setUsername(suggested);
-  }, [email, name, invited, usernameTouched]);
+  }, [name, usernameTouched]);
 
   // Debounced username availability check for a nice UX hint.
   useEffect(() => {
@@ -75,33 +69,29 @@ export default function Signup() {
 
   const cleanedUsername = username.trim().toLowerCase();
   const cleanedName = name.trim();
-  const cleanedEmail = email.trim().toLowerCase();
   const usernameTooShort = cleanedUsername.length > 0 && cleanedUsername.length < 3;
   const usernameValid = USERNAME_RE.test(cleanedUsername) && usernameCheck !== 'taken';
   const pinValid = PIN_RE.test(pin);
   const pinsMatch = pin === confirm && confirm.length === 6;
-  const emailValid = invited || EMAIL_RE.test(cleanedEmail);
   const nameValid = cleanedName.length >= 1 && cleanedName.length <= 80;
   const canSubmit =
-    state.kind !== 'sending' && usernameValid && pinValid && pinsMatch && emailValid && nameValid;
+    state.kind !== 'sending' && usernameValid && pinValid && pinsMatch && nameValid;
 
   const missingReasons: string[] = [];
   if (!nameValid) missingReasons.push('name');
-  if (!emailValid) missingReasons.push('valid email');
   if (!usernameValid) missingReasons.push(usernameTooShort ? 'longer username' : 'valid username');
   if (!pinValid) missingReasons.push('6-digit PIN');
   if (pinValid && !pinsMatch) missingReasons.push('matching PIN');
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || !invited) return;
     setState({ kind: 'sending' });
     const { error } = await signUp({
       username: cleanedUsername,
       pin,
       name: cleanedName,
-      email: invited ? undefined : cleanedEmail,
-      invite_token: invited ? inviteToken : undefined
+      invite_token: inviteToken
     });
     if (error) {
       setState({ kind: 'error', message: error });
@@ -128,20 +118,37 @@ export default function Signup() {
           transition={{ duration: 0.28, ease: 'easeOut' }}
           className="u-panel relative w-full max-w-[440px] p-8"
         >
-          <span className="u-stamp absolute right-6 top-7">{invited ? 'invite' : 'bootstrap'}</span>
+          <span className="u-stamp absolute right-6 top-7">
+            {invited ? 'invite' : 'closed'}
+          </span>
 
           <div className="u-margin-line">
             <h1 className="font-display text-[26px] font-bold leading-tight tracking-tight text-text">
-              {invited ? 'Set up your account.' : 'First-run setup.'}
+              {invited ? 'Set up your account.' : 'Invite required.'}
             </h1>
             <p className="mt-2 text-[13px] leading-relaxed text-text-muted">
               {invited
                 ? 'Your invite is valid. Pick a username and a 6-digit PIN — those are the only two things you use to sign in.'
-                : 'No users exist yet, so the first account created here becomes the owner. Pick your email, username, and PIN.'}
+                : 'AIR Journal is invite-only. Ask the owner for an invite — the link you receive drops you back here with your slot pre-filled.'}
             </p>
           </div>
 
-          {!supabaseConfigured ? (
+          {!invited ? (
+            <div className="mt-6 flex flex-col gap-3">
+              <Link
+                to="/request-access"
+                className="inline-flex h-10 w-full items-center justify-center rounded bg-accent px-4 text-sm font-semibold text-white shadow-[0_2px_0_#a5311b] transition-all hover:-translate-y-px hover:bg-accent-hover hover:shadow-[0_3px_0_#a5311b] active:translate-y-[2px] active:shadow-none"
+              >
+                Request access
+              </Link>
+              <Link
+                to="/auth"
+                className="text-center text-[12.5px] text-text-muted hover:text-text"
+              >
+                I already have an account — sign in
+              </Link>
+            </div>
+          ) : !supabaseConfigured ? (
             <p className="mt-6 rounded border border-warn/40 bg-warn/5 px-3 py-3 text-[12.5px] text-warn">
               Supabase env not configured. Fill{' '}
               <span className="u-num text-xs text-text">.env.local</span> to enable signup.
@@ -159,25 +166,6 @@ export default function Signup() {
                   placeholder="Kalyan"
                 />
               </Field>
-
-              {!invited && (
-                <Field
-                  label="Email"
-                  htmlFor="s-email"
-                  hint="Only used if you need to reset your PIN. Never used for logging in."
-                >
-                  <Input
-                    id="s-email"
-                    type="email"
-                    autoComplete="email"
-                    spellCheck={false}
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={state.kind === 'sending'}
-                    placeholder="you@yourdomain.com"
-                  />
-                </Field>
-              )}
 
               <Field
                 label="Username"

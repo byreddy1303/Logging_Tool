@@ -193,7 +193,6 @@ export interface SignupOk {
   ok: true;
   user_id: string;
   email: string;
-  bootstrap: boolean;
 }
 
 export async function signupViaInvite(input: SignupInput): Promise<SignupOk | EdgeError> {
@@ -208,9 +207,9 @@ export async function signupViaInvite(input: SignupInput): Promise<SignupOk | Ed
     },
     body: JSON.stringify(input)
   }).catch((e) => new Response(JSON.stringify({ error: (e as Error).message }), { status: 0 }));
-  const body = (await readJson(res)) as { ok?: boolean; user_id?: string; email?: string; bootstrap?: boolean; error?: string } | null;
+  const body = (await readJson(res)) as { ok?: boolean; user_id?: string; email?: string; error?: string } | null;
   if (res.ok && body?.ok && body.user_id && body.email) {
-    return { ok: true, user_id: body.user_id, email: body.email, bootstrap: !!body.bootstrap };
+    return { ok: true, user_id: body.user_id, email: body.email };
   }
   return { ok: false, status: res.status, error: body?.error ?? `signup ${res.status}` };
 }
