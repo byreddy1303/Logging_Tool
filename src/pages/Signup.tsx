@@ -35,10 +35,26 @@ export default function Signup() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
+  const [usernameTouched, setUsernameTouched] = useState(false);
   const [pin, setPin] = useState('');
   const [confirm, setConfirm] = useState('');
   const [usernameCheck, setUsernameCheck] = useState<'idle' | 'checking' | 'ok' | 'taken'>('idle');
   const [state, setState] = useState<SubmitState>({ kind: 'idle' });
+
+  // Strip anything that isn't [a-z0-9_] so users can't accidentally type an
+  // email or spaces into the username field.
+  function sanitizeUsername(raw: string): string {
+    return raw.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32);
+  }
+
+  // Auto-suggest a username from email localpart (or name) until the user
+  // types into the field themselves.
+  useEffect(() => {
+    if (usernameTouched) return;
+    const source = !invited && email.trim() ? email.split('@')[0] : name;
+    const suggested = sanitizeUsername(source);
+    if (suggested.length >= 3) setUsername(suggested);
+  }, [email, name, invited, usernameTouched]);
 
   // Debounced username availability check for a nice UX hint.
   useEffect(() => {
@@ -60,6 +76,7 @@ export default function Signup() {
   const cleanedUsername = username.trim().toLowerCase();
   const cleanedName = name.trim();
   const cleanedEmail = email.trim().toLowerCase();
+  const usernameTooShort = cleanedUsername.length > 0 && cleanedUsername.length < 3;
   const usernameValid = USERNAME_RE.test(cleanedUsername) && usernameCheck !== 'taken';
   const pinValid = PIN_RE.test(pin);
   const pinsMatch = pin === confirm && confirm.length === 6;
@@ -67,6 +84,13 @@ export default function Signup() {
   const nameValid = cleanedName.length >= 1 && cleanedName.length <= 80;
   const canSubmit =
     state.kind !== 'sending' && usernameValid && pinValid && pinsMatch && emailValid && nameValid;
+
+  const missingReasons: string[] = [];
+  if (!nameValid) missingReasons.push('name');
+  if (!emailValid) missingReasons.push('valid email');
+  if (!usernameValid) missingReasons.push(usernameTooShort ? 'longer username' : 'valid username');
+  if (!pinValid) missingReasons.push('6-digit PIN');
+  if (pinValid && !pinsMatch) missingReasons.push('matching PIN');
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -165,12 +189,14 @@ export default function Signup() {
                       ? 'Available.'
                       : usernameCheck === 'taken'
                         ? 'Taken — try another.'
-                        : 'Lowercase letters, digits, or underscore (3–32).'
+                        : usernameTooShort
+                          ? 'A little longer — at least 3 characters.'
+                          : 'Lowercase letters, digits, or underscore only (3–32).'
                 }
                 hintTone={
                   usernameCheck === 'ok'
                     ? 'success'
-                    : usernameCheck === 'taken'
+                    : usernameCheck === 'taken' || usernameTooShort
                       ? 'warn'
                       : 'faint'
                 }
@@ -181,7 +207,10 @@ export default function Signup() {
                   autoCapitalize="none"
                   spellCheck={false}
                   value={username}
-                  onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                  onChange={(e) => {
+                    setUsernameTouched(true);
+                    setUsername(sanitizeUsername(e.target.value));
+                  }}
                   disabled={state.kind === 'sending'}
                   placeholder="rank_notebook"
                   maxLength={32}
@@ -220,10 +249,14 @@ export default function Signup() {
                 {state.kind === 'sending' ? 'Creating your account…' : 'Create account'}
               </Button>
 
-              <div className="mt-4 min-h-[18px]" aria-live="polite">
-                {state.kind === 'error' && (
+              <div className="mt-3 min-h-[18px]" aria-live="polite">
+                {state.kind === 'error' ? (
                   <p className="text-xs font-medium text-danger">{state.message}</p>
-                )}
+                ) : !canSubmit && missingReasons.length > 0 ? (
+                  <p className="text-[11.5px] text-text-faint">
+                    Still needs: {missingReasons.join(', ')}.
+                  </p>
+                ) : null}
               </div>
             </form>
           )}
