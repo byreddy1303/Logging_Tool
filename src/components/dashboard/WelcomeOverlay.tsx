@@ -1,0 +1,171 @@
+// First-run welcome overlay. Shown once, on the first Dashboard load per
+// device, and only when Dexie meta.welcome_seen_at is missing. Dismiss stores
+// the timestamp so it never fires again unless the user wipes local data.
+//
+// Explains the loop to a stranger in four calm paper slides. No emojis, no
+// hype, no counters, no dark patterns.
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ArrowRight, X } from 'lucide-react';
+import { db } from '@/lib/db';
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/utils';
+
+const KEY = 'welcome_seen_at';
+
+interface Slide {
+  eyebrow: string;
+  title: string;
+  body: string;
+  hint?: string;
+}
+
+const SLIDES: Slide[] = [
+  {
+    eyebrow: 'welcome',
+    title: 'This is a mistake-surface tool.',
+    body: 'Every question you solve becomes structured data — outcome, pattern, trigger, root cause. Over weeks, the shape of what still trips you up becomes visible enough to fix.',
+    hint: 'Not a leaderboard. Not a study planner. A quiet notebook that remembers.'
+  },
+  {
+    eyebrow: 'the loop',
+    title: 'Session → tag → re-attempt.',
+    body: 'Start a timed session. Tag every question in under 30 seconds with 4 keystrokes. Anything wrong or slow schedules itself for re-attempt at day 3, day 10, and day 30.',
+    hint: 'The queue on the Dashboard tells you what to revisit today.'
+  },
+  {
+    eyebrow: 'weekly',
+    title: 'One fix per week.',
+    body: 'On Sundays, you look at seven days of tags and write your own one-line root cause. Only after that does the AI offer a second opinion. Your read comes first — always.',
+    hint: 'Skipping a Sunday is silent. There are no streaks to break.'
+  },
+  {
+    eyebrow: 'ready',
+    title: 'First move.',
+    body: 'Create a session, log 5 real questions from a PYQ, tag each honestly. That is the whole practice. The dashboard starts earning its keep from there.'
+  }
+];
+
+export default function WelcomeOverlay() {
+  const [visible, setVisible] = useState(false);
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      try {
+        const row = await db.meta.get(KEY);
+        if (!cancelled && !row?.value) setVisible(true);
+      } catch {
+        // If Dexie fails, don't block the app.
+      }
+    }
+    void check();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function dismiss() {
+    setVisible(false);
+    try {
+      await db.meta.put({ key: KEY, value: new Date().toISOString() });
+    } catch {
+      // ignore write errors — worst case the overlay shows again once.
+    }
+  }
+
+  if (!visible) return null;
+
+  const slide = SLIDES[idx];
+  const isLast = idx === SLIDES.length - 1;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 px-4 py-8 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="welcome-title"
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 12, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 8, scale: 0.98 }}
+          transition={{ duration: 0.28, ease: 'easeOut' }}
+          className="u-panel relative w-full max-w-[520px] overflow-hidden"
+        >
+          <button
+            type="button"
+            onClick={() => void dismiss()}
+            aria-label="Skip walkthrough"
+            className="absolute right-3 top-3 rounded p-1.5 text-text-faint hover:bg-bg-overlay hover:text-text"
+          >
+            <X size={14} strokeWidth={1.75} />
+          </button>
+
+          <div className="u-margin-line px-7 py-7">
+            <motion.div
+              key={slide.title}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22 }}
+            >
+              <p className="u-label text-accent">{slide.eyebrow}</p>
+              <h2
+                id="welcome-title"
+                className="mt-2 font-display text-[24px] font-bold leading-tight tracking-tight text-text"
+              >
+                {slide.title}
+              </h2>
+              <p className="mt-3 text-[14px] leading-relaxed text-text-muted">{slide.body}</p>
+              {slide.hint && (
+                <p className="mt-2 text-[12.5px] leading-relaxed text-text-faint">{slide.hint}</p>
+              )}
+            </motion.div>
+
+            <div className="mt-7 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5">
+                {SLIDES.map((_, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      'h-1.5 rounded-full transition-all',
+                      i === idx ? 'w-6 bg-accent' : 'w-1.5 bg-border'
+                    )}
+                    aria-hidden
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                {idx > 0 && (
+                  <Button variant="ghost" size="sm" onClick={() => setIdx((i) => Math.max(0, i - 1))}>
+                    Back
+                  </Button>
+                )}
+                {isLast ? (
+                  <Button variant="primary" size="sm" onClick={() => void dismiss()}>
+                    Open my dashboard
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setIdx((i) => Math.min(SLIDES.length - 1, i + 1))}
+                  >
+                    Next
+                    <ArrowRight size={12} strokeWidth={2} className="ml-1" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}

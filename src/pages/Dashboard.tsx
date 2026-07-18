@@ -7,7 +7,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
 import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
 import type { Outcome } from '@/types';
-import PageHeader from '@/components/layout/PageHeader';
+import HeroCard from '@/components/dashboard/HeroCard';
+import WelcomeOverlay from '@/components/dashboard/WelcomeOverlay';
+import OutcomeLegend from '@/components/dashboard/OutcomeLegend';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Empty } from '@/components/ui/Empty';
 import { Button } from '@/components/ui/Button';
@@ -173,7 +175,7 @@ function OutcomeBar({
 }
 
 export default function Dashboard() {
-  const { userId, profile } = useAuth();
+  const { userId, profile, sandbox } = useAuth();
   const navigate = useNavigate();
   const today = todayISO();
   const dailyQuestionTarget = usePrefsStore((s) => s.dailyQuestionTarget);
@@ -237,14 +239,14 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Dashboard"
-        description={
-          showCountdown
-            ? `${formatDate(today, 'EEE dd MMM')} · T−${daysLeft}d to GATE`
-            : formatDate(today, 'EEE dd MMM')
-        }
-        actions={
+      <WelcomeOverlay />
+      <HeroCard
+        name={profile?.name}
+        userId={userId}
+        sandbox={sandbox}
+        showCountdown={showCountdown}
+        daysLeft={daysLeft}
+        action={
           <Button variant="primary" onClick={() => navigate('/session/new')}>
             New session
           </Button>
@@ -335,11 +337,14 @@ export default function Dashboard() {
         <CardHeader
           title="Last session"
           aside={
-            last && (
-              <Button size="sm" variant="ghost" onClick={() => navigate(`/session/${last.id}/review`)}>
-                Open review
-              </Button>
-            )
+            <div className="flex items-center gap-2">
+              {last && lastSessionQuestions.length > 0 && <OutcomeLegend />}
+              {last && (
+                <Button size="sm" variant="ghost" onClick={() => navigate(`/session/${last.id}/review`)}>
+                  Open review
+                </Button>
+              )}
+            </div>
           }
         />
         <CardBody className="flex flex-col gap-4">
