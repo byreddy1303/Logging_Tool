@@ -4,6 +4,7 @@ import RequireAuth from '@/components/shared/RequireAuth';
 import LoadingScreen from '@/components/shared/LoadingScreen';
 import Shell from '@/components/layout/Shell';
 import Auth from '@/pages/Auth';
+import RequestAccess from '@/pages/RequestAccess';
 import NotFound from '@/pages/NotFound';
 import Dashboard from '@/pages/Dashboard';
 import SessionNew from '@/pages/SessionNew';
@@ -43,6 +44,7 @@ const devRoutes = import.meta.env.DEV
 export const router = createBrowserRouter([
   ...devRoutes,
   { path: '/auth', element: <Auth /> },
+  { path: '/request-access', element: <RequestAccess /> },
   {
     path: '/',
     element: (

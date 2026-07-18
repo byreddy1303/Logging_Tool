@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
 import { useAuthStore } from '@/stores/auth';
 import { useAuth } from '@/hooks/useAuth';
@@ -65,6 +65,18 @@ export default function Auth() {
               <p className="u-num mt-1 truncate text-xs text-text-muted">{invite}</p>
               <p className="mt-1 text-xs text-text-faint">
                 Sending the link will create your account with this invite.
+              </p>
+            </div>
+          )}
+
+          {!invite && supabaseConfigured && (
+            <div className="mb-6 rounded border border-border bg-bg-overlay/40 px-3 py-2.5">
+              <p className="text-[12.5px] leading-relaxed text-text-muted">
+                No invite yet?{' '}
+                <Link to="/request-access" className="font-medium text-accent hover:underline">
+                  Ask for one
+                </Link>
+                .
               </p>
             </div>
           )}

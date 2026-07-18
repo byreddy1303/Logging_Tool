@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { Empty } from '@/components/ui/Empty';
+import AccessRequestsCard from '@/components/settings/AccessRequestsCard';
 import { useAuthStore, type ProfilePatch } from '@/stores/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useUiStore } from '@/stores/ui';
@@ -39,7 +40,7 @@ import {
   type Preferences
 } from '@/stores/prefs';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
-import { clearLocalData } from '@/lib/db';
+import { wipeLocalState } from '@/lib/isolation';
 import {
   EXAM_DATE_DEFAULT,
   INVITE_TTL_DAYS,
@@ -298,6 +299,9 @@ export default function Settings() {
         onSave={updateProfile}
         onToast={pushToast}
       />
+
+      {/* --- Access requests (owner-only) --------------------------------- */}
+      <AccessRequestsCard userId={userId} />
 
       {/* --- Invites ------------------------------------------------------ */}
       <InvitesCard userId={userId} sandbox={sandbox} />
@@ -921,8 +925,8 @@ function DataCard({
   async function onClear() {
     setBusy('clear');
     try {
-      await clearLocalData();
-      pushToast('Local Dexie wiped. Server data untouched.', 'neutral');
+      await wipeLocalState();
+      pushToast('Local storage wiped. Server data untouched.', 'neutral');
     } catch (err) {
       pushToast(`Clear failed: ${(err as Error).message}`, 'neutral');
     } finally {
