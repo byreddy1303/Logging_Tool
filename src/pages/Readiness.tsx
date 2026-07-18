@@ -1,23 +1,60 @@
-// F5.3 — exam-day readiness. Score + per-component breakdown against local
-// Dexie data (no round trip). When compute-readiness edge fn runs on a schedule
-// it will overwrite this with the server's canonical number, but the math is
-// identical so client display stays truthy in the interim.
-import { useMemo } from 'react';
+// F5.3 — exam-day readiness. Composite gauge + per-subject matrix + rule-
+// based next-moves + trend line + AIR band + weekly delta + peer-median +
+// exam-day Monte Carlo + debt log + component tooltips. All nine surfaces.
+//
+// The score math still lives in lib/readiness.ts (pure); this page composes
+// the pieces. Peer median is the only non-local piece — it round-trips to
+// the readiness_median_for_band() RPC when the user is signed in.
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
-import { CircleAlert, TrendingUp } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  CircleAlert,
+  Compass,
+  HelpCircle,
+  History,
+  Rocket,
+  Sparkles,
+  TrendingUp,
+  Users2
+} from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Empty } from '@/components/ui/Empty';
 import { db } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/auth';
+import { supabase, supabaseConfigured } from '@/lib/supabase';
 import {
   computeReadiness,
+  computeReadinessBySubject,
+  COMPONENT_TOOLTIPS,
+  estimateAIRBand,
+  examDaySimulator,
+  nextMoves,
   readinessComponents,
-  type ReadinessComponentKey
+  type NextMove,
+  type ReadinessComponentKey,
+  type SubjectReadiness
 } from '@/lib/readiness';
-import { EXAM_DATE_DEFAULT } from '@/lib/constants';
+import {
+  DEBT_LABEL,
+  loadDebt,
+  loadSnapshots,
+  projectToExam,
+  updateDebt,
+  upsertSnapshot,
+  weeklyDelta,
+  type DebtEntry,
+  type ReadinessSnapshot
+} from '@/lib/readiness-snapshots';
+import { EXAM_DATE_DEFAULT, SUBJECTS } from '@/lib/constants';
+import { cn } from '@/lib/utils';
+import { subjectInk } from '@/lib/subjectInk';
 
 const ACCENT_BY_KEY: Record<ReadinessComponentKey, string> = {
   coverage: 'bg-ink-cobalt/10 text-ink-cobalt',
@@ -26,12 +63,29 @@ const ACCENT_BY_KEY: Record<ReadinessComponentKey, string> = {
   surface: 'bg-ink-rose/10 text-ink-rose'
 };
 
+const BAR_BY_KEY: Record<ReadinessComponentKey, string> = {
+  coverage: 'bg-ink-cobalt',
+  retention: 'bg-ink-teal',
+  calibration: 'bg-ink-violet',
+  surface: 'bg-ink-rose'
+};
+
 function scoreBand(score: number): { label: string; tone: string } {
   if (score >= 75) return { label: 'strong', tone: 'text-success' };
   if (score >= 55) return { label: 'building', tone: 'text-accent' };
   if (score >= 35) return { label: 'thin', tone: 'text-warn' };
   return { label: 'raw', tone: 'text-danger' };
 }
+
+function todayISO(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/* ------------------------------- gauge ------------------------------- */
 
 function Gauge({ score }: { score: number }) {
   const radius = 76;
@@ -71,8 +125,10 @@ function Gauge({ score }: { score: number }) {
   );
 }
 
+/* ------------------------------ page --------------------------------- */
+
 export default function Readiness() {
-  const { userId } = useAuth();
+  const { userId, sandbox } = useAuth();
   const profile = useAuthStore((s) => s.profile);
 
   const questions = useLiveQuery(
@@ -96,12 +152,105 @@ export default function Readiness() {
     [questions, reattempts, patterns]
   );
 
+  const perSubject = useMemo(
+    () => computeReadinessBySubject({ questions, reattempts, patterns }, SUBJECTS),
+    [questions, reattempts, patterns]
+  );
+
   const components = useMemo(() => readinessComponents(breakdown), [breakdown]);
 
-  const daysLeft = differenceInCalendarDays(
-    parseISO(profile?.exam_date ?? EXAM_DATE_DEFAULT),
-    new Date()
+  const daysLeft = Math.max(
+    0,
+    differenceInCalendarDays(
+      parseISO(profile?.exam_date ?? EXAM_DATE_DEFAULT),
+      new Date()
+    )
   );
+
+  const airBand = useMemo(
+    () => estimateAIRBand(breakdown.score, daysLeft),
+    [breakdown.score, daysLeft]
+  );
+
+  const moves = useMemo(
+    () => nextMoves(breakdown, perSubject),
+    [breakdown, perSubject]
+  );
+
+  const simulator = useMemo(() => examDaySimulator(perSubject, 600), [perSubject]);
+
+  /* -------- snapshots + debt (localStorage) -------- */
+
+  const [snapshots, setSnapshots] = useState<ReadinessSnapshot[]>(() =>
+    loadSnapshots()
+  );
+  const [debt, setDebt] = useState<DebtEntry[]>(() => loadDebt());
+  const wroteFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    const day = todayISO();
+    if (wroteFor.current === day) return;
+    wroteFor.current = day;
+    const next: ReadinessSnapshot = {
+      date: day,
+      score: breakdown.score,
+      coverage: breakdown.coverage,
+      retention: breakdown.retention,
+      calibration: breakdown.calibration,
+      surface: breakdown.surface,
+      daysToExam: daysLeft
+    };
+    setSnapshots(upsertSnapshot(next));
+    setDebt(updateDebt(day, breakdown, perSubject));
+  }, [breakdown, perSubject, daysLeft]);
+
+  const delta = useMemo(() => weeklyDelta(snapshots), [snapshots]);
+  const projection = useMemo(
+    () => projectToExam(snapshots, daysLeft),
+    [snapshots, daysLeft]
+  );
+
+  /* -------- peer median (Supabase) -------- */
+
+  const [peer, setPeer] = useState<{ median: number | null; sampleSize: number } | null>(
+    null
+  );
+  useEffect(() => {
+    if (sandbox || !supabaseConfigured || !userId) return;
+    let cancelled = false;
+    void (async () => {
+      // Persist today's snapshot to the DB so the median RPC has data to work
+      // with. Idempotent — the (user_id, on_date) PK dedupes.
+      await supabase
+        .from('readiness_snapshots')
+        .upsert(
+          {
+            user_id: userId,
+            on_date: todayISO(),
+            score: breakdown.score,
+            days_to_exam: daysLeft
+          },
+          { onConflict: 'user_id,on_date' }
+        );
+      const { data, error } = await supabase.rpc('readiness_median_for_band', {
+        band_width_days: 7
+      });
+      if (cancelled || error) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      const median =
+        row && typeof row.median === 'number'
+          ? row.median
+          : row && typeof row.median === 'string'
+            ? Number(row.median)
+            : null;
+      const sampleSize =
+        row && typeof row.sample_size === 'number' ? row.sample_size : 0;
+      setPeer({ median, sampleSize });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sandbox, userId, breakdown.score, daysLeft]);
 
   const anyData = questions.length + reattempts.length + patterns.length > 0;
 
@@ -109,7 +258,7 @@ export default function Readiness() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Readiness"
-        description="A single 0–100 rollup of coverage, retention, MARK calibration, and open mistake surface."
+        description="What to work on next, and how much runway you have."
       />
 
       {!anyData ? (
@@ -119,54 +268,163 @@ export default function Readiness() {
         />
       ) : (
         <>
+          {/* --- Gauge + AIR band + weekly delta + T-minus --- */}
           <Card>
             <CardBody className="grid grid-cols-1 items-center gap-6 sm:grid-cols-[auto_1fr]">
               <Gauge score={breakdown.score} />
               <div className="flex flex-col gap-3">
-                <div>
-                  <p className="u-label">Composite</p>
-                  <p className="mt-1 text-[13.5px] text-text-muted">
-                    Weighted 30/25/25/20 across coverage / retention / calibration / surface. A
-                    week without new mistakes swings this five points; a full paper of tagged
-                    questions swings it more.
-                  </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-accent-faint px-2.5 py-0.5 text-[12px] font-semibold text-accent">
+                    {airBand.label}
+                  </span>
+                  {delta !== null && <DeltaChip delta={delta} />}
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-0.5 text-[12px] text-text-muted">
+                    <TrendingUp size={11} strokeWidth={1.75} className="text-accent" />
+                    T−<span className="u-num text-text">{daysLeft}</span>d
+                  </span>
                 </div>
+                <p className="text-[13px] leading-relaxed text-text-muted">
+                  {airBand.caveat}
+                </p>
                 <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3 text-[12px] text-text-muted">
-                  <span className="flex items-center gap-1">
-                    <TrendingUp size={12} strokeWidth={1.75} className="text-accent" />
-                    T−<span className="u-num text-text">{Math.max(0, daysLeft)}</span> days
+                  <span>
+                    <span className="u-num text-text">
+                      {breakdown.counts.patterns}
+                    </span>{' '}
+                    patterns encountered
                   </span>
                   <span>
-                    <span className="u-num text-text">{breakdown.counts.patterns}</span> patterns
-                    encountered
-                  </span>
-                  <span>
-                    <span className="u-num text-text">{breakdown.counts.openReattempts}</span>{' '}
+                    <span className="u-num text-text">
+                      {breakdown.counts.openReattempts}
+                    </span>{' '}
                     open re-attempts
+                  </span>
+                  <span>
+                    <span className="u-num text-text">
+                      {breakdown.counts.markedDecisions}
+                    </span>{' '}
+                    answered decisions
                   </span>
                 </div>
               </div>
             </CardBody>
           </Card>
 
+          {/* --- Next moves --- */}
+          {moves.length > 0 && (
+            <Card>
+              <CardHeader
+                title="Next 3 moves"
+                aside={
+                  <span className="text-[11px] text-text-faint">
+                    rule-based — no LLM
+                  </span>
+                }
+              />
+              <ul className="divide-y divide-border">
+                {moves.map((m, i) => (
+                  <MoveRow key={`${m.kind}-${m.subject ?? 'all'}-${i}`} move={m} />
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* --- Trend chart + projection --- */}
+          <Card>
+            <CardHeader
+              title="Trend & projection"
+              aside={
+                projection ? (
+                  <span className="text-[11px] text-text-faint">
+                    slope{' '}
+                    <span
+                      className={cn(
+                        'u-num',
+                        projection.slopePerDay > 0
+                          ? 'text-success'
+                          : projection.slopePerDay < 0
+                            ? 'text-danger'
+                            : 'text-text-muted'
+                      )}
+                    >
+                      {projection.slopePerDay >= 0 ? '+' : ''}
+                      {projection.slopePerDay}/day
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-text-faint">
+                    log 3+ days to project
+                  </span>
+                )
+              }
+            />
+            <CardBody>
+              <Sparkline
+                snapshots={snapshots}
+                projectedScore={projection?.projectedScore ?? null}
+                daysToExam={daysLeft}
+              />
+              {projection && (
+                <p className="mt-3 text-[12.5px] text-text-muted">
+                  At the current pace you land on{' '}
+                  <span
+                    className={cn(
+                      'u-num font-semibold',
+                      projection.projectedScore >= breakdown.score
+                        ? 'text-success'
+                        : 'text-danger'
+                    )}
+                  >
+                    {projection.projectedScore}
+                  </span>{' '}
+                  by exam day (T−{daysLeft}). Based on the last{' '}
+                  <span className="u-num">{projection.sampleDays}</span> snapshots.
+                </p>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* --- Components with tooltips --- */}
           <Card>
             <CardHeader
               title="Components"
-              aside={<span className="text-[11px] text-text-faint">sums to composite</span>}
+              aside={<span className="text-[11px] text-text-faint">sums to composite · hover for detail</span>}
             />
             <div className="flex flex-col divide-y divide-border">
               {components.map((c) => {
                 const pct = Math.round(c.value * 100);
                 const contribPct = Math.round(c.contribution);
+                const tip = COMPONENT_TOOLTIPS[c.key];
                 return (
                   <div key={c.key} className="flex flex-col gap-2 px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
-                        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${ACCENT_BY_KEY[c.key]}`}>
+                        <span
+                          className={cn(
+                            'rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase',
+                            ACCENT_BY_KEY[c.key]
+                          )}
+                        >
                           {c.key}
                         </span>
                         <span className="font-display text-[14px] font-semibold text-text">
                           {c.label}
+                        </span>
+                        <span
+                          className="group relative inline-flex text-text-faint hover:text-text"
+                          tabIndex={0}
+                          aria-label={`${c.label} explanation`}
+                        >
+                          <HelpCircle size={12} strokeWidth={1.75} />
+                          <span className="pointer-events-none absolute left-4 top-full z-30 mt-1 hidden w-64 rounded-lg border border-border bg-bg-raised p-3 text-left text-[11.5px] leading-relaxed text-text shadow-lift group-hover:block group-focus:block">
+                            <span className="block text-text-muted">{tip.what}</span>
+                            <span className="mt-1 block text-text">
+                              <span className="u-label">Lift it:</span> {tip.lift}
+                            </span>
+                            <span className="mt-1 block text-text-faint">
+                              Healthy: {tip.healthy}
+                            </span>
+                          </span>
                         </span>
                       </div>
                       <div className="u-num text-[12px] text-text-faint">
@@ -178,7 +436,7 @@ export default function Readiness() {
                     </div>
                     <div className="h-2 overflow-hidden rounded bg-bg-overlay">
                       <div
-                        className={`h-2 rounded ${c.key === 'surface' ? 'bg-ink-rose' : c.key === 'retention' ? 'bg-ink-teal' : c.key === 'calibration' ? 'bg-ink-violet' : 'bg-ink-cobalt'}`}
+                        className={cn('h-2 rounded', BAR_BY_KEY[c.key])}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -189,27 +447,153 @@ export default function Readiness() {
             </div>
           </Card>
 
+          {/* --- Per-subject matrix --- */}
           <Card>
-            <CardHeader title="What moves the needle" />
-            <CardBody className="grid grid-cols-1 gap-3 text-[13px] text-text-muted sm:grid-cols-2">
-              <Nudge
-                intro="Coverage"
-                body="Every new pattern name you introduce during tagging counts — it's not about typing 400 questions, it's about naming 400 distinct patterns."
-              />
-              <Nudge
-                intro="Retention"
-                body="Only fractions that reach D30 or MASTERED help. Failing a re-attempt resets to D3, so a fresh miss drops this score by up to 3 points."
-              />
-              <Nudge
-                intro="Calibration"
-                body="Marking only when you can defend it beats maximising marks. Any MARK-wrong you log recalibrates this in the wrong direction."
-              />
-              <Nudge
-                intro="Mistake surface"
-                body="Below-baseline is fine; growing indefinitely isn't. Solve on paper before hitting 'Solved clean' — the ladder only rewards honest resolutions."
-              />
+            <CardHeader
+              title="Per-subject matrix"
+              aside={
+                <span className="text-[11px] text-text-faint">weak cells highlighted</span>
+              }
+            />
+            <CardBody className="p-0">
+              <SubjectMatrix rows={perSubject} />
             </CardBody>
           </Card>
+
+          {/* --- Exam-day simulator --- */}
+          <Card>
+            <CardHeader
+              title="Exam-day simulator"
+              aside={
+                <span className="inline-flex items-center gap-1 text-[11px] text-text-faint">
+                  <Sparkles size={11} strokeWidth={1.75} /> {simulator.runs} Monte Carlo runs
+                </span>
+              }
+            />
+            <CardBody className="flex flex-col gap-3">
+              <div className="grid grid-cols-3 gap-3">
+                <SimStat label="Unlucky (p10)" value={simulator.p10} tone="text-danger" />
+                <SimStat label="Median (p50)" value={simulator.p50} tone="text-text" />
+                <SimStat label="Lucky (p90)" value={simulator.p90} tone="text-success" />
+              </div>
+              <p className="text-[12.5px] text-text-muted">
+                Based on per-subject calibration + engagement. Correct = +2 marks,
+                wrong = −⅔. Skipped is a wash. The gap between p10 and p90 is
+                variance — narrow it by lifting calibration.
+              </p>
+            </CardBody>
+          </Card>
+
+          {/* --- Peer median + debt log side by side --- */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader
+                title={
+                  <span className="inline-flex items-center gap-1.5">
+                    <Users2 size={13} strokeWidth={1.75} /> Peer band
+                  </span>
+                }
+              />
+              <CardBody>
+                {sandbox || !supabaseConfigured ? (
+                  <p className="text-[12.5px] text-text-muted">
+                    Sign in to compare against peers in the same T− window.
+                  </p>
+                ) : peer === null ? (
+                  <p className="text-[12.5px] text-text-faint">Loading peer data…</p>
+                ) : peer.median === null || peer.sampleSize < 3 ? (
+                  <p className="text-[12.5px] text-text-muted">
+                    Not enough peers in your T−{daysLeft}±7 band yet
+                    {peer.sampleSize > 0
+                      ? ` (${peer.sampleSize} logged).`
+                      : '.'}{' '}
+                    Median is hidden until at least 3 people have snapshots — no
+                    single peer's number ever leaks.
+                  </p>
+                ) : (
+                  <div>
+                    <p className="text-[12.5px] text-text-muted">
+                      Median across{' '}
+                      <span className="u-num text-text">{peer.sampleSize}</span> peers
+                      in T−{daysLeft}±7 days:
+                    </p>
+                    <p className="mt-1 u-num text-[32px] font-bold text-text">
+                      {Math.round(peer.median)}
+                    </p>
+                    <p className="text-[12px] text-text-muted">
+                      You are{' '}
+                      <span
+                        className={cn(
+                          'font-semibold',
+                          breakdown.score > peer.median
+                            ? 'text-success'
+                            : breakdown.score < peer.median
+                              ? 'text-danger'
+                              : 'text-text'
+                        )}
+                      >
+                        {breakdown.score - Math.round(peer.median) >= 0 ? '+' : ''}
+                        {breakdown.score - Math.round(peer.median)}
+                      </span>{' '}
+                      vs. median.
+                    </p>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader
+                title={
+                  <span className="inline-flex items-center gap-1.5">
+                    <History size={13} strokeWidth={1.75} /> Debt log
+                  </span>
+                }
+                aside={
+                  debt.length > 0 && (
+                    <span className="text-[11px] text-text-faint">
+                      {debt.length} open
+                    </span>
+                  )
+                }
+              />
+              <CardBody className="p-0">
+                {debt.length === 0 ? (
+                  <p className="p-4 text-[12.5px] text-text-muted">
+                    Nothing chronically weak. Every component is above its
+                    healthy threshold.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {debt.slice(0, 5).map((d) => (
+                      <li
+                        key={d.key}
+                        className="flex items-center gap-3 px-4 py-2.5 text-[12.5px]"
+                      >
+                        <span
+                          className={cn(
+                            'rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase',
+                            ACCENT_BY_KEY[d.component]
+                          )}
+                        >
+                          {d.component}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-text">
+                          {d.subject ? d.subject : 'Overall'}{' '}
+                          <span className="text-text-muted">
+                            · {DEBT_LABEL[d.component]}
+                          </span>
+                        </span>
+                        <span className="u-num text-text-faint">
+                          {d.weeksHeld}w
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardBody>
+            </Card>
+          </div>
         </>
       )}
 
@@ -226,11 +610,333 @@ export default function Readiness() {
   );
 }
 
-function Nudge({ intro, body }: { intro: string; body: string }) {
+/* ------------------------------ delta chip ---------------------------- */
+
+function DeltaChip({ delta }: { delta: number }) {
+  if (delta === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-raised px-2.5 py-0.5 text-[12px] text-text-muted">
+        <ArrowRight size={11} strokeWidth={1.75} />
+        flat vs. last week
+      </span>
+    );
+  }
+  const up = delta > 0;
   return (
-    <div className="rounded border border-border/70 bg-bg-overlay/30 px-3 py-3">
-      <p className="font-display text-[13px] font-semibold text-text">{intro}</p>
-      <p className="mt-1 text-[12.5px] leading-relaxed text-text-muted">{body}</p>
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[12px] font-medium',
+        up
+          ? 'border-success/40 bg-success/10 text-success'
+          : 'border-danger/40 bg-danger/10 text-danger'
+      )}
+    >
+      {up ? (
+        <ArrowUp size={11} strokeWidth={2} />
+      ) : (
+        <ArrowDown size={11} strokeWidth={2} />
+      )}
+      {up ? '+' : ''}
+      {delta} vs. last week
+    </span>
+  );
+}
+
+/* ------------------------------- moves ------------------------------- */
+
+function MoveRow({ move }: { move: NextMove }) {
+  const urgencyTone =
+    move.urgency === 'high'
+      ? 'text-danger'
+      : move.urgency === 'medium'
+        ? 'text-warn'
+        : 'text-text-muted';
+  return (
+    <li className="flex flex-col gap-1 px-4 py-3">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <Rocket size={12} strokeWidth={1.75} className={urgencyTone} />
+        <p className="font-display text-[14px] font-semibold text-text">{move.title}</p>
+        <span
+          className={cn(
+            'rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide',
+            move.urgency === 'high' && 'border-danger/40 bg-danger-faint/50 text-danger',
+            move.urgency === 'medium' && 'border-warn/40 bg-warn/5 text-warn',
+            move.urgency === 'low' && 'border-border bg-bg-overlay text-text-muted'
+          )}
+        >
+          {move.urgency}
+        </span>
+      </div>
+      <p className="text-[12.5px] text-text-muted">{move.why}</p>
+      <p className="text-[12.5px] text-text">
+        {move.action}
+        {move.href && (
+          <>
+            {' '}
+            <Link
+              to={move.href}
+              className="inline-flex items-center gap-0.5 text-accent hover:text-accent-hover"
+            >
+              <Compass size={11} strokeWidth={1.75} />
+              open
+            </Link>
+          </>
+        )}
+      </p>
+    </li>
+  );
+}
+
+/* ---------------------------- sparkline ---------------------------- */
+
+function Sparkline({
+  snapshots,
+  projectedScore,
+  daysToExam
+}: {
+  snapshots: ReadinessSnapshot[];
+  projectedScore: number | null;
+  daysToExam: number;
+}) {
+  const width = 640;
+  const height = 140;
+  const paddingX = 8;
+  const paddingY = 12;
+
+  if (snapshots.length === 0) {
+    return (
+      <div className="flex h-[140px] items-center justify-center text-[12px] text-text-faint">
+        Snapshots will start appearing after your first Readiness visit.
+      </div>
+    );
+  }
+
+  const recent = snapshots.slice(-60);
+  const n = recent.length;
+  const usable = width - paddingX * 2;
+  const usableY = height - paddingY * 2;
+
+  const points = recent.map((s, i) => {
+    const x = paddingX + (i / Math.max(1, n - 1)) * usable * 0.7;
+    const y = paddingY + (1 - s.score / 100) * usableY;
+    return { x, y, score: s.score, date: s.date };
+  });
+
+  const lastReal = points[points.length - 1];
+  let projected: { x: number; y: number } | null = null;
+  if (projectedScore !== null && daysToExam > 0) {
+    projected = {
+      x: paddingX + usable,
+      y: paddingY + (1 - projectedScore / 100) * usableY
+    };
+  }
+
+  const linePath = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(' ');
+
+  return (
+    <svg
+      role="img"
+      aria-label="Readiness score trend"
+      viewBox={`0 0 ${width} ${height}`}
+      className="h-[140px] w-full"
+      preserveAspectRatio="none"
+    >
+      <line
+        x1={paddingX}
+        x2={width - paddingX}
+        y1={paddingY + usableY * 0.4}
+        y2={paddingY + usableY * 0.4}
+        className="stroke-border/60"
+        strokeDasharray="2 3"
+      />
+      <line
+        x1={paddingX}
+        x2={width - paddingX}
+        y1={paddingY + usableY * 0.7}
+        y2={paddingY + usableY * 0.7}
+        className="stroke-border/40"
+        strokeDasharray="2 3"
+      />
+      <path
+        d={linePath}
+        className="stroke-accent"
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {points.map((p, i) => (
+        <circle
+          key={`${p.date}-${i}`}
+          cx={p.x}
+          cy={p.y}
+          r={i === points.length - 1 ? 3 : 1.5}
+          className="fill-accent"
+        />
+      ))}
+      {projected && (
+        <>
+          <line
+            x1={lastReal.x}
+            y1={lastReal.y}
+            x2={projected.x}
+            y2={projected.y}
+            className="stroke-text-faint"
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+          />
+          <circle
+            cx={projected.x}
+            cy={projected.y}
+            r={4}
+            className="fill-bg-raised stroke-text-muted"
+            strokeWidth={1.5}
+          />
+        </>
+      )}
+      <text
+        x={paddingX}
+        y={paddingY - 2}
+        className="fill-text-faint"
+        fontSize="9"
+      >
+        100
+      </text>
+      <text
+        x={paddingX}
+        y={height - 2}
+        className="fill-text-faint"
+        fontSize="9"
+      >
+        0
+      </text>
+      {projected && (
+        <text
+          x={projected.x - 34}
+          y={projected.y - 6}
+          className="fill-text-muted"
+          fontSize="10"
+        >
+          exam day
+        </text>
+      )}
+    </svg>
+  );
+}
+
+/* --------------------------- subject matrix --------------------------- */
+
+const CELL_THRESHOLDS: Record<ReadinessComponentKey, [number, number]> = {
+  coverage: [0.6, 0.4],
+  retention: [0.55, 0.35],
+  calibration: [0.65, 0.4],
+  surface: [0.6, 0.4]
+};
+
+function cellTone(key: ReadinessComponentKey, v: number, hasSignal: boolean): string {
+  if (!hasSignal) return 'text-text-faint';
+  const [good, ok] = CELL_THRESHOLDS[key];
+  if (v >= good) return 'text-success';
+  if (v >= ok) return 'text-warn';
+  return 'text-danger font-semibold';
+}
+
+function SubjectMatrix({ rows }: { rows: SubjectReadiness[] }) {
+  const shown = rows.filter((r) => r.hasSignal || true); // show all for context
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] border-collapse text-[12.5px]">
+        <thead>
+          <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
+            <th className="px-4 py-2 font-mono">Subject</th>
+            <th className="px-2 py-2 text-right font-mono">Score</th>
+            <th className="px-2 py-2 text-right font-mono">Coverage</th>
+            <th className="px-2 py-2 text-right font-mono">Retention</th>
+            <th className="px-2 py-2 text-right font-mono">Calibration</th>
+            <th className="px-2 py-2 text-right font-mono">Surface</th>
+            <th className="px-4 py-2 font-mono">Signal</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {shown.map((r) => {
+            const ink = subjectInk(r.subject);
+            return (
+              <tr key={r.subject}>
+                <td className="px-4 py-2">
+                  <span className="flex items-center gap-2">
+                    <span className={cn('h-1.5 w-1.5 rounded-full', ink.dot)} />
+                    <span className="font-medium text-text">{r.subject}</span>
+                  </span>
+                </td>
+                <td className="u-num px-2 py-2 text-right font-semibold text-text">
+                  {r.hasSignal ? r.score : '—'}
+                </td>
+                <td
+                  className={cn(
+                    'u-num px-2 py-2 text-right',
+                    cellTone('coverage', r.coverage, r.hasSignal)
+                  )}
+                >
+                  {r.hasSignal ? `${Math.round(r.coverage * 100)}%` : '—'}
+                </td>
+                <td
+                  className={cn(
+                    'u-num px-2 py-2 text-right',
+                    cellTone('retention', r.retention, r.hasSignal)
+                  )}
+                >
+                  {r.hasSignal ? `${Math.round(r.retention * 100)}%` : '—'}
+                </td>
+                <td
+                  className={cn(
+                    'u-num px-2 py-2 text-right',
+                    cellTone('calibration', r.calibration, r.hasSignal)
+                  )}
+                >
+                  {r.hasSignal ? `${Math.round(r.calibration * 100)}%` : '—'}
+                </td>
+                <td
+                  className={cn(
+                    'u-num px-2 py-2 text-right',
+                    cellTone('surface', r.surface, r.hasSignal)
+                  )}
+                >
+                  {r.hasSignal ? `${Math.round(r.surface * 100)}%` : '—'}
+                </td>
+                <td className="px-4 py-2 text-[11px] text-text-faint">
+                  {r.hasSignal
+                    ? `${r.counts.patterns}p · ${r.counts.totalReattempts}r · ${r.counts.markedDecisions}d`
+                    : 'no data yet'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* -------------------------- simulator stat -------------------------- */
+
+function SimStat({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: number;
+  tone: string;
+}) {
+  return (
+    <div className="rounded border border-border bg-bg-overlay/40 px-3 py-3 text-center">
+      <p className="u-label">{label}</p>
+      <p className={cn('u-num mt-1 text-[24px] font-bold leading-none', tone)}>
+        {value >= 0 ? value : `−${Math.abs(value)}`}
+      </p>
+      <p className="mt-1 text-[10.5px] text-text-faint">marks</p>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { AnimatePresence } from 'motion/react';
 import PageHeader from '@/components/layout/PageHeader';
 import Calendar from '@/components/planner/Calendar';
 import DayPlanModal from '@/components/planner/DayPlanModal';
+import PlannerInsights from '@/components/planner/PlannerInsights';
 import WhatsAppSetup from '@/components/planner/WhatsAppSetup';
 import { useUiStore } from '@/stores/ui';
 import {
@@ -161,6 +162,8 @@ export default function Planner() {
         onNextMonth={goNext}
         onPickDate={openDate}
       />
+
+      <PlannerInsights revision={revision} />
 
       <WhatsAppSetup settings={waSettings} onChange={setWaSettings} />
 

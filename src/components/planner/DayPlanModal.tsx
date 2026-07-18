@@ -10,7 +10,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
+  Check,
   ChevronDown,
+  Clock,
+  Pencil,
   Plus,
   Send,
   Trash2,
@@ -52,6 +55,20 @@ interface Props {
   canSendWhatsApp: boolean;
 }
 
+/** A plan is considered "filled" once any user-authored field has content.
+ *  We use this to pick the initial modal mode (view vs. edit). */
+function planHasContent(plan: DayPlan): boolean {
+  if (plan.sessions.length > 0) return true;
+  if (plan.mindset.motivationNote.trim().length > 0) return true;
+  if (plan.nonStudy.errands.trim().length > 0) return true;
+  if (plan.nonStudy.social.trim().length > 0) return true;
+  if (plan.nonStudy.exerciseDone) return true;
+  if (plan.review.wentWell.trim().length > 0) return true;
+  if (plan.review.missed.trim().length > 0) return true;
+  if (plan.review.completionPct > 0) return true;
+  return false;
+}
+
 export default function DayPlanModal({
   date,
   plan,
@@ -62,6 +79,12 @@ export default function DayPlanModal({
   canSendWhatsApp
 }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Empty plan → open straight into edit mode. Filled plan → view first,
+  // then Edit → Save round-trip. Since every edit is auto-persisted, Save
+  // is really "done editing" — the round-trip is UX affordance, not I/O.
+  const [mode, setMode] = useState<'view' | 'edit'>(() =>
+    planHasContent(plan) ? 'view' : 'edit'
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -101,7 +124,7 @@ export default function DayPlanModal({
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            {onSendWhatsApp && (
+            {mode === 'edit' && onSendWhatsApp && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -117,37 +140,64 @@ export default function DayPlanModal({
                 Send to WA
               </Button>
             )}
-            {!confirmDelete ? (
+            {mode === 'view' ? (
               <Button
-                variant="ghost"
+                variant="primary"
                 size="sm"
-                onClick={() => setConfirmDelete(true)}
-                title="Clear this day's plan"
+                onClick={() => setMode('edit')}
+                title="Edit this day's plan"
               >
-                <Trash2 size={11} strokeWidth={1.75} className="mr-1" />
-                Clear
+                <Pencil size={11} strokeWidth={1.75} className="mr-1" />
+                Edit
               </Button>
             ) : (
-              <>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  // Auto-save is already happening on every field change; Save
+                  // here just switches back to the readable view.
+                  setMode(planHasContent(plan) ? 'view' : 'edit');
+                }}
+                title="Save (already saved as you type) and switch to the read-only view"
+                disabled={!planHasContent(plan)}
+              >
+                <Check size={11} strokeWidth={2} className="mr-1" />
+                Save
+              </Button>
+            )}
+            {mode === 'edit' &&
+              (!confirmDelete ? (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setConfirmDelete(false)}
+                  onClick={() => setConfirmDelete(true)}
+                  title="Clear this day's plan"
                 >
-                  Cancel
+                  <Trash2 size={11} strokeWidth={1.75} className="mr-1" />
+                  Clear
                 </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => {
-                    onDelete();
-                    setConfirmDelete(false);
-                  }}
-                >
-                  Confirm clear
-                </Button>
-              </>
-            )}
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => {
+                      onDelete();
+                      setConfirmDelete(false);
+                    }}
+                  >
+                    Confirm clear
+                  </Button>
+                </>
+              ))}
             <button
               type="button"
               onClick={onClose}
@@ -160,43 +210,246 @@ export default function DayPlanModal({
         </header>
 
         <div className="flex flex-col gap-3 p-4 sm:p-5">
-          <Section title="1 · Study sessions" defaultOpen>
-            <SessionsEditor
-              sessions={plan.sessions}
-              onChange={(sessions) => update('sessions', sessions)}
-            />
-          </Section>
+          {mode === 'view' ? (
+            <ViewMode plan={plan} />
+          ) : (
+            <>
+              <Section title="1 · Study sessions" defaultOpen>
+                <SessionsEditor
+                  sessions={plan.sessions}
+                  onChange={(sessions) => update('sessions', sessions)}
+                />
+              </Section>
 
-          <Section title="2 · Day structure">
-            <StructureEditor
-              structure={plan.structure}
-              onChange={(structure) => update('structure', structure)}
-            />
-          </Section>
+              <Section title="2 · Day structure">
+                <StructureEditor
+                  structure={plan.structure}
+                  onChange={(structure) => update('structure', structure)}
+                />
+              </Section>
 
-          <Section title="3 · Mindset & energy check">
-            <MindsetEditor
-              mindset={plan.mindset}
-              onChange={(mindset) => update('mindset', mindset)}
-            />
-          </Section>
+              <Section title="3 · Mindset & energy check">
+                <MindsetEditor
+                  mindset={plan.mindset}
+                  onChange={(mindset) => update('mindset', mindset)}
+                />
+              </Section>
 
-          <Section title="4 · Non-study tasks (optional)">
-            <NonStudyEditor
-              nonStudy={plan.nonStudy}
-              onChange={(nonStudy) => update('nonStudy', nonStudy)}
-            />
-          </Section>
+              <Section title="4 · Non-study tasks (optional)">
+                <NonStudyEditor
+                  nonStudy={plan.nonStudy}
+                  onChange={(nonStudy) => update('nonStudy', nonStudy)}
+                />
+              </Section>
 
-          <Section title="5 · Review (fill after the day)">
-            <ReviewEditor
-              review={plan.review}
-              onChange={(review) => update('review', review)}
-            />
-          </Section>
+              <Section title="5 · Review (fill after the day)">
+                <ReviewEditor
+                  review={plan.review}
+                  onChange={(review) => update('review', review)}
+                />
+              </Section>
+            </>
+          )}
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+/* ------------------------------- view mode ------------------------------- */
+
+function ViewMode({ plan }: { plan: DayPlan }) {
+  const totalMin = plan.sessions.reduce((s, x) => s + (x.durationMin || 0), 0);
+  const energyLabel =
+    ENERGY_FORECASTS.find((e) => e.value === plan.mindset.energyForecast)?.label ??
+    'Medium';
+  const endMoodLabel =
+    plan.review.endMood
+      ? END_MOODS.find((m) => m.value === plan.review.endMood)?.label
+      : null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Sessions */}
+      <div className="rounded border border-border bg-bg">
+        <div className="flex items-center justify-between border-b border-border/70 px-3 py-2">
+          <p className="font-display text-[13.5px] font-semibold text-text">
+            Study sessions ({plan.sessions.length})
+          </p>
+          <span className="inline-flex items-center gap-1 text-[12px] text-text-muted">
+            <Clock size={11} strokeWidth={1.75} /> {formatHours(totalMin)} planned
+          </span>
+        </div>
+        {plan.sessions.length === 0 ? (
+          <p className="p-3 text-[12.5px] text-text-muted">No sessions logged.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {plan.sessions.map((s, i) => {
+              const name =
+                s.subject === 'Custom...' && s.customSubject
+                  ? s.customSubject
+                  : s.subject;
+              return (
+                <li key={s.id} className="px-3 py-2.5">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="u-num text-[11px] text-text-faint">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span className="text-[13.5px] font-semibold text-text">
+                      {name}
+                    </span>
+                    <span className="rounded-full bg-accent-faint px-2 py-0.5 text-[11px] font-semibold text-accent">
+                      {formatHours(s.durationMin)}
+                    </span>
+                    <span className="text-[11.5px] text-text-muted">
+                      {s.mode} · {s.priority}
+                    </span>
+                  </div>
+                  {s.target && (
+                    <p className="mt-1 text-[12.5px] text-text-muted">
+                      <span className="u-label mr-1">Target</span>
+                      {s.target}
+                    </p>
+                  )}
+                  {s.resource && (
+                    <p className="mt-0.5 text-[11.5px] text-text-faint">
+                      <span className="u-label mr-1">Resource</span>
+                      {s.resource}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* Day structure */}
+      <div className="rounded border border-border bg-bg">
+        <div className="border-b border-border/70 px-3 py-2">
+          <p className="font-display text-[13.5px] font-semibold text-text">
+            Day structure
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 p-3 text-[12.5px] sm:grid-cols-4">
+          <SummaryStat label="Wake" value={plan.structure.wakeAt || '—'} />
+          <SummaryStat label="Sleep" value={plan.structure.sleepAt || '—'} />
+          <SummaryStat
+            label="Target hrs"
+            value={`${plan.structure.totalHoursTarget}h`}
+          />
+          <SummaryStat label="Day type" value={plan.structure.dayType} />
+          <SummaryStat
+            label="Breaks"
+            value={
+              BREAK_PATTERNS.find((b) => b.value === plan.structure.breakPattern)
+                ?.label ?? '—'
+            }
+          />
+          {plan.structure.customBreak && (
+            <SummaryStat label="Custom cadence" value={plan.structure.customBreak} />
+          )}
+        </div>
+      </div>
+
+      {/* Mindset */}
+      <div className="rounded border border-border bg-bg">
+        <div className="border-b border-border/70 px-3 py-2">
+          <p className="font-display text-[13.5px] font-semibold text-text">
+            Mindset & energy
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 p-3 text-[12.5px] sm:grid-cols-3">
+          <SummaryStat label="Energy" value={energyLabel} />
+          <SummaryStat label="Mood" value={plan.mindset.moodIntent} />
+        </div>
+        {plan.mindset.motivationNote && (
+          <div className="border-t border-border/70 px-3 py-2 text-[13px] text-text">
+            <p className="u-label mb-1">One thing today</p>
+            <p className="whitespace-pre-wrap">{plan.mindset.motivationNote}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Non-study */}
+      {(plan.nonStudy.exerciseDone ||
+        plan.nonStudy.errands ||
+        plan.nonStudy.social) && (
+        <div className="rounded border border-border bg-bg">
+          <div className="border-b border-border/70 px-3 py-2">
+            <p className="font-display text-[13.5px] font-semibold text-text">
+              Non-study
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 p-3 text-[12.5px] sm:grid-cols-3">
+            {plan.nonStudy.exerciseDone && (
+              <SummaryStat
+                label="Exercise"
+                value={plan.nonStudy.exerciseTime || 'planned'}
+              />
+            )}
+            {plan.nonStudy.errands && (
+              <SummaryStat label="Errands" value={plan.nonStudy.errands} />
+            )}
+            {plan.nonStudy.social && (
+              <SummaryStat label="Social" value={plan.nonStudy.social} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Review — only shown if any field is filled */}
+      {(plan.review.completionPct > 0 ||
+        plan.review.wentWell ||
+        plan.review.missed ||
+        plan.review.endMood ||
+        plan.review.replicate) && (
+        <div className="rounded border border-border bg-bg">
+          <div className="border-b border-border/70 px-3 py-2">
+            <p className="font-display text-[13.5px] font-semibold text-text">
+              End-of-day review
+            </p>
+          </div>
+          <div className="p-3 text-[12.5px]">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <SummaryStat
+                label="Completion"
+                value={`${plan.review.completionPct}%`}
+              />
+              {endMoodLabel && <SummaryStat label="Mood" value={endMoodLabel} />}
+              {plan.review.replicate && (
+                <SummaryStat label="Replicate" value={plan.review.replicate} />
+              )}
+            </div>
+            {plan.review.wentWell && (
+              <div className="mt-3">
+                <p className="u-label mb-1">Went well</p>
+                <p className="whitespace-pre-wrap text-text">
+                  {plan.review.wentWell}
+                </p>
+              </div>
+            )}
+            {plan.review.missed && (
+              <div className="mt-3">
+                <p className="u-label mb-1">Missed / why</p>
+                <p className="whitespace-pre-wrap text-text">
+                  {plan.review.missed}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="u-label">{label}</p>
+      <p className="mt-0.5 text-text">{value}</p>
+    </div>
   );
 }
 
@@ -309,9 +562,6 @@ function SessionRow({
   onRemove: () => void;
 }) {
   const isCustomSubject = session.subject === 'Custom...';
-  const durationIsCustom = !DURATIONS.slice(0, -1).some(
-    (d) => d.value === session.durationMin
-  );
 
   return (
     <div className="rounded border border-border/70 bg-bg-raised px-3 py-2.5">
@@ -348,23 +598,9 @@ function SessionRow({
             />
           )}
         </Field>
-        <Field label="Duration">
-          <Select
-            value={durationIsCustom ? '-1' : String(session.durationMin)}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              onUpdate({ durationMin: v === -1 ? 60 : v });
-            }}
-          >
-            {DURATIONS.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
-          </Select>
-          {durationIsCustom && (
+        <Field label="Duration (minutes)">
+          <div className="flex items-center gap-2">
             <Input
-              className="mt-1.5"
               type="number"
               min={1}
               max={720}
@@ -378,8 +614,32 @@ function SessionRow({
                 })
               }
               placeholder="Minutes"
+              className="w-28"
             />
-          )}
+            <span className="text-[11.5px] text-text-faint">
+              = {formatHours(session.durationMin)}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {DURATIONS.filter((d) => d.value > 0).map((d) => {
+              const on = d.value === session.durationMin;
+              return (
+                <button
+                  key={d.value}
+                  type="button"
+                  onClick={() => onUpdate({ durationMin: d.value })}
+                  className={cn(
+                    'rounded-full border px-2.5 py-0.5 text-[11px] transition-colors',
+                    on
+                      ? 'border-accent bg-accent-faint text-accent font-semibold'
+                      : 'border-border bg-bg-raised text-text-muted hover:border-border-hover hover:text-text'
+                  )}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
         </Field>
         <Field label="Study mode">
           <Select

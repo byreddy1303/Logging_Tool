@@ -145,3 +145,368 @@ export function readinessComponents(b: ReadinessBreakdown): ReadinessComponent[]
     }
   ];
 }
+
+/** Full component description (tooltip content) — 1 sentence what + 1 sentence
+ *  the concrete action to lift it. Kept as data so the UI just renders. */
+export const COMPONENT_TOOLTIPS: Record<
+  ReadinessComponentKey,
+  { what: string; lift: string; healthy: string }
+> = {
+  coverage: {
+    what: `Fraction of the ${TARGET_PATTERN_LIBRARY}-pattern target library you have named at least once.`,
+    lift: 'Log more sessions and name the reusable trick each time you tag a question.',
+    healthy: '≥ 60% by T−90.'
+  },
+  retention: {
+    what: 'Fraction of your re-attempts that reached the D30 or mastered stage.',
+    lift: 'Clear open D3/D10 re-attempts before starting fresh material.',
+    healthy: '≥ 55%.'
+  },
+  calibration: {
+    what: 'Accuracy of your "I answered it" decisions under −⅓ negative marking.',
+    lift: 'Tighten your MARK/SKIP threshold in /calibration and stop gambling on rows you can\'t justify.',
+    healthy: '≥ 65%.'
+  },
+  surface: {
+    what: `Inverse of your open re-attempt count (baseline ${BASELINE_OPEN_SURFACE}). Smaller mistake pool = higher score.`,
+    lift: 'Do a re-attempt sweep — pick the oldest 10 open rows and clear or master them.',
+    healthy: '≥ 60%.'
+  }
+};
+
+/* --------------------------------------------------------------------------
+ * Per-subject breakdown.
+ *
+ * Same math, sliced by subject. patterns/questions/reattempts are grouped
+ * by their `subject` field. The per-subject coverage denominator is scaled
+ * down from the full library (400) proportional to the subject's expected
+ * weight in the exam (equal weight fallback if we don't know better).
+ * ------------------------------------------------------------------------ */
+
+/** Per-subject expected weight, roughly matching the GATE CS blueprint.
+ *  Not authoritative — the exam allocation moves year to year; these are
+ *  reasonable defaults so per-subject coverage denominators aren't uniform. */
+export const SUBJECT_LIBRARY_WEIGHT: Record<string, number> = {
+  'Discrete Mathematics': 0.11,
+  'Engineering Mathematics': 0.1,
+  'Digital Logic': 0.06,
+  COA: 0.09,
+  'Programming & DS': 0.12,
+  Algorithms: 0.1,
+  'Theory of Computation': 0.09,
+  'Compiler Design': 0.05,
+  'Operating Systems': 0.09,
+  Databases: 0.08,
+  'Computer Networks': 0.08,
+  'General Aptitude': 0.03
+};
+
+function subjectLibraryTarget(subject: string): number {
+  const w = SUBJECT_LIBRARY_WEIGHT[subject] ?? 1 / 12;
+  return Math.max(4, Math.round(w * TARGET_PATTERN_LIBRARY));
+}
+
+export interface SubjectReadiness extends ReadinessBreakdown {
+  subject: string;
+  targetPatterns: number;
+  /** null if the subject has no signal at all — treat as "hasn't started". */
+  hasSignal: boolean;
+}
+
+/** Slice inputs by subject and run computeReadiness on each. */
+export function computeReadinessBySubject(
+  inputs: ReadinessInputs,
+  subjects: readonly string[]
+): SubjectReadiness[] {
+  const qBySubj = new Map<string, QuestionRow[]>();
+  const pBySubj = new Map<string, PatternRow[]>();
+  const rBySubj = new Map<string, ReattemptRow[]>();
+  for (const q of inputs.questions) {
+    const list = qBySubj.get(q.subject) ?? [];
+    list.push(q);
+    qBySubj.set(q.subject, list);
+  }
+  for (const p of inputs.patterns) {
+    const list = pBySubj.get(p.subject) ?? [];
+    list.push(p);
+    pBySubj.set(p.subject, list);
+  }
+  for (const r of inputs.reattempts) {
+    // Re-attempts don't carry subject directly; join via the question row.
+    const q = inputs.questions.find((x) => x.id === r.question_id);
+    if (!q) continue;
+    const list = rBySubj.get(q.subject) ?? [];
+    list.push(r);
+    rBySubj.set(q.subject, list);
+  }
+  return subjects.map((subject) => {
+    const qs = qBySubj.get(subject) ?? [];
+    const ps = pBySubj.get(subject) ?? [];
+    const rs = rBySubj.get(subject) ?? [];
+    const target = subjectLibraryTarget(subject);
+    const cov = clamp01(ps.length / target);
+    const ret = retention(rs);
+    const cal = calibration(qs);
+    const openReattempts = rs.filter((r) => r.stage !== 'MASTERED').length;
+    // Per-subject surface baseline scales with the subject's weight.
+    const perSubjBaseline = Math.max(
+      4,
+      Math.round(
+        (SUBJECT_LIBRARY_WEIGHT[subject] ?? 1 / 12) * BASELINE_OPEN_SURFACE
+      )
+    );
+    const surf = clamp01(1 - openReattempts / perSubjBaseline);
+    const score = Math.round(
+      (cov * WEIGHTS.coverage +
+        ret * WEIGHTS.retention +
+        cal * WEIGHTS.calibration +
+        surf * WEIGHTS.surface) *
+        100
+    );
+    const marked = qs.filter((q) => q.mark_decision === 'MARK');
+    return {
+      subject,
+      targetPatterns: target,
+      hasSignal: qs.length + ps.length + rs.length > 0,
+      score,
+      coverage: cov,
+      retention: ret,
+      calibration: cal,
+      surface: surf,
+      counts: {
+        patterns: ps.length,
+        totalReattempts: rs.length,
+        stabilised: rs.filter((r) => r.stage === 'D30' || r.stage === 'MASTERED').length,
+        openReattempts,
+        markedDecisions: marked.length,
+        markedCorrect: marked.filter((q) => q.mark_correct === true).length
+      }
+    };
+  });
+}
+
+/* --------------------------------------------------------------------------
+ * "Next moves" — rule-based recommendations from the per-subject matrix
+ * plus the overall breakdown. No LLM.
+ * ------------------------------------------------------------------------ */
+
+export type MoveKind = 'calibrate' | 'reattempts' | 'cover' | 'stabilise' | 'diagnose';
+
+export interface NextMove {
+  kind: MoveKind;
+  subject?: string;
+  title: string;
+  why: string;
+  action: string;
+  href?: string;
+  urgency: 'high' | 'medium' | 'low';
+}
+
+const HIGH_CALIBRATION_MIN = 0.4;
+const HIGH_RETENTION_MIN = 0.4;
+const OPEN_REATTEMPT_ALERT = 8;
+const LOW_COVERAGE_MAX = 0.15;
+
+/** Return up to 3 concrete next moves, prioritised by urgency. */
+export function nextMoves(
+  overall: ReadinessBreakdown,
+  perSubject: SubjectReadiness[]
+): NextMove[] {
+  const moves: NextMove[] = [];
+
+  for (const s of perSubject) {
+    if (!s.hasSignal) continue;
+    if (s.counts.markedDecisions >= 5 && s.calibration < HIGH_CALIBRATION_MIN) {
+      moves.push({
+        kind: 'calibrate',
+        subject: s.subject,
+        title: `Recalibrate ${s.subject}`,
+        why: `${Math.round(s.calibration * 100)}% accuracy on ${s.counts.markedDecisions} answered decisions — below the −⅓ break-even.`,
+        action: 'Open /calibration, drop the MARK threshold for this subject, and skip more.',
+        href: '/calibration',
+        urgency: 'high'
+      });
+    }
+    if (s.counts.openReattempts >= OPEN_REATTEMPT_ALERT) {
+      moves.push({
+        kind: 'reattempts',
+        subject: s.subject,
+        title: `Clear open re-attempts in ${s.subject}`,
+        why: `${s.counts.openReattempts} rows stuck at D3/D10.`,
+        action: 'Do a sweep in /reattempts filtered to this subject — oldest 8 first.',
+        href: '/reattempts',
+        urgency: s.counts.openReattempts >= 15 ? 'high' : 'medium'
+      });
+    }
+    if (s.coverage < LOW_COVERAGE_MAX && s.counts.totalReattempts < 4) {
+      moves.push({
+        kind: 'cover',
+        subject: s.subject,
+        title: `Unlock ${s.subject}`,
+        why: `Only ${s.counts.patterns} patterns named in this subject; you haven't started this material.`,
+        action: 'Run one 60-min session tagged for this subject to seed a baseline.',
+        href: '/session/new',
+        urgency: 'medium'
+      });
+    }
+  }
+
+  if (overall.retention < HIGH_RETENTION_MIN && overall.counts.totalReattempts >= 10) {
+    moves.push({
+      kind: 'stabilise',
+      title: 'Do a D30 cleanup pass',
+      why: `Only ${Math.round(overall.retention * 100)}% of your re-attempts have stabilised — the ladder is leaking.`,
+      action: 'Skip new material for a day. Sweep /reattempts to push D3s and D10s upward.',
+      href: '/reattempts',
+      urgency: 'high'
+    });
+  }
+  if (perSubject.every((s) => !s.hasSignal)) {
+    moves.push({
+      kind: 'diagnose',
+      title: 'Log a session',
+      why: 'No subject has enough signal to score yet.',
+      action: 'Run /session/new for any subject and tag every question.',
+      href: '/session/new',
+      urgency: 'medium'
+    });
+  }
+
+  const urgencyOrder = { high: 0, medium: 1, low: 2 };
+  return moves
+    .sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency])
+    .slice(0, 3);
+}
+
+/* --------------------------------------------------------------------------
+ * Rough AIR band predictor — score + days-to-exam → expected AIR range.
+ * Coarse lookup; tune once you have real cohort data. Callers should show
+ * this as a rough band, not a precise number.
+ * ------------------------------------------------------------------------ */
+
+export interface AIRBand {
+  low: number;
+  high: number;
+  label: string;
+  caveat: string;
+}
+
+export function estimateAIRBand(score: number, daysToExam: number): AIRBand {
+  // A tiny linear penalty for time remaining: less time → less room to climb.
+  // Fully absent for score >= 80 (already contest-strong).
+  const adj = Math.max(0, 60 - daysToExam) * 0.05;
+  const s = Math.max(0, score - adj);
+
+  if (s >= 82)
+    return {
+      low: 1,
+      high: 100,
+      label: 'AIR < 100 (top 0.05%)',
+      caveat: 'Strong signal across all four components. Hold and taper — don\'t break it.'
+    };
+  if (s >= 72)
+    return {
+      low: 100,
+      high: 500,
+      label: 'AIR 100–500 (top 0.3%)',
+      caveat: 'Calibration is the last mile. One weak subject can drop you 200 ranks.'
+    };
+  if (s >= 60)
+    return {
+      low: 500,
+      high: 2000,
+      label: 'AIR 500–2000 (top 1%)',
+      caveat: 'Coverage and retention both matter. Fix your weakest subject before adding new ones.'
+    };
+  if (s >= 48)
+    return {
+      low: 2000,
+      high: 5000,
+      label: 'AIR 2000–5000',
+      caveat: 'You have base. Push retention to 60%+ and clear the mistake surface.'
+    };
+  if (s >= 36)
+    return {
+      low: 5000,
+      high: 10000,
+      label: 'AIR 5000–10000',
+      caveat: 'Diagnostic phase. Log more sessions before benchmarking against toppers.'
+    };
+  return {
+    low: 10000,
+    high: 999999,
+    label: 'AIR > 10000',
+    caveat: 'Not enough signal to predict. Run 10 sessions across 4 subjects and re-check.'
+  };
+}
+
+/* --------------------------------------------------------------------------
+ * Exam-day simulator — Monte Carlo over per-subject calibration.
+ *
+ * Simplified: each subject contributes a fixed mark budget scaled by its
+ * weight. Marks per question = 2 (approx MSQ/NAT mix). Probability of
+ * getting each answered question correct = subject accuracy. Skipped
+ * questions score 0. Wrong = −⅔ (2 * ⅓).
+ * ------------------------------------------------------------------------ */
+
+export interface SimulatorRun {
+  totalMarks: number;
+  perSubject: { subject: string; marks: number }[];
+}
+
+export interface SimulatorResult {
+  runs: number;
+  p10: number;
+  p50: number;
+  p90: number;
+  meanTotal: number;
+}
+
+const SUBJECT_MARK_BUDGET = 8; // per subject — ~ questions attempted per subject
+const TECH_MARK_PER_Q = 2;
+const NEG_MARK_PER_Q = TECH_MARK_PER_Q / 3;
+
+function simulateOnce(
+  perSubject: SubjectReadiness[]
+): SimulatorRun {
+  const perSubjMarks: SimulatorRun['perSubject'] = [];
+  let total = 0;
+  for (const s of perSubject) {
+    if (!s.hasSignal) {
+      perSubjMarks.push({ subject: s.subject, marks: 0 });
+      continue;
+    }
+    // Attempt half the budget if calibration is unknown; otherwise scale
+    // by (calibration + coverage) / 2 — how much of the subject you engage with.
+    const engagement = Math.max(0.1, (s.calibration + s.coverage) / 2);
+    const attempts = Math.round(SUBJECT_MARK_BUDGET * engagement);
+    let subjMarks = 0;
+    for (let i = 0; i < attempts; i++) {
+      if (Math.random() < s.calibration) subjMarks += TECH_MARK_PER_Q;
+      else subjMarks -= NEG_MARK_PER_Q;
+    }
+    perSubjMarks.push({ subject: s.subject, marks: subjMarks });
+    total += subjMarks;
+  }
+  return { totalMarks: Math.round(total * 10) / 10, perSubject: perSubjMarks };
+}
+
+export function examDaySimulator(
+  perSubject: SubjectReadiness[],
+  runs: number = 500
+): SimulatorResult {
+  const totals: number[] = [];
+  for (let i = 0; i < runs; i++) {
+    totals.push(simulateOnce(perSubject).totalMarks);
+  }
+  totals.sort((a, b) => a - b);
+  const pick = (frac: number) => totals[Math.floor(totals.length * frac)] ?? 0;
+  const mean = totals.reduce((s, x) => s + x, 0) / (totals.length || 1);
+  return {
+    runs,
+    p10: pick(0.1),
+    p50: pick(0.5),
+    p90: pick(0.9),
+    meanTotal: Math.round(mean * 10) / 10
+  };
+}

@@ -5,7 +5,11 @@ import {
   WEIGHTS,
   calibration,
   computeReadiness,
+  computeReadinessBySubject,
   coverage,
+  estimateAIRBand,
+  examDaySimulator,
+  nextMoves,
   readinessComponents,
   retention,
   surface
@@ -162,5 +166,107 @@ describe('readinessComponents', () => {
     const cs = readinessComponents(r);
     const sum = cs.reduce((s, c) => s + c.contribution, 0);
     expect(Math.abs(sum - r.score)).toBeLessThanOrEqual(3); // rounding slack
+  });
+});
+
+describe('computeReadinessBySubject', () => {
+  it('routes questions/patterns/reattempts to their subject bucket', () => {
+    const q1 = question({ id: 'q1', subject: 'Databases' });
+    const q2 = question({ id: 'q2', subject: 'Algorithms' });
+    const p1 = { ...pattern('joins'), subject: 'Databases' };
+    const p2 = { ...pattern('dp'), subject: 'Algorithms' };
+    const rows = computeReadinessBySubject(
+      { questions: [q1, q2], reattempts: [], patterns: [p1, p2] },
+      ['Databases', 'Algorithms', 'Compiler Design']
+    );
+    const db = rows.find((r) => r.subject === 'Databases')!;
+    const algo = rows.find((r) => r.subject === 'Algorithms')!;
+    const cd = rows.find((r) => r.subject === 'Compiler Design')!;
+    expect(db.hasSignal).toBe(true);
+    expect(db.counts.patterns).toBe(1);
+    expect(algo.counts.patterns).toBe(1);
+    expect(cd.hasSignal).toBe(false);
+  });
+});
+
+describe('estimateAIRBand', () => {
+  it('score < 36 with T− > 60 predicts AIR > 5000', () => {
+    const band = estimateAIRBand(30, 90);
+    expect(band.low).toBeGreaterThanOrEqual(5000);
+  });
+  it('score >= 82 with plenty of days maps to sub-100', () => {
+    const band = estimateAIRBand(85, 90);
+    expect(band.high).toBeLessThanOrEqual(100);
+  });
+  it('shorter runway penalises a mid score', () => {
+    const withRunway = estimateAIRBand(60, 120);
+    const tightRunway = estimateAIRBand(60, 5);
+    expect(tightRunway.low).toBeGreaterThanOrEqual(withRunway.low);
+  });
+});
+
+describe('nextMoves', () => {
+  it('prioritises calibration when accuracy is bad', () => {
+    const qs: QuestionRow[] = [];
+    for (let i = 0; i < 8; i++) {
+      qs.push(
+        question({
+          id: `q${i}`,
+          subject: 'Databases',
+          mark_decision: 'MARK',
+          mark_correct: i < 2 // 25% accuracy
+        })
+      );
+    }
+    const perSubject = computeReadinessBySubject(
+      { questions: qs, reattempts: [], patterns: [] },
+      ['Databases']
+    );
+    const overall = computeReadiness({ questions: qs, reattempts: [], patterns: [] });
+    const moves = nextMoves(overall, perSubject);
+    expect(moves[0].kind).toBe('calibrate');
+    expect(moves[0].subject).toBe('Databases');
+    expect(moves[0].urgency).toBe('high');
+  });
+
+  it('emits a diagnose move when no subject has signal', () => {
+    const perSubject = computeReadinessBySubject(
+      { questions: [], reattempts: [], patterns: [] },
+      ['Databases', 'Algorithms']
+    );
+    const overall = computeReadiness({ questions: [], reattempts: [], patterns: [] });
+    const moves = nextMoves(overall, perSubject);
+    expect(moves.some((m) => m.kind === 'diagnose')).toBe(true);
+  });
+});
+
+describe('examDaySimulator', () => {
+  it('yields a stable p50 across runs (deterministic seed not required — just monotone)', () => {
+    const qs: QuestionRow[] = [];
+    for (let i = 0; i < 20; i++) {
+      qs.push(
+        question({
+          id: `q${i}`,
+          subject: 'Databases',
+          mark_decision: 'MARK',
+          mark_correct: true
+        })
+      );
+    }
+    const perfect = computeReadinessBySubject(
+      { questions: qs, reattempts: [], patterns: qs.map((_, i) => pattern(`p${i}`)) },
+      ['Databases']
+    );
+    const bad = computeReadinessBySubject(
+      {
+        questions: qs.map((q) => ({ ...q, mark_correct: false })),
+        reattempts: [],
+        patterns: []
+      },
+      ['Databases']
+    );
+    const perfSim = examDaySimulator(perfect, 200);
+    const badSim = examDaySimulator(bad, 200);
+    expect(perfSim.p50).toBeGreaterThan(badSim.p50);
   });
 });
