@@ -1,5 +1,6 @@
 // Thin, typed wrappers for the non-LLM edge functions:
-//   - request-access   (public, no auth)
+//   - request-access   (public: uses anon key as bearer since Supabase's
+//                       function gateway always requires an auth header)
 //   - approve-request  (owner auth)
 //   - decline-request  (owner auth)
 //   - weekly-insight   (any auth)
@@ -10,6 +11,10 @@ function functionsBase(): string {
   const url =
     (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? 'http://localhost:54321';
   return `${url.replace(/\/$/, '')}/functions/v1`;
+}
+
+function anonKey(): string {
+  return (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? '';
 }
 
 async function currentJwt(): Promise<string | null> {
@@ -48,9 +53,20 @@ export interface EdgeError {
 export async function requestAccess(
   input: RequestAccessInput
 ): Promise<RequestAccessOk | EdgeError> {
+  const key = anonKey();
+  if (!key) {
+    return { ok: false, status: 0, error: 'Supabase is not configured yet.' };
+  }
   const res = await fetch(`${functionsBase()}/request-access`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // Supabase Functions Gateway requires an auth header on every request.
+      // For public endpoints we use the anon key — the edge fn's own logic
+      // then decides what to do with the payload.
+      Authorization: `Bearer ${key}`,
+      apikey: key
+    },
     body: JSON.stringify(input)
   }).catch((e) => {
     return new Response(JSON.stringify({ error: (e as Error).message }), { status: 0 });

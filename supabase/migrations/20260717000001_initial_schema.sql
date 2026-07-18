@@ -1,4 +1,7 @@
 -- AIR Journal initial schema. See BUILD.md §5.1.
+-- Supabase installs extension functions in the `extensions` schema; extend
+-- the search path so unqualified calls (uuid_generate_v4, citext, ...) resolve.
+set search_path = public, extensions;
 create extension if not exists "uuid-ossp";
 
 create type outcome_t as enum ('R','RBS','RBG','W-C','W-E','W-R');

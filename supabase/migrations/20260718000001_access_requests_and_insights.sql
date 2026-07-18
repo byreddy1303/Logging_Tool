@@ -4,6 +4,8 @@
 -- or declines (sends decline mail). Public signup ban (BUILD §17) is intact:
 -- this table only records ASKS, it never creates auth.users rows.
 
+set search_path = public, extensions;
+
 create extension if not exists citext;
 create extension if not exists pgcrypto;
 

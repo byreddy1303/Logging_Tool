@@ -1,3 +1,5 @@
+set search_path = public, extensions;
+
 -- Audit log for any suspected LLM-authored writes to user-tag fields.
 -- Enforcement is primarily via the llm_use_t enum (no 'auto_tag' value)
 -- and by keeping tag mutations client-authored only.
