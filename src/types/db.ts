@@ -228,5 +228,32 @@ export interface InviteRow {
   created_at: string;
 }
 
+export type AccountRequestStatus = 'pending' | 'approved' | 'declined';
+
+export interface AccountRequestRow {
+  id: string;
+  name: string;
+  email: string;
+  purpose: string;
+  status: AccountRequestStatus;
+  notes: string | null;
+  invite_id: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+  ip_hash: string | null;
+  user_agent: string | null;
+}
+
+export interface InsightDailyRow {
+  id: string;
+  user_id: string;
+  day: string;
+  sentence: string;
+  data_hash: string;
+  provider: LlmProvider;
+  generated_at: string;
+}
+
 /** Local (Dexie) shape: server row + sync bookkeeping. */
 export type Local<T> = T & { sync_status: SyncStatus };
