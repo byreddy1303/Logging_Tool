@@ -22,6 +22,10 @@ export interface RouterRequest {
   question_id?: string | null;
   // Client-side template name for audit ("quick_explain", "variation", …).
   template?: string | null;
+  /** Base64-encoded image (no data: prefix). Only used by vision-capable routes. */
+  image_base64?: string;
+  /** MIME type for `image_base64`. Defaults to image/jpeg. */
+  image_mime_type?: string;
 }
 
 export interface RouterDeps {
@@ -175,7 +179,9 @@ export async function handle(req: Request, deps: RouterDeps): Promise<Response> 
       prompt: body.prompt,
       apiKey: deps.apiKeys[route.provider],
       model: route.model,
-      systemPrefix: systemPrefixFor(useCase)
+      systemPrefix: systemPrefixFor(useCase),
+      imageBase64: body.image_base64,
+      imageMimeType: body.image_mime_type
     });
     await deps.bumpUsage(user.id);
     await deps.logDoubtSession({

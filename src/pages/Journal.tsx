@@ -167,6 +167,27 @@ function Row({
             {q.pattern_name ?? <span className="text-text-faint">no pattern</span>}
           </span>
         </td>
+        <td className="w-[52px] px-3 py-2">
+          {q.image_url ? (
+            <button
+              type="button"
+              aria-label="View photo"
+              onClick={(e) => {
+                e.stopPropagation();
+                onImage(q.image_url as string, q.source_ref ?? sourceLabel ?? 'Question');
+              }}
+              className="group block h-9 w-9 overflow-hidden rounded border border-border shadow-sm transition-transform hover:-translate-y-px hover:shadow-card"
+            >
+              <img
+                src={q.image_url}
+                alt="thumb"
+                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-110"
+              />
+            </button>
+          ) : (
+            <span className="text-text-faint">—</span>
+          )}
+        </td>
         <td
           className={cn(
             'u-num hidden px-3 py-2 text-right text-[12px] sm:table-cell',
@@ -204,7 +225,7 @@ function Row({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.14 }}
           >
-            <td colSpan={8} className="border-b border-border bg-bg-overlay/40 px-4 py-3">
+            <td colSpan={9} className="border-b border-border bg-bg-overlay/40 px-4 py-3">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Detail label="trigger">
                   {q.trigger_sentence ? (
@@ -634,6 +655,7 @@ export default function Journal() {
                     <th className="hidden px-3 py-2 font-mono sm:table-cell">Outcome</th>
                     <th className="hidden px-3 py-2 font-mono md:table-cell">Source</th>
                     <th className="px-3 py-2 font-mono">Pattern</th>
+                    <th className="px-3 py-2 font-mono">Photo</th>
                     <th className="hidden px-3 py-2 text-right font-mono sm:table-cell">Time</th>
                     <th className="w-[88px] px-3 py-2" />
                   </tr>

@@ -24,6 +24,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuthStore } from '@/stores/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useSessionStore } from '@/stores/session';
+import { usePrefsStore } from '@/stores/prefs';
 import { db } from '@/lib/db';
 import { EXAM_DATE_DEFAULT } from '@/lib/constants';
 import { cn } from '@/lib/utils';
@@ -111,6 +112,7 @@ function Group({ label, items }: { label?: string; items: Item[] }) {
 export default function Nav() {
   const { profile, sandbox } = useAuth();
   const signOut = useAuthStore((s) => s.signOut);
+  const showCountdown = usePrefsStore((s) => s.showCountdown);
   const daysLeft = differenceInCalendarDays(
     parseISO(profile?.exam_date ?? EXAM_DATE_DEFAULT),
     new Date()
@@ -149,12 +151,14 @@ export default function Nav() {
         <span className="font-display text-[19px] font-bold tracking-tight text-text">
           AIR<span className="text-accent">.</span>
         </span>
-        <span
-          className="u-num rounded-full bg-accent-faint px-2 py-0.5 text-[11px] font-semibold text-accent"
-          title="Days to GATE"
-        >
-          T−{daysLeft}d
-        </span>
+        {showCountdown && (
+          <span
+            className="u-num rounded-full bg-accent-faint px-2 py-0.5 text-[11px] font-semibold text-accent"
+            title="Days to GATE"
+          >
+            T−{daysLeft}d
+          </span>
+        )}
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">

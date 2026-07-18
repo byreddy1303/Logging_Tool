@@ -1,9 +1,9 @@
-// /settings — full profile round-trip. Every field on the users row that the
-// aspirant owns is editable here and saves to Supabase (or to Dexie meta in
-// the sandbox). Also handles data export/import, invite management, sign-out.
-import { useEffect, useRef, useState } from 'react';
+// /settings — settings that actually change day-to-day behaviour. Preferences
+// live in a localStorage-backed zustand store; profile fields (name, exam,
+// timezone, rank) round-trip through Supabase (or Dexie meta in sandbox);
+// invites + LLM usage + local data operations are one click each.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
-import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Check,
   Copy,
@@ -11,6 +11,8 @@ import {
   LogOut,
   Plus,
   RefreshCcw,
+  RotateCcw,
+  Sparkles,
   Trash2,
   Upload,
   X
@@ -25,12 +27,26 @@ import { Empty } from '@/components/ui/Empty';
 import { useAuthStore, type ProfilePatch } from '@/stores/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useUiStore } from '@/stores/ui';
+import {
+  DEFAULT_PREFERENCES,
+  WEEKDAYS,
+  daysSinceBackup,
+  needsBackupReminder,
+  usePrefsStore,
+  type DoubtMode,
+  type DurationMin,
+  type FontScale,
+  type Preferences
+} from '@/stores/prefs';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
-import { clearLocalData, db } from '@/lib/db';
+import { clearLocalData } from '@/lib/db';
 import {
   EXAM_DATE_DEFAULT,
   INVITE_TTL_DAYS,
   LLM_DAILY_LIMIT,
+  QUESTION_COUNT_CHOICES,
+  SUBJECTS,
+  TARGET_DURATIONS_MIN,
   TIMEZONES
 } from '@/lib/constants';
 import { cn, formatDate, todayISO, uuid } from '@/lib/utils';
@@ -42,23 +58,6 @@ import {
   isBackupEnvelope
 } from '@/lib/backup';
 import type { InviteRow, UserRow } from '@/types';
-
-type FieldEdit<T extends keyof ProfilePatch> = { key: T; value: NonNullable<ProfilePatch[T]> };
-
-function useProfileForm(profile: UserRow | null) {
-  const [form, setForm] = useState<UserRow | null>(profile);
-  const [saving, setSaving] = useState<Set<string>>(new Set());
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [dirty, setDirty] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    setForm(profile);
-    setDirty(new Set());
-    setErrors({});
-  }, [profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return { form, setForm, saving, setSaving, errors, setErrors, dirty, setDirty };
-}
 
 function humanCountdown(exam: string, today: Date): string {
   const days = differenceInCalendarDays(parseISO(exam), today);
@@ -74,65 +73,7 @@ export default function Settings() {
   const updateProfile = useAuthStore((s) => s.updateProfile);
   const signOut = useAuthStore((s) => s.signOut);
   const pushToast = useUiStore((s) => s.pushToast);
-
-  const { form, setForm, saving, setSaving, errors, setErrors, dirty, setDirty } =
-    useProfileForm(profile);
-
-  const today = new Date();
-
-  // Field save helpers — save individual fields so the user gets fine-grained
-  // feedback (name saves independently of exam_date).
-  async function save<T extends keyof ProfilePatch>(edit: FieldEdit<T>) {
-    if (!form) return;
-    const key = edit.key as string;
-    setSaving((prev) => new Set(prev).add(key));
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-    const { error } = await updateProfile({ [edit.key]: edit.value } as ProfilePatch);
-    setSaving((prev) => {
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-    if (error) {
-      setErrors((prev) => ({ ...prev, [key]: error }));
-      pushToast(`Save failed: ${error}`, 'neutral');
-      return;
-    }
-    setDirty((prev) => {
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-    pushToast(`Saved ${key.replace('_', ' ')}.`, 'success');
-  }
-
-  // bind() covers text-typed fields (name / exam_date / target_rank / timezone).
-  // The boolean field (sadhana_practice) has its own toggle handler.
-  function bind<T extends 'name' | 'exam_date' | 'target_rank' | 'timezone'>(
-    key: T,
-    coerce?: (raw: string) => ProfilePatch[T]
-  ) {
-    const raw = form?.[key];
-    return {
-      value: raw == null ? '' : String(raw),
-      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        if (!form) return;
-        const value = coerce
-          ? coerce(e.target.value)
-          : (e.target.value as unknown as ProfilePatch[T]);
-        setForm({ ...form, [key]: value } as UserRow);
-        setDirty((prev) => new Set(prev).add(key as string));
-      }
-    };
-  }
-
-  const daysLeft = form?.exam_date
-    ? differenceInCalendarDays(parseISO(form.exam_date), today)
-    : 0;
+  const prefs = usePrefsStore();
 
   const [signingOut, setSigningOut] = useState(false);
   async function onSignOut() {
@@ -144,201 +85,230 @@ export default function Settings() {
     }
   }
 
+  const backupNudge = needsBackupReminder(prefs);
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Settings"
         description={
           sandbox
-            ? 'Local sandbox — changes save to this device only. Sync is disabled.'
-            : 'Everything here syncs to your account. Changes save when you hit “Save”.'
+            ? 'Local sandbox — changes save to this device only.'
+            : 'Everything here saves as you edit. Profile fields sync; preferences stay on this device.'
         }
       />
 
-      {/* Identity ------------------------------------------------------------ */}
+      {backupNudge && prefs.backupReminderDays > 0 && (
+        <div className="flex items-start gap-3 rounded border border-warn/40 bg-warn/5 px-3 py-2">
+          <Sparkles size={14} className="mt-0.5 shrink-0 text-warn" strokeWidth={1.75} />
+          <div className="flex-1 text-[12.5px] text-text">
+            <p className="font-medium">Backup nudge</p>
+            <p className="text-text-muted">
+              You asked to be reminded every {prefs.backupReminderDays} days.
+              {prefs.lastBackupAt
+                ? ` Last export: ${formatDate(prefs.lastBackupAt.slice(0, 10), 'dd MMM')} · ${daysSinceBackup(prefs.lastBackupAt)}d ago.`
+                : ' No export on record yet.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* --- Daily plan ---------------------------------------------------- */}
+      <Card>
+        <CardHeader title="Daily plan" aside={<PrefBadge label="on device" />} />
+        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <NumberField
+            label="Daily question target"
+            hint="The Dashboard tracks today's count against this."
+            value={prefs.dailyQuestionTarget}
+            min={1}
+            max={200}
+            onChange={(v) => prefs.set('dailyQuestionTarget', v)}
+          />
+          <NumberField
+            label="Weekly session target"
+            hint="Weekly review compares actual vs. this."
+            value={prefs.weeklySessionTarget}
+            min={1}
+            max={21}
+            onChange={(v) => prefs.set('weeklySessionTarget', v)}
+          />
+          <SelectField
+            label="Weekly review day"
+            hint="Which weekday your review is due."
+            value={String(prefs.weeklyReviewDay)}
+            options={WEEKDAYS.map((d) => ({ value: String(d.value), label: d.label }))}
+            onChange={(v) =>
+              prefs.set('weeklyReviewDay', Number(v) as Preferences['weeklyReviewDay'])
+            }
+          />
+        </CardBody>
+      </Card>
+
+      {/* --- Session defaults --------------------------------------------- */}
       <Card>
         <CardHeader
-          title="Identity"
-          aside={
-            <Badge tone={sandbox ? 'warn' : 'neutral'}>
-              {sandbox ? 'sandbox' : supabaseConfigured ? 'signed in' : 'no auth'}
-            </Badge>
-          }
+          title="Session defaults"
+          aside={<span className="text-[11px] text-text-faint">applied on /session/new</span>}
         />
-        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className="u-label" htmlFor="s-name">
-              Name
-            </label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="s-name"
-                {...bind('name')}
-                placeholder="How the app addresses you"
-                maxLength={80}
-                disabled={saving.has('name')}
-              />
-              {dirty.has('name') && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() =>
-                    void save({ key: 'name', value: (form?.name ?? '').trim() || 'Aspirant' })
-                  }
-                  disabled={saving.has('name')}
-                >
-                  {saving.has('name') ? 'Saving…' : 'Save'}
-                </Button>
-              )}
-            </div>
-            {errors.name && <p className="text-[11px] text-danger">{errors.name}</p>}
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="u-label">Email</span>
-            <div className="rounded border border-border bg-bg-overlay/40 px-3 py-2 text-[13px] text-text-muted">
-              {form?.email ?? '—'}
-            </div>
-            <p className="text-[11px] text-text-faint">
-              Fixed at sign-up. Contact support to change.
-            </p>
-          </div>
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <span className="u-label">Account id</span>
-            <div className="u-num flex items-center gap-2 rounded border border-border bg-bg-overlay/40 px-3 py-2 text-[12px] text-text-muted">
-              <span className="truncate">{userId ?? '—'}</span>
-              {userId && <CopyButton value={userId} />}
-            </div>
-          </div>
+        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SelectField
+            label="Default subject"
+            hint="Skip re-picking on every new session."
+            value={prefs.defaultSubject ?? ''}
+            options={[
+              { value: '', label: 'Ask each time' },
+              ...SUBJECTS.map((s) => ({ value: s, label: s }))
+            ]}
+            onChange={(v) => prefs.set('defaultSubject', v || null)}
+          />
+          <SelectField
+            label="Target duration"
+            value={String(prefs.defaultDurationMin)}
+            options={TARGET_DURATIONS_MIN.map((m) => ({ value: String(m), label: `${m} min` }))}
+            onChange={(v) => prefs.set('defaultDurationMin', Number(v) as DurationMin)}
+          />
+          <SelectField
+            label="Question count"
+            value={String(prefs.defaultQuestionCount)}
+            options={QUESTION_COUNT_CHOICES.map((c) => ({
+              value: String(c.value),
+              label: c.label
+            }))}
+            onChange={(v) => prefs.set('defaultQuestionCount', Number(v))}
+          />
         </CardBody>
       </Card>
 
-      {/* Exam plan ---------------------------------------------------------- */}
+      {/* --- AI defaults --------------------------------------------------- */}
       <Card>
-        <CardHeader title="Exam plan" aside={<span className="u-num text-[12px] text-accent">{humanCountdown(form?.exam_date ?? EXAM_DATE_DEFAULT, today)}</span>} />
+        <CardHeader title="AI defaults" />
         <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className="u-label" htmlFor="s-exam">
-              Exam date
-            </label>
-            <div className="flex items-center gap-2">
-              <Input id="s-exam" type="date" {...bind('exam_date')} disabled={saving.has('exam_date')} />
-              {dirty.has('exam_date') && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    if (!form?.exam_date) return;
-                    void save({ key: 'exam_date', value: form.exam_date });
-                  }}
-                  disabled={saving.has('exam_date')}
-                >
-                  {saving.has('exam_date') ? 'Saving…' : 'Save'}
-                </Button>
-              )}
-            </div>
-            <p className="text-[11px] text-text-faint">
-              GATE CS 2027 · officially first Sunday of February. Change if you're targeting a later cohort.
-            </p>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="u-label" htmlFor="s-rank">
-              Target AIR
-            </label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="s-rank"
-                type="number"
-                min={1}
-                max={100000}
-                {...bind('target_rank', (raw) => Math.max(1, Math.round(Number(raw) || 1)))}
-                disabled={saving.has('target_rank')}
-              />
-              {dirty.has('target_rank') && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    if (form?.target_rank == null) return;
-                    void save({ key: 'target_rank', value: form.target_rank });
-                  }}
-                  disabled={saving.has('target_rank')}
-                >
-                  {saving.has('target_rank') ? 'Saving…' : 'Save'}
-                </Button>
-              )}
-            </div>
-            <p className="text-[11px] text-text-faint">
-              Used by the dashboard to frame progress. Not shared with anyone.
-            </p>
-          </div>
-          <div className="sm:col-span-2">
-            <ExamRunway examDate={form?.exam_date ?? EXAM_DATE_DEFAULT} daysLeft={daysLeft} />
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* Preferences ------------------------------------------------------- */}
-      <Card>
-        <CardHeader title="Preferences" />
-        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className="u-label" htmlFor="s-tz">
-              Timezone
-            </label>
-            <div className="flex items-center gap-2">
-              <Select id="s-tz" {...bind('timezone')} disabled={saving.has('timezone')}>
-                {TIMEZONES.map((tz) => (
-                  <option key={tz.value} value={tz.value}>
-                    {tz.label}
-                  </option>
-                ))}
-              </Select>
-              {dirty.has('timezone') && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    if (!form?.timezone) return;
-                    void save({ key: 'timezone', value: form.timezone });
-                  }}
-                  disabled={saving.has('timezone')}
-                >
-                  {saving.has('timezone') ? 'Saving…' : 'Save'}
-                </Button>
-              )}
-            </div>
-            <p className="text-[11px] text-text-faint">
-              Weekly review boundaries and "today" counts are computed in this zone.
-            </p>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="u-label">Sadhana practice</span>
-            <SadhanaToggle
-              value={!!form?.sadhana_practice}
-              saving={saving.has('sadhana_practice')}
-              onChange={(v) => {
-                if (!form) return;
-                setForm({ ...form, sadhana_practice: v });
-                void save({ key: 'sadhana_practice', value: v });
-              }}
+          <SegmentField
+            label="Default doubt mode"
+            hint="Which model /doubt opens on. Quick=Groq, Deep=Gemini."
+            value={prefs.defaultDoubtMode}
+            options={[
+              { value: 'quick', label: 'Quick (Groq)' },
+              { value: 'deep', label: 'Deep (Gemini)' }
+            ]}
+            onChange={(v) => prefs.set('defaultDoubtMode', v as DoubtMode)}
+          />
+          <div className="flex flex-col gap-3">
+            <ToggleRow
+              label="Confirm before Triangulate"
+              hint="Triangulate costs 3 credits — confirm before spending."
+              value={prefs.triangulateConfirm}
+              onChange={(v) => prefs.set('triangulateConfirm', v)}
             />
-            <p className="text-[11px] text-text-faint">
-              When on, sessions can flag a “sadhana done” count. Off means the field is hidden.
-            </p>
+            <ToggleRow
+              label="Auto-attach doubt"
+              hint="When /doubt has a question in context, pre-select it in the attach picker."
+              value={prefs.autoAttachDoubt}
+              onChange={(v) => prefs.set('autoAttachDoubt', v)}
+            />
           </div>
         </CardBody>
       </Card>
 
-      {/* Invites ----------------------------------------------------------- */}
+      {/* --- Focus & density ---------------------------------------------- */}
+      <Card>
+        <CardHeader title="Focus & density" />
+        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-3">
+            <ToggleRow
+              label="Compact rows"
+              hint="Tighter row heights across Journal / Reattempts / Formulas."
+              value={prefs.compactRows}
+              onChange={(v) => prefs.set('compactRows', v)}
+            />
+            <ToggleRow
+              label="Show T− countdown"
+              hint="Days-until-exam pill in the sidebar and dashboard header."
+              value={prefs.showCountdown}
+              onChange={(v) => prefs.set('showCountdown', v)}
+            />
+          </div>
+          <SegmentField
+            label="Font scale"
+            hint="Applies to the main content area."
+            value={prefs.fontScale}
+            options={[
+              { value: 'small', label: 'Small' },
+              { value: 'normal', label: 'Normal' },
+              { value: 'large', label: 'Large' }
+            ]}
+            onChange={(v) => prefs.set('fontScale', v as FontScale)}
+          />
+        </CardBody>
+      </Card>
+
+      {/* --- Backup nudge cadence ---------------------------------------- */}
+      <Card>
+        <CardHeader title="Backup reminder" />
+        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SegmentField
+            label="Cadence"
+            value={String(prefs.backupReminderDays)}
+            options={[
+              { value: '0', label: 'Never' },
+              { value: '7', label: 'Weekly' },
+              { value: '30', label: 'Monthly' }
+            ]}
+            onChange={(v) =>
+              prefs.set('backupReminderDays', Number(v) as Preferences['backupReminderDays'])
+            }
+          />
+          <div className="flex flex-col gap-1 sm:col-span-2">
+            <span className="u-label">Last export</span>
+            <div className="rounded border border-border bg-bg-overlay/40 px-3 py-2 text-[13px] text-text-muted">
+              {prefs.lastBackupAt
+                ? `${formatDate(prefs.lastBackupAt.slice(0, 10), 'dd MMM yyyy')} · ${daysSinceBackup(prefs.lastBackupAt)} days ago`
+                : 'No export yet'}
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* --- Reset prefs -------------------------------------------------- */}
+      <Card>
+        <CardBody className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[12px] text-text-muted">
+            Restore the built-in defaults for every preference on this page.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              prefs.reset();
+              pushToast('Preferences reset to defaults.', 'neutral');
+            }}
+          >
+            <RotateCcw size={12} strokeWidth={1.75} className="mr-1" />
+            Reset preferences
+          </Button>
+        </CardBody>
+      </Card>
+
+      {/* --- Profile (compact) -------------------------------------------- */}
+      <ProfileCard
+        profile={profile}
+        sandbox={sandbox}
+        userId={userId}
+        onSave={updateProfile}
+        onToast={pushToast}
+      />
+
+      {/* --- Invites ------------------------------------------------------ */}
       <InvitesCard userId={userId} sandbox={sandbox} />
 
-      {/* Usage ------------------------------------------------------------- */}
+      {/* --- Usage -------------------------------------------------------- */}
       <UsageCard userId={userId} />
 
-      {/* Data -------------------------------------------------------------- */}
-      <DataCard profile={profile} />
+      {/* --- Data --------------------------------------------------------- */}
+      <DataCard profile={profile} onBackup={() => prefs.markBackupNow()} />
 
-      {/* Danger zone ------------------------------------------------------- */}
+      {/* --- Session ------------------------------------------------------ */}
       <Card>
         <CardHeader title="Session" />
         <CardBody className="flex flex-wrap items-center justify-between gap-3">
@@ -352,6 +322,347 @@ export default function Settings() {
         </CardBody>
       </Card>
     </div>
+  );
+
+  // Reference to keep imports referenced (some are used only via child components below).
+  void DEFAULT_PREFERENCES;
+  void humanCountdown;
+  void EXAM_DATE_DEFAULT;
+}
+
+/* ---------------- primitive editors ---------------- */
+
+function PrefBadge({ label }: { label: string }) {
+  return <Badge tone="neutral">{label}</Badge>;
+}
+
+function NumberField({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  onChange
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="u-label">{label}</span>
+      <Input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) =>
+          onChange(Math.max(min, Math.min(max, Math.round(Number(e.target.value) || 0))))
+        }
+      />
+      {hint && <p className="text-[11px] text-text-faint">{hint}</p>}
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  hint,
+  value,
+  options,
+  onChange
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="u-label">{label}</span>
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </Select>
+      {hint && <p className="text-[11px] text-text-faint">{hint}</p>}
+    </div>
+  );
+}
+
+function SegmentField({
+  label,
+  hint,
+  value,
+  options,
+  onChange
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="u-label">{label}</span>
+      <div className="inline-flex divide-x divide-border overflow-hidden rounded border border-border bg-bg-raised">
+        {options.map((o) => {
+          const on = value === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onChange(o.value)}
+              className={cn(
+                'flex-1 px-3 py-1.5 text-[12.5px] transition-colors',
+                on ? 'bg-accent-faint font-semibold text-accent' : 'text-text-muted hover:bg-bg-overlay hover:text-text'
+              )}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+      {hint && <p className="text-[11px] text-text-faint">{hint}</p>}
+    </div>
+  );
+}
+
+function ToggleRow({
+  label,
+  hint,
+  value,
+  onChange
+}: {
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded border border-border/70 bg-bg-overlay/30 px-3 py-2">
+      <div className="min-w-0">
+        <p className="font-display text-[13px] font-semibold text-text">{label}</p>
+        {hint && <p className="text-[11.5px] text-text-muted">{hint}</p>}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        aria-pressed={value}
+        className={cn(
+          'relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+          value ? 'bg-accent' : 'bg-bg-overlay'
+        )}
+      >
+        <span
+          className={cn(
+            'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+            value ? 'translate-x-6' : 'translate-x-1'
+          )}
+        />
+      </button>
+    </div>
+  );
+}
+
+/* ---------------- profile card ---------------- */
+
+function ProfileCard({
+  profile,
+  sandbox,
+  userId,
+  onSave,
+  onToast
+}: {
+  profile: UserRow | null;
+  sandbox: boolean;
+  userId: string | null;
+  onSave: (patch: ProfilePatch) => Promise<{ error?: string }>;
+  onToast: (m: string, tone?: 'success' | 'danger' | 'neutral') => void;
+}) {
+  const [form, setForm] = useState<UserRow | null>(profile);
+  const [saving, setSaving] = useState<Set<keyof ProfilePatch>>(new Set());
+  const [dirty, setDirty] = useState<Set<keyof ProfilePatch>>(new Set());
+
+  useEffect(() => {
+    setForm(profile);
+    setDirty(new Set());
+  }, [profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function save<K extends keyof ProfilePatch>(key: K, value: ProfilePatch[K]) {
+    setSaving((s) => new Set(s).add(key));
+    const { error } = await onSave({ [key]: value } as ProfilePatch);
+    setSaving((s) => {
+      const next = new Set(s);
+      next.delete(key);
+      return next;
+    });
+    if (error) {
+      onToast(`Save failed: ${error}`, 'neutral');
+      return;
+    }
+    setDirty((s) => {
+      const next = new Set(s);
+      next.delete(key);
+      return next;
+    });
+    onToast(`Saved ${String(key).replace('_', ' ')}.`, 'success');
+  }
+
+  function mark<K extends keyof ProfilePatch>(key: K, v: ProfilePatch[K]) {
+    if (!form) return;
+    setForm({ ...form, [key]: v } as UserRow);
+    setDirty((s) => new Set(s).add(key));
+  }
+
+  const dirtyCount = dirty.size;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Profile"
+        aside={
+          <div className="flex items-center gap-2">
+            <Badge tone={sandbox ? 'warn' : 'neutral'}>
+              {sandbox ? 'sandbox' : supabaseConfigured ? 'signed in' : 'no auth'}
+            </Badge>
+            {dirtyCount > 0 && (
+              <Badge tone="warn">
+                {dirtyCount} unsaved
+              </Badge>
+            )}
+          </div>
+        }
+      />
+      <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1">
+          <label className="u-label" htmlFor="p-name">
+            Name
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="p-name"
+              value={form?.name ?? ''}
+              onChange={(e) => mark('name', e.target.value)}
+              maxLength={80}
+              disabled={saving.has('name')}
+            />
+            {dirty.has('name') && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void save('name', (form?.name ?? '').trim() || 'Aspirant')}
+                disabled={saving.has('name')}
+              >
+                Save
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="u-label">Email</span>
+          <div className="rounded border border-border bg-bg-overlay/40 px-3 py-2 text-[13px] text-text-muted">
+            {form?.email ?? '—'}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="u-label" htmlFor="p-exam">
+            Exam date
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="p-exam"
+              type="date"
+              value={form?.exam_date ?? ''}
+              onChange={(e) => mark('exam_date', e.target.value)}
+              disabled={saving.has('exam_date')}
+            />
+            {dirty.has('exam_date') && form?.exam_date && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void save('exam_date', form.exam_date)}
+                disabled={saving.has('exam_date')}
+              >
+                Save
+              </Button>
+            )}
+          </div>
+          <p className="text-[11px] text-text-faint">
+            Drives the T− countdown and the Readiness runway bar.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="u-label" htmlFor="p-rank">
+            Target AIR
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="p-rank"
+              type="number"
+              min={1}
+              max={100000}
+              value={form?.target_rank ?? ''}
+              onChange={(e) => mark('target_rank', Math.max(1, Math.round(Number(e.target.value) || 1)))}
+              disabled={saving.has('target_rank')}
+            />
+            {dirty.has('target_rank') && form?.target_rank != null && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void save('target_rank', form.target_rank)}
+                disabled={saving.has('target_rank')}
+              >
+                Save
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <label className="u-label" htmlFor="p-tz">
+            Timezone
+          </label>
+          <div className="flex items-center gap-2">
+            <Select
+              id="p-tz"
+              value={form?.timezone ?? 'Asia/Kolkata'}
+              onChange={(e) => mark('timezone', e.target.value)}
+              disabled={saving.has('timezone')}
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
+              ))}
+            </Select>
+            {dirty.has('timezone') && form?.timezone && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void save('timezone', form.timezone)}
+                disabled={saving.has('timezone')}
+              >
+                Save
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <span className="u-label">Account id</span>
+          <div className="u-num flex items-center gap-2 rounded border border-border bg-bg-overlay/40 px-3 py-2 text-[11.5px] text-text-muted">
+            <span className="truncate">{userId ?? '—'}</span>
+            {userId && <CopyButton value={userId} />}
+          </div>
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -377,61 +688,7 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-function SadhanaToggle({
-  value,
-  saving,
-  onChange
-}: {
-  value: boolean;
-  saving: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => onChange(!value)}
-        disabled={saving}
-        className={cn(
-          'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-          value ? 'bg-accent' : 'bg-bg-overlay',
-          saving && 'opacity-60'
-        )}
-        aria-pressed={value}
-      >
-        <span
-          className={cn(
-            'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-            value ? 'translate-x-6' : 'translate-x-1'
-          )}
-        />
-      </button>
-      <span className="text-[12px] text-text-muted">{value ? 'on' : 'off'}</span>
-      {saving && <span className="text-[11px] text-text-faint">saving…</span>}
-    </div>
-  );
-}
-
-function ExamRunway({ examDate, daysLeft }: { examDate: string; daysLeft: number }) {
-  const [target] = useState(365 * 2); // 2-year runway visualisation cap
-  const usedFrac = Math.min(1, Math.max(0, 1 - daysLeft / target));
-  return (
-    <div className="flex flex-col gap-1 rounded border border-border/70 bg-bg-overlay/40 px-3 py-3">
-      <div className="flex items-baseline justify-between text-[12px]">
-        <span className="u-label">Runway to {formatDate(examDate, 'dd MMM yyyy')}</span>
-        <span className="u-num text-text-muted">
-          {Math.max(0, daysLeft)} days · {Math.round(usedFrac * 100)}% of a 2-year plan spent
-        </span>
-      </div>
-      <div className="h-2 overflow-hidden rounded bg-bg-overlay">
-        <div
-          className="h-2 rounded bg-accent transition-all"
-          style={{ width: `${Math.round(usedFrac * 100)}%` }}
-        />
-      </div>
-    </div>
-  );
-}
+/* ---------------- invites card ---------------- */
 
 function InvitesCard({ userId, sandbox }: { userId: string | null; sandbox: boolean }) {
   const [invites, setInvites] = useState<InviteRow[] | null>(null);
@@ -490,7 +747,7 @@ function InvitesCard({ userId, sandbox }: { userId: string | null; sandbox: bool
         <CardHeader title="Invites" />
         <CardBody>
           <p className="text-[12px] text-text-muted">
-            Invites need a live account. Sign up with real Supabase to issue and manage them.
+            Sign in with a real account to issue invites. In sandbox this section is disabled.
           </p>
         </CardBody>
       </Card>
@@ -519,9 +776,7 @@ function InvitesCard({ userId, sandbox }: { userId: string | null; sandbox: bool
           </div>
         }
       />
-      {error && (
-        <div className="border-b border-border/60 px-4 py-2 text-[12px] text-warn">{error}</div>
-      )}
+      {error && <div className="border-b border-border/60 px-4 py-2 text-[12px] text-warn">{error}</div>}
       {loading ? (
         <div className="px-4 py-4 text-[12px] text-text-faint">Loading…</div>
       ) : !invites || invites.length === 0 ? (
@@ -566,9 +821,12 @@ function InvitesCard({ userId, sandbox }: { userId: string | null; sandbox: bool
   );
 }
 
+/* ---------------- usage card ---------------- */
+
 function UsageCard({ userId }: { userId: string | null }) {
   const [today, setToday] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+
   useEffect(() => {
     if (!supabaseConfigured || !userId) {
       setToday(null);
@@ -589,62 +847,50 @@ function UsageCard({ userId }: { userId: string | null }) {
 
   const used = today ?? 0;
   const pct = Math.min(1, used / LLM_DAILY_LIMIT);
-  const rowsDex = useLiveQuery(async () => {
-    const [q, r, p, f] = await Promise.all([
-      db.questions.count(),
-      db.reattempts.count(),
-      db.patterns.count(),
-      db.formulas.count()
-    ]);
-    return { q, r, p, f };
-  });
 
   return (
     <Card>
-      <CardHeader title="Usage" />
-      <CardBody className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatBlock label="LLM credits today" value={loading ? '…' : `${used} / ${LLM_DAILY_LIMIT}`}>
-          <div className="mt-1 h-1 overflow-hidden rounded bg-bg-overlay">
-            <div className="h-1 bg-accent" style={{ width: `${Math.round(pct * 100)}%` }} />
-          </div>
-        </StatBlock>
-        <StatBlock label="Questions logged" value={rowsDex?.q?.toString() ?? '…'} />
-        <StatBlock label="Open re-attempts" value={rowsDex?.r?.toString() ?? '…'} />
-        <StatBlock label="Patterns / formulas" value={rowsDex ? `${rowsDex.p} / ${rowsDex.f}` : '…'} />
+      <CardHeader title="LLM credits" />
+      <CardBody className="flex flex-col gap-2">
+        <div className="flex items-baseline justify-between text-[13px]">
+          <span className="text-text-muted">Today</span>
+          <span className="u-num text-text">
+            {loading ? '…' : `${used} / ${LLM_DAILY_LIMIT}`}
+          </span>
+        </div>
+        <div className="h-2 overflow-hidden rounded bg-bg-overlay">
+          <div className="h-2 bg-accent" style={{ width: `${Math.round(pct * 100)}%` }} />
+        </div>
+        <p className="text-[11px] text-text-faint">
+          Resets at UTC midnight. Triangulate costs 3, everything else 1.
+        </p>
       </CardBody>
     </Card>
   );
 }
 
-function StatBlock({
-  label,
-  value,
-  children
-}: {
-  label: string;
-  value: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="rounded border border-border/70 bg-bg-overlay/30 px-3 py-2.5">
-      <div className="u-label">{label}</div>
-      <div className="u-num mt-1 text-[16px] font-semibold text-text">{value}</div>
-      {children}
-    </div>
-  );
-}
+/* ---------------- data card ---------------- */
 
-function DataCard({ profile }: { profile: UserRow | null }) {
+function DataCard({
+  profile,
+  onBackup
+}: {
+  profile: UserRow | null;
+  onBackup: () => void;
+}) {
   const pushToast = useUiStore((s) => s.pushToast);
   const [busy, setBusy] = useState<'export' | 'import' | 'clear' | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const backupSummary = useMemo(() => `backup v${BACKUP_VERSION}`, []);
 
   async function onExport() {
     setBusy('export');
     try {
       const env = await exportAll(profile);
       downloadEnvelope(env);
+      onBackup();
       pushToast('Backup saved to Downloads.', 'success');
     } catch (err) {
       pushToast(`Export failed: ${(err as Error).message}`, 'neutral');
@@ -655,7 +901,7 @@ function DataCard({ profile }: { profile: UserRow | null }) {
 
   async function onImportPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    e.target.value = ''; // allow same-file re-pick
+    e.target.value = '';
     if (!file) return;
     setBusy('import');
     try {
@@ -689,15 +935,14 @@ function DataCard({ profile }: { profile: UserRow | null }) {
     <Card>
       <CardHeader
         title="Data"
-        aside={<span className="text-[11px] text-text-faint">backup v{BACKUP_VERSION}</span>}
+        aside={<span className="text-[11px] text-text-faint">{backupSummary}</span>}
       />
       <CardBody className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="font-display text-[13px] font-semibold text-text">Export</p>
             <p className="text-[12px] text-text-muted">
-              JSON dump of your local rows (sessions, questions, patterns, re-attempts, formulas,
-              doubts, triangulations, phrases, weekly reviews). Buddy-shared rows are excluded.
+              JSON dump of your local rows. Buddy-shared rows are excluded.
             </p>
           </div>
           <Button variant="primary" onClick={() => void onExport()} disabled={busy !== null}>
@@ -709,7 +954,7 @@ function DataCard({ profile }: { profile: UserRow | null }) {
           <div>
             <p className="font-display text-[13px] font-semibold text-text">Import</p>
             <p className="text-[12px] text-text-muted">
-              Merges rows by id (Dexie put semantics). Newer local edits are preserved.
+              Merges rows by id. Newer local edits are preserved.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -735,8 +980,7 @@ function DataCard({ profile }: { profile: UserRow | null }) {
           <div>
             <p className="font-display text-[13px] font-semibold text-text">Wipe local</p>
             <p className="text-[12px] text-text-muted">
-              Deletes Dexie on this device. Next sync pulls back everything from Supabase.
-              Sandbox mode loses everything permanently.
+              Delete Dexie on this device. Next sync pulls from Supabase; sandbox loses everything.
             </p>
           </div>
           {confirmClear ? (
@@ -760,4 +1004,3 @@ function DataCard({ profile }: { profile: UserRow | null }) {
     </Card>
   );
 }
-

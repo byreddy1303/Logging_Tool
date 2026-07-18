@@ -156,8 +156,8 @@ export default function QuestionEditor({
         </Field>
       </div>
 
-      {/* Year subblock for exam sources; image subblock for everything else */}
-      {isYearBased ? (
+      {/* Year block (year-based exams only) */}
+      {isYearBased && (
         <div className="flex flex-wrap items-end gap-3 rounded border border-border/70 bg-bg-overlay/40 px-3 py-3">
           <Field label={`${spec.label} year`} className="min-w-[160px]">
             <Select
@@ -186,60 +186,61 @@ export default function QuestionEditor({
             </p>
           )}
         </div>
-      ) : (
-        <Field label="Question image (optional)">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => void pickImage(e.target.files?.[0])}
-            className="hidden"
-          />
-          {draft.imageDataUrl ? (
-            <div className="flex items-start gap-3 rounded border border-border bg-bg-raised p-2 shadow-sm">
-              <img src={draft.imageDataUrl} alt="scan" className="h-20 w-20 rounded object-cover" />
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[12px] text-text-muted">Attached.</span>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
-                    Replace
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => set('imageDataUrl', null)}
-                    className="text-danger hover:text-danger"
-                  >
-                    <Trash2 size={12} strokeWidth={1.75} className="mr-1" />
-                    Remove
-                  </Button>
-                </div>
+      )}
+
+      {/* Photo — available for every source, always. */}
+      <Field label="Question photo (optional)">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={(e) => void pickImage(e.target.files?.[0])}
+          className="hidden"
+        />
+        {draft.imageDataUrl ? (
+          <div className="flex items-start gap-3 rounded border border-border bg-bg-raised p-2 shadow-sm">
+            <img src={draft.imageDataUrl} alt="scan" className="h-20 w-20 rounded object-cover" />
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[12px] text-text-muted">Attached.</span>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
+                  Replace
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => set('imageDataUrl', null)}
+                  className="text-danger hover:text-danger"
+                >
+                  <Trash2 size={12} strokeWidth={1.75} className="mr-1" />
+                  Remove
+                </Button>
               </div>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className={cn(
-                'flex w-full items-center gap-3 rounded border border-dashed border-border bg-bg-overlay/40 px-3 py-3 text-left',
-                'hover:border-border-hover hover:bg-bg-overlay/70 disabled:opacity-60'
-              )}
-            >
-              <UploadCloud size={16} strokeWidth={1.75} className="text-accent" />
-              <span className="text-[12px] text-text-muted">
-                {uploading ? 'Compressing…' : 'Upload / snap image'}
-              </span>
-            </button>
-          )}
-          {imageError && (
-            <p className="mt-1 flex items-center gap-1 text-[11px] text-danger">
-              <AlertCircle size={11} strokeWidth={2} /> {imageError}
-            </p>
-          )}
-        </Field>
-      )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className={cn(
+              'flex w-full items-center gap-3 rounded border border-dashed border-border bg-bg-overlay/40 px-3 py-3 text-left',
+              'hover:border-border-hover hover:bg-bg-overlay/70 disabled:opacity-60'
+            )}
+          >
+            <UploadCloud size={16} strokeWidth={1.75} className="text-accent" />
+            <span className="text-[12px] text-text-muted">
+              {uploading ? 'Compressing…' : 'Upload / snap photo'}
+            </span>
+          </button>
+        )}
+        {imageError && (
+          <p className="mt-1 flex items-center gap-1 text-[11px] text-danger">
+            <AlertCircle size={11} strokeWidth={2} /> {imageError}
+          </p>
+        )}
+      </Field>
 
       {/* Format + Marks */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

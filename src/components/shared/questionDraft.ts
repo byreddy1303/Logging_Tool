@@ -141,7 +141,7 @@ export function applyDraftToRow(row: QuestionRow, draft: EditorDraft): QuestionR
       draft.questionNumber,
       draft.format
     ),
-    image_url: isYearBased ? null : draft.imageDataUrl,
+    image_url: draft.imageDataUrl,
     time_spent_sec: draft.timeSpentSec,
     target_time_sec: target,
     outcome: draft.outcome,

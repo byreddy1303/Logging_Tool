@@ -6,7 +6,7 @@
 // left staring at a stub.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarCheck, Columns3, MessageSquareText, RefreshCcw, Send, Sparkles, Users, Zap } from 'lucide-react';
+import { CalendarCheck, Columns3, MessageSquareText, RefreshCcw, Send, Sparkles, Users } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -42,11 +42,6 @@ const FEATURES = [
     icon: Users,
     title: 'Async study room',
     body: 'Both join at a set time, presence only. No video, no text — the "sitting-in-the-library" signal.'
-  },
-  {
-    icon: Zap,
-    title: 'Sadhana peer signal',
-    body: 'When both toggle sadhana practice on, weeks show a joint count. No streaks, no shaming zeros.'
   },
   {
     icon: Sparkles,

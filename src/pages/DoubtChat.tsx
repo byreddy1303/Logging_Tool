@@ -17,6 +17,7 @@ import { Select } from '@/components/ui/Select';
 import MarkdownLite from '@/components/shared/MarkdownLite';
 import { useLLM } from '@/hooks/useLLM';
 import { useAuth } from '@/hooks/useAuth';
+import { usePrefsStore } from '@/stores/prefs';
 import { db } from '@/lib/db';
 import { quickExplainPrompt } from '@/lib/prompts';
 import { formatDate, cn } from '@/lib/utils';
@@ -33,13 +34,15 @@ interface FormState {
   mode: Mode;
 }
 
-const INITIAL: FormState = {
-  topic: '',
-  understanding: '',
-  stuck: '',
-  attachQuestionId: '',
-  mode: 'quick'
-};
+function initialForm(defaultMode: Mode): FormState {
+  return {
+    topic: '',
+    understanding: '',
+    stuck: '',
+    attachQuestionId: '',
+    mode: defaultMode
+  };
+}
 
 function ModeToggle({
   value,
@@ -84,7 +87,8 @@ function ModeToggle({
 
 export default function DoubtChat() {
   const { userId } = useAuth();
-  const [form, setForm] = useState<FormState>(INITIAL);
+  const defaultDoubtMode = usePrefsStore((s) => s.defaultDoubtMode);
+  const [form, setForm] = useState<FormState>(() => initialForm(defaultDoubtMode));
   const [showFullPrompt, setShowFullPrompt] = useState(false);
   const [copyFlash, setCopyFlash] = useState(false);
   const { send, pending, error, data, reset } = useLLM();
@@ -150,7 +154,7 @@ export default function DoubtChat() {
   }
 
   function clear() {
-    setForm(INITIAL);
+    setForm(initialForm(defaultDoubtMode));
     reset();
   }
 

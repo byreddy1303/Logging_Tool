@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formulaExtractImagePrompt,
   formulaExtractPrompt,
   parseFormulaExtraction,
   parseReflexResult,
@@ -91,6 +92,152 @@ describe('response parsers', () => {
 
   it('parseFormulaExtraction returns [] on garbage', () => {
     expect(parseFormulaExtraction('sorry no formulas')).toEqual([]);
+  });
+
+  it('parseFormulaExtraction accepts plain array without fences', () => {
+    const raw = '[{"name":"Sum","expression":"\\\\sum_{i=1}^{n} i = n(n+1)/2","when_to_use":"arithmetic series"}]';
+    const out = parseFormulaExtraction(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0].expression).toBe('\\sum_{i=1}^{n} i = n(n+1)/2');
+  });
+
+  it('parseFormulaExtraction accepts a single object (not array)', () => {
+    const raw = '{"name":"BFS","expression":"O(V+E)","when_to_use":"unweighted shortest path"}';
+    const out = parseFormulaExtraction(raw);
+    expect(out).toEqual([
+      { name: 'BFS', expression: 'O(V+E)', when_to_use: 'unweighted shortest path' }
+    ]);
+  });
+
+  it('parseFormulaExtraction accepts synonym keys (whenToUse / formula)', () => {
+    const raw = '[{"title":"DFS","formula":"O(V+E)","whenToUse":"topological sort"}]';
+    const out = parseFormulaExtraction(raw);
+    expect(out).toEqual([
+      { name: 'DFS', expression: 'O(V+E)', when_to_use: 'topological sort' }
+    ]);
+  });
+
+  it('parseFormulaExtraction ignores prose preamble', () => {
+    const raw = `Here is the JSON:
+\`\`\`json
+[{"name":"n choose k","expression":"\\\\binom{n}{k}","when_to_use":"combinations"}]
+\`\`\``;
+    const out = parseFormulaExtraction(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('n choose k');
+    expect(out[0].expression).toBe('\\binom{n}{k}');
+  });
+
+  it('parseFormulaExtraction ignores stray trailing text', () => {
+    const raw = '[{"name":"Master theorem","expression":"T(n) = aT(n/b) + f(n)","when_to_use":"divide and conquer recurrences"}] — hope that helps!';
+    const out = parseFormulaExtraction(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0].expression).toBe('T(n) = aT(n/b) + f(n)');
+  });
+
+  it('parseFormulaExtraction preserves LaTeX subscripts/superscripts verbatim', () => {
+    const raw = JSON.stringify([
+      {
+        name: 'Euler',
+        expression: 'e^{i\\pi} + 1 = 0',
+        when_to_use: 'complex analysis identity'
+      },
+      {
+        name: 'Cauchy-Schwarz',
+        expression: '\\left(\\sum_{i=1}^{n} a_i b_i\\right)^2 \\leq \\left(\\sum a_i^2\\right)\\left(\\sum b_i^2\\right)',
+        when_to_use: 'bounds on inner products'
+      }
+    ]);
+    const out = parseFormulaExtraction(raw);
+    expect(out).toHaveLength(2);
+    expect(out[0].expression).toBe('e^{i\\pi} + 1 = 0');
+    expect(out[1].expression).toContain('\\sum_{i=1}^{n}');
+    expect(out[1].expression).toContain('\\leq');
+  });
+
+  it('parseFormulaExtraction returns [] for an explicit empty response', () => {
+    expect(parseFormulaExtraction('[]')).toEqual([]);
+    expect(parseFormulaExtraction('```json\n[]\n```')).toEqual([]);
+  });
+
+  it('parseFormulaExtraction drops rows missing any field but keeps the good ones', () => {
+    const raw = JSON.stringify([
+      { name: 'ok', expression: '1+1=2', when_to_use: 'trivial' },
+      { name: 'no expr', when_to_use: 'x' },
+      { name: '', expression: 'x=y', when_to_use: 'x' },
+      null,
+      42,
+      { name: 'ok2', expression: 'a=b', when_to_use: 'y' }
+    ]);
+    const out = parseFormulaExtraction(raw);
+    expect(out.map((r) => r.name)).toEqual(['ok', 'ok2']);
+  });
+
+  it('parseFormulaExtraction trims surrounding whitespace on each field', () => {
+    const raw = JSON.stringify([
+      { name: '  Foo  ', expression: '  x = y  ', when_to_use: '  bar  ' }
+    ]);
+    const out = parseFormulaExtraction(raw);
+    expect(out[0]).toEqual({ name: 'Foo', expression: 'x = y', when_to_use: 'bar' });
+  });
+
+  it('parseFormulaExtraction handles empty / whitespace / null input', () => {
+    expect(parseFormulaExtraction('')).toEqual([]);
+    expect(parseFormulaExtraction('   \n  \t  ')).toEqual([]);
+    expect(parseFormulaExtraction(null as unknown as string)).toEqual([]);
+    expect(parseFormulaExtraction(undefined as unknown as string)).toEqual([]);
+  });
+
+  it('parseFormulaExtraction handles a JSON object embedded in surrounding prose', () => {
+    const raw = 'Great question! Here you go: {"name":"Pigeonhole","expression":"\\\\lceil n/k \\\\rceil","when_to_use":"one bucket has at least this many"} that is all.';
+    const out = parseFormulaExtraction(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('Pigeonhole');
+  });
+
+  it('parseFormulaExtraction rejects malformed JSON without throwing', () => {
+    expect(() => parseFormulaExtraction('[{name: bad')).not.toThrow();
+    expect(parseFormulaExtraction('[{name: bad')).toEqual([]);
+  });
+
+  it('parseFormulaExtraction handles a large realistic Gemini-style response', () => {
+    const raw = `\`\`\`json
+[
+  {
+    "name": "Master theorem case 1",
+    "expression": "T(n) = aT(n/b) + O(n^c) \\\\text{ where } c < \\\\log_b a \\\\Rightarrow T(n) = \\\\Theta(n^{\\\\log_b a})",
+    "when_to_use": "Divide-and-conquer recurrences where the work-per-level shrinks"
+  },
+  {
+    "name": "Master theorem case 2",
+    "expression": "T(n) = aT(n/b) + O(n^c \\\\log^k n) \\\\text{ where } c = \\\\log_b a \\\\Rightarrow T(n) = \\\\Theta(n^c \\\\log^{k+1} n)",
+    "when_to_use": "Divide-and-conquer where each level does the same total work"
+  },
+  {
+    "name": "Master theorem case 3",
+    "expression": "T(n) = aT(n/b) + O(n^c) \\\\text{ where } c > \\\\log_b a \\\\Rightarrow T(n) = \\\\Theta(n^c)",
+    "when_to_use": "Divide-and-conquer where the combine step dominates"
+  }
+]
+\`\`\``;
+    const out = parseFormulaExtraction(raw);
+    expect(out).toHaveLength(3);
+    // Each expression contains the LaTeX \Theta and structure was preserved.
+    for (const row of out) {
+      expect(row.expression).toContain('\\Theta');
+      expect(row.expression).toContain('\\text');
+      expect(row.name).toMatch(/Master theorem/);
+    }
+  });
+});
+
+describe('formulaExtractImagePrompt', () => {
+  it('is a stable non-empty prompt with strict JSON contract', () => {
+    const p = formulaExtractImagePrompt();
+    expect(p).toContain('STRICT JSON');
+    expect(p).toContain('LaTeX');
+    expect(p).toContain('\\sum');
+    expect(p).toContain('when_to_use');
   });
 
   it('parseVariations captures numbered blocks and caps at 5', () => {

@@ -13,6 +13,7 @@ import { Empty } from '@/components/ui/Empty';
 import { Button } from '@/components/ui/Button';
 import { db } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
+import { usePrefsStore } from '@/stores/prefs';
 import { cn, formatDate, plural, todayISO } from '@/lib/utils';
 import { EXAM_DATE_DEFAULT, OUTCOMES, OUTCOME_BY_CODE } from '@/lib/constants';
 import { subjectInk } from '@/lib/subjectInk';
@@ -65,6 +66,39 @@ function Stat({
         {value}
       </span>
       {hint && <span className="text-[12px] text-text-faint">{hint}</span>}
+    </div>
+  );
+}
+
+function ProgressBlock({
+  label,
+  done,
+  target,
+  tone
+}: {
+  label: string;
+  done: number;
+  target: number;
+  tone: 'accent' | 'teal';
+}) {
+  const pct = target > 0 ? Math.min(1, done / target) : 0;
+  const bar = tone === 'accent' ? 'bg-accent' : 'bg-ink-teal';
+  const met = done >= target;
+  return (
+    <div className="rounded border border-border/70 bg-bg-overlay/30 px-3 py-3">
+      <div className="flex items-baseline justify-between text-[12.5px]">
+        <span className="u-label">{label}</span>
+        <span className="u-num text-text-muted">
+          <span className={cn('text-text', met && 'text-success')}>{done}</span>
+          <span className="text-text-faint"> / {target}</span>
+        </span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded bg-bg-overlay">
+        <div className={cn('h-2 transition-all', bar)} style={{ width: `${Math.round(pct * 100)}%` }} />
+      </div>
+      <p className="mt-1 text-[11px] text-text-faint">
+        {met ? 'On target for today.' : `${target - done} to go.`}
+      </p>
     </div>
   );
 }
@@ -142,6 +176,9 @@ export default function Dashboard() {
   const { userId, profile } = useAuth();
   const navigate = useNavigate();
   const today = todayISO();
+  const dailyQuestionTarget = usePrefsStore((s) => s.dailyQuestionTarget);
+  const weeklySessionTarget = usePrefsStore((s) => s.weeklySessionTarget);
+  const showCountdown = usePrefsStore((s) => s.showCountdown);
 
   const reattempts = useLiveQuery(
     async () => (userId ? db.reattempts.where('user_id').equals(userId).toArray() : []),
@@ -176,6 +213,25 @@ export default function Dashboard() {
   const due = useMemo(() => dueTodayCount(reattempts, today), [reattempts, today]);
   const dist = useMemo(() => outcomeDistribution(lastSessionQuestions), [lastSessionQuestions]);
 
+  // Today's tagged questions across ALL sessions and standalone /log entries.
+  const questionsToday = useLiveQuery(
+    async () => {
+      if (!userId) return 0;
+      const rows = await db.questions.where('user_id').equals(userId).toArray();
+      return rows.filter((q) => q.created_at.slice(0, 10) === today).length;
+    },
+    [userId, today],
+    0
+  );
+
+  const sessionsThisWeek = useMemo(() => {
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+    return sessions.filter((s) => new Date(s.created_at) >= monday).length;
+  }, [sessions]);
+
   const examDate = profile?.exam_date ?? EXAM_DATE_DEFAULT;
   const daysLeft = differenceInCalendarDays(parseISO(examDate), new Date());
 
@@ -183,7 +239,11 @@ export default function Dashboard() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Dashboard"
-        description={`${formatDate(today, 'EEE dd MMM')} · T−${daysLeft}d to GATE`}
+        description={
+          showCountdown
+            ? `${formatDate(today, 'EEE dd MMM')} · T−${daysLeft}d to GATE`
+            : formatDate(today, 'EEE dd MMM')
+        }
         actions={
           <Button variant="primary" onClick={() => navigate('/session/new')}>
             New session
@@ -208,6 +268,27 @@ export default function Dashboard() {
             dot="bg-ink-teal"
           />
         </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Daily plan"
+          aside={<span className="text-[11px] text-text-faint">from Settings</span>}
+        />
+        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <ProgressBlock
+            label="Questions today"
+            done={questionsToday}
+            target={dailyQuestionTarget}
+            tone="accent"
+          />
+          <ProgressBlock
+            label="Sessions this week"
+            done={sessionsThisWeek}
+            target={weeklySessionTarget}
+            tone="teal"
+          />
+        </CardBody>
       </Card>
 
       <Card>

@@ -14,6 +14,8 @@ import { Empty } from '@/components/ui/Empty';
 import { Badge } from '@/components/ui/Badge';
 import { useLLM } from '@/hooks/useLLM';
 import { useAuth } from '@/hooks/useAuth';
+import { usePrefsStore } from '@/stores/prefs';
+import { Dialog } from '@/components/ui/Dialog';
 import { db } from '@/lib/db';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
 import {
@@ -47,6 +49,8 @@ export default function Triangulate() {
   const [state, setState] = useState<AskState>(INITIAL);
   const { send, pending, error, reset } = useLLM();
   const [flash, setFlash] = useState<string | null>(null);
+  const triangulateConfirm = usePrefsStore((s) => s.triangulateConfirm);
+  const [confirming, setConfirming] = useState(false);
 
   const rows: AlignedRow[] = useMemo(() => {
     if (!state.data) return [];
@@ -70,7 +74,7 @@ export default function Triangulate() {
     setState((s) => ({ ...s, [key]: val }));
   }
 
-  async function ask() {
+  async function fireAsk() {
     if (!state.prompt.trim() || pending) return;
     setState((s) => ({ ...s, data: null, conclusion: '', saved: false }));
     reset();
@@ -82,6 +86,20 @@ export default function Triangulate() {
     if (resp && resp.use_case === 'triangulate') {
       setState((s) => ({ ...s, data: resp as LLMTriangulateResponse }));
     }
+  }
+
+  function ask() {
+    if (!state.prompt.trim() || pending) return;
+    if (triangulateConfirm) {
+      setConfirming(true);
+      return;
+    }
+    void fireAsk();
+  }
+
+  function confirmAndAsk() {
+    setConfirming(false);
+    void fireAsk();
   }
 
   function clear() {
@@ -167,7 +185,7 @@ export default function Triangulate() {
                   Clear
                 </Button>
               )}
-              <Button variant="primary" onClick={() => void ask()} disabled={!canAsk}>
+              <Button variant="primary" onClick={() => ask()} disabled={!canAsk}>
                 {pending ? (
                   <>
                     <Loader2 size={14} className="mr-1 animate-spin" strokeWidth={1.75} />
@@ -185,7 +203,7 @@ export default function Triangulate() {
         </CardBody>
       </Card>
 
-      {error && <ErrorCard error={error} onRetry={() => void ask()} onDismiss={reset} />}
+      {error && <ErrorCard error={error} onRetry={() => void fireAsk()} onDismiss={reset} />}
 
       {state.data && (
         <>
@@ -299,6 +317,29 @@ export default function Triangulate() {
           </Card>
         </>
       )}
+
+      <Dialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="Spend 3 credits?"
+        className="max-w-md"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-[13px] text-text-muted">
+            Triangulate hits Groq, Gemini and OpenRouter in parallel — that counts as three
+            calls against today's 100-credit cap. Turn this confirmation off in Settings if you're
+            OK spending without the check.
+          </p>
+          <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+            <Button variant="ghost" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={confirmAndAsk}>
+              Ask all three
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Card>
         <CardHeader title="Recent triangulations" />

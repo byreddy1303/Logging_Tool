@@ -8,6 +8,16 @@
     scrollbar-gutter: stable;
   }
 
+  /* Compact density — reduces vertical padding across table rows and list items. */
+  html[data-density='compact'] table tbody td {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+  }
+  html[data-density='compact'] ul.divide-y li {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+  }
+
   body {
     @apply bg-bg font-sans text-text;
     font-size: 15px;

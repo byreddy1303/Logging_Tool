@@ -181,15 +181,15 @@ export default function SourceStep({
 
   function submit() {
     // Normalize: non-year-based sources drop year+set; year-based sources keep year;
-    // only GATE PYQ from 2014+ carries a Set 1/2 flag. Year-based sources are
-    // unambiguous by (year, question #), so no image is attached — the rest can.
+    // only GATE PYQ from 2014+ carries a Set 1/2 flag. Photo is always kept when
+    // present — a scan is useful even alongside a year-based reference.
     const normalized: SourceDraft = {
       ...draft,
       subtopic: draft.subtopic?.trim() ? draft.subtopic.trim() : null,
       year: isYearBased ? draft.year : null,
       set: isPyq && yearHasSets ? draft.set : null,
       questionNumber: draft.questionNumber?.trim() ? draft.questionNumber.trim() : null,
-      imageDataUrl: isYearBased ? null : draft.imageDataUrl
+      imageDataUrl: draft.imageDataUrl
     };
     onSubmit(normalized);
   }
@@ -260,7 +260,7 @@ export default function SourceStep({
         ) : null}
       </div>
 
-      {isYearBased ? (
+      {isYearBased && (
         <div className="flex flex-col gap-3 rounded border border-border/70 bg-bg-overlay/40 px-3 py-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[160px_1fr]">
             <div className="flex flex-col gap-1.5">
@@ -309,19 +309,19 @@ export default function SourceStep({
             </p>
           )}
         </div>
-      ) : (
-        <ImageUpload
-          dataUrl={draft.imageDataUrl}
-          uploading={uploading}
-          error={imageError}
-          fileRef={fileRef}
-          onPick={(f) => void pickImage(f)}
-          onClear={() => {
-            setImageError(null);
-            setDraft((d) => ({ ...d, imageDataUrl: null }));
-          }}
-        />
       )}
+
+      <ImageUpload
+        dataUrl={draft.imageDataUrl}
+        uploading={uploading}
+        error={imageError}
+        fileRef={fileRef}
+        onPick={(f) => void pickImage(f)}
+        onClear={() => {
+          setImageError(null);
+          setDraft((d) => ({ ...d, imageDataUrl: null }));
+        }}
+      />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto]">
         <div className="flex flex-col gap-1.5">

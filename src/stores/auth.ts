@@ -24,7 +24,7 @@ interface AuthState {
 
 /** Editable subset of the users row — everything the Settings page owns. */
 export type ProfilePatch = Partial<
-  Pick<UserRow, 'name' | 'exam_date' | 'target_rank' | 'sadhana_practice' | 'timezone'>
+  Pick<UserRow, 'name' | 'exam_date' | 'target_rank' | 'timezone'>
 >;
 
 const SANDBOX_PROFILE: UserRow = {
@@ -33,7 +33,7 @@ const SANDBOX_PROFILE: UserRow = {
   email: 'sandbox@local',
   exam_date: EXAM_DATE_DEFAULT,
   target_rank: 100,
-  sadhana_practice: true,
+  sadhana_practice: false,
   timezone: 'Asia/Kolkata',
   created_at: new Date().toISOString()
 };

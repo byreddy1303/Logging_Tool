@@ -1,11 +1,22 @@
-// F4.5 — formula library + extractor. Paste a chapter / notes into the top
-// card, the router asks Groq to structure it as {name, expression, when_to_use}
-// JSON, malformed rows are dropped, and the user ticks which to keep. Kept
-// formulas land in `formulas` with next_review=today so they appear at the
-// top of the review list immediately.
-import { useMemo, useState } from 'react';
+// F4.5 — formula library + extractor. Text mode: paste any chapter and Groq
+// structures it. Image mode: upload a photo of a page/whiteboard and Gemini
+// vision transcribes each formula in LaTeX. Both flows land in the same
+// review-and-approve UI. Kept formulas go into `formulas` with next_review=
+// today so they show up at the top of the review list immediately.
+import { useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AlertCircle, ClipboardPaste, Loader2, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Camera,
+  ClipboardPaste,
+  Image as ImageIcon,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  UploadCloud,
+  X
+} from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -20,11 +31,18 @@ import { useUiStore } from '@/stores/ui';
 import { db } from '@/lib/db';
 import { writeLocal, deleteLocal } from '@/lib/sync';
 import { SUBJECTS } from '@/lib/constants';
-import { addDaysISO, formatDate, nowISO, todayISO, uuid } from '@/lib/utils';
+import { addDaysISO, cn, formatDate, nowISO, todayISO, uuid } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
-import { formulaExtractPrompt, parseFormulaExtraction } from '@/lib/prompts';
+import { compressToDataUrl, ImageTooLargeError } from '@/lib/image';
+import {
+  formulaExtractImagePrompt,
+  formulaExtractPrompt,
+  parseFormulaExtraction
+} from '@/lib/prompts';
 import type { FormulaRow } from '@/types';
 import type { LLMSingleResponse } from '@/lib/llm';
+
+type ExtractMode = 'text' | 'image';
 
 interface Candidate {
   name: string;
@@ -49,10 +67,16 @@ export default function Formulas() {
   const today = todayISO();
   const pushToast = useUiStore((s) => s.pushToast);
 
+  const [mode, setMode] = useState<ExtractMode>('text');
   const [text, setText] = useState('');
   const [subject, setSubject] = useState<string>(DEFAULT_SUBJECT);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [imageBytes, setImageBytes] = useState(0);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const { send, pending, error, data, reset } = useLLM();
 
   const candidates = useMemo<Candidate[]>(() => {
@@ -85,18 +109,59 @@ export default function Formulas() {
     [formulas, today]
   );
 
-  const canExtract = text.trim().length >= 20 && !pending;
+  const canExtractText = text.trim().length >= 20 && !pending && !preparing;
+  const canExtractImage = !!imageDataUrl && !pending && !preparing;
+  const canExtract = mode === 'text' ? canExtractText : canExtractImage;
   const canSave = candidates.length > 0 && selected.size > 0 && !saving;
 
   async function extract() {
     if (!canExtract) return;
     reset();
     setSelected(new Set());
+    if (mode === 'text') {
+      await send({
+        use_case: 'formula_extract',
+        prompt: formulaExtractPrompt(text.trim()),
+        template: 'formula_extract'
+      });
+      return;
+    }
+    // image mode
+    if (!imageDataUrl) return;
+    const commaIdx = imageDataUrl.indexOf(',');
+    const b64 = commaIdx >= 0 ? imageDataUrl.slice(commaIdx + 1) : imageDataUrl;
     await send({
-      use_case: 'formula_extract',
-      prompt: formulaExtractPrompt(text.trim()),
-      template: 'formula_extract'
+      use_case: 'formula_extract_image',
+      prompt: formulaExtractImagePrompt(),
+      template: 'formula_extract_image',
+      image_base64: b64,
+      image_mime_type: 'image/jpeg'
     });
+  }
+
+  async function pickImage(file: File | undefined) {
+    if (!file) return;
+    setImageError(null);
+    setPreparing(true);
+    try {
+      const c = await compressToDataUrl(file);
+      setImageDataUrl(c.dataUrl);
+      setImageBytes(c.bytes);
+    } catch (err) {
+      if (err instanceof ImageTooLargeError) setImageError(err.message);
+      else setImageError((err as Error).message || 'Could not read image.');
+    } finally {
+      setPreparing(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  function clearImage() {
+    setImageDataUrl(null);
+    setImageBytes(0);
+    setImageError(null);
+    reset();
+    setSelected(new Set());
   }
 
   function toggle(i: number) {
@@ -132,6 +197,7 @@ export default function Formulas() {
       reset();
       setSelected(new Set());
       setText('');
+      clearImage();
     } finally {
       setSaving(false);
     }
@@ -173,12 +239,12 @@ export default function Formulas() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Formulas"
-        description="Paste any chapter or notes. Groq structures it as name / expression / when-to-use — you review before it lands in the library."
+        description="Paste text or upload a photo. Groq structures typed notes; Gemini vision transcribes photos — everything routes to the same review-and-approve step."
       />
 
       <Card>
         <CardHeader
-          title="Extract from text"
+          title="Extract"
           aside={
             <div className="flex items-center gap-2 text-[11px] text-text-faint">
               <label className="u-label" htmlFor="fx-subject">
@@ -201,48 +267,167 @@ export default function Formulas() {
           }
         />
         <CardBody className="flex flex-col gap-3">
-          <Textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Paste a chapter / notes / summary. Min 20 chars. Malformed rows in the model output are dropped."
-            rows={6}
-            maxLength={20_000}
-            disabled={pending || saving}
-          />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-            <div className="flex items-center gap-2 text-[11px] text-text-faint">
-              <span className="u-num">{text.trim().length}</span> chars ·
-              <button
-                type="button"
-                onClick={() => void pasteClipboard()}
-                disabled={pending || saving}
-                className="flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:text-text-muted"
-              >
-                <ClipboardPaste size={11} strokeWidth={1.75} />
-                paste from clipboard
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              {text && (
-                <Button variant="ghost" size="sm" onClick={() => setText('')} disabled={pending || saving}>
-                  Clear
-                </Button>
+          <div className="inline-flex self-start divide-x divide-border overflow-hidden rounded border border-border bg-bg-raised text-[12.5px]">
+            <button
+              type="button"
+              onClick={() => setMode('text')}
+              disabled={pending || saving}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 transition-colors',
+                mode === 'text' ? 'bg-accent-faint font-semibold text-accent' : 'text-text-muted hover:bg-bg-overlay hover:text-text'
               )}
-              <Button variant="primary" onClick={() => void extract()} disabled={!canExtract}>
-                {pending ? (
-                  <>
-                    <Loader2 size={14} className="mr-1 animate-spin" strokeWidth={1.75} />
-                    Extracting…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={14} className="mr-1" strokeWidth={1.75} />
-                    Extract formulas
-                  </>
-                )}
-              </Button>
-            </div>
+            >
+              <ClipboardPaste size={12} strokeWidth={1.75} />
+              Text
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('image')}
+              disabled={pending || saving}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 transition-colors',
+                mode === 'image' ? 'bg-accent-faint font-semibold text-accent' : 'text-text-muted hover:bg-bg-overlay hover:text-text'
+              )}
+            >
+              <ImageIcon size={12} strokeWidth={1.75} />
+              Photo
+              <span className="rounded bg-bg-overlay px-1 py-0.5 font-mono text-[10px] text-text-faint">Gemini</span>
+            </button>
           </div>
+
+          {mode === 'text' ? (
+            <>
+              <Textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Paste a chapter / notes / summary. Min 20 chars. Malformed rows in the model output are dropped."
+                rows={6}
+                maxLength={20_000}
+                disabled={pending || saving}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+                <div className="flex items-center gap-2 text-[11px] text-text-faint">
+                  <span className="u-num">{text.trim().length}</span> chars ·
+                  <button
+                    type="button"
+                    onClick={() => void pasteClipboard()}
+                    disabled={pending || saving}
+                    className="flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:text-text-muted"
+                  >
+                    <ClipboardPaste size={11} strokeWidth={1.75} />
+                    paste from clipboard
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  {text && (
+                    <Button variant="ghost" size="sm" onClick={() => setText('')} disabled={pending || saving}>
+                      Clear
+                    </Button>
+                  )}
+                  <Button variant="primary" onClick={() => void extract()} disabled={!canExtract}>
+                    {pending ? (
+                      <>
+                        <Loader2 size={14} className="mr-1 animate-spin" strokeWidth={1.75} />
+                        Extracting…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={14} className="mr-1" strokeWidth={1.75} />
+                        Extract formulas
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => void pickImage(e.target.files?.[0])}
+                className="hidden"
+              />
+              {imageDataUrl ? (
+                <div className="flex flex-col gap-3 rounded border border-border bg-bg-raised p-2 shadow-sm sm:flex-row sm:items-start">
+                  <img
+                    src={imageDataUrl}
+                    alt="formula source"
+                    className="h-40 w-full rounded object-contain sm:w-40"
+                  />
+                  <div className="flex flex-1 flex-col justify-between gap-2">
+                    <div className="text-[12px] text-text-muted">
+                      Attached · <span className="u-num">{Math.round(imageBytes / 1024)}</span>{' '}
+                      KB post-compression. Preview above matches what Gemini sees.
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()} disabled={pending || saving || preparing}>
+                        <UploadCloud size={12} strokeWidth={1.75} className="mr-1" />
+                        Replace
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearImage}
+                        disabled={pending || saving || preparing}
+                        className="text-danger hover:text-danger"
+                      >
+                        <Trash2 size={12} strokeWidth={1.75} className="mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={preparing}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded border border-dashed border-border bg-bg-overlay/40 px-4 py-6 text-left',
+                    'hover:border-border-hover hover:bg-bg-overlay/70 disabled:opacity-60'
+                  )}
+                >
+                  <Camera size={18} strokeWidth={1.75} className="text-accent" />
+                  <div className="flex-1">
+                    <p className="font-display text-[13px] font-semibold text-text">
+                      {preparing ? 'Compressing…' : 'Upload / snap a photo'}
+                    </p>
+                    <p className="text-[12px] text-text-muted">
+                      Image is downscaled to 1400 px on the long edge and sent to Gemini 2.5 Flash.
+                      Any file &gt; 6 MB after compression is refused.
+                    </p>
+                  </div>
+                </button>
+              )}
+              {imageError && (
+                <p className="flex items-center gap-1 text-[12px] text-danger">
+                  <AlertCircle size={12} strokeWidth={2} />
+                  {imageError}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+                <p className="text-[11px] text-text-faint">
+                  Response is strict JSON — malformed rows are silently dropped, LaTeX is preserved verbatim.
+                </p>
+                <Button variant="primary" onClick={() => void extract()} disabled={!canExtract}>
+                  {pending ? (
+                    <>
+                      <Loader2 size={14} className="mr-1 animate-spin" strokeWidth={1.75} />
+                      Reading image…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} className="mr-1" strokeWidth={1.75} />
+                      Extract from photo
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
         </CardBody>
       </Card>
 

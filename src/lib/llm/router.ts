@@ -11,13 +11,18 @@ export type LLMUseCase =
   | 'long_context'
   | 'reflex_score'
   | 'variation'
-  | 'formula_extract';
+  | 'formula_extract'
+  | 'formula_extract_image';
 
 export interface LLMRequest {
   use_case: LLMUseCase;
   prompt: string;
   question_id?: string | null;
   template?: string | null;
+  /** Base64-encoded image, no data: prefix. Vision-capable routes only. */
+  image_base64?: string;
+  /** MIME type accompanying image_base64. Defaults to image/jpeg. */
+  image_mime_type?: string;
 }
 
 export interface LLMSingleResponse {

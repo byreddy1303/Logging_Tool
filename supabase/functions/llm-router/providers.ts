@@ -12,7 +12,8 @@ export type LLMUseCase =
   | 'long_context'
   | 'reflex_score'
   | 'variation'
-  | 'formula_extract';
+  | 'formula_extract'
+  | 'formula_extract_image';
 
 export interface ProviderRoute {
   provider: Provider;
@@ -31,7 +32,8 @@ export const ROUTES: Record<LLMUseCase, ProviderRoute | ProviderRoute[]> = {
   long_context: { provider: 'gemini', model: 'gemini-2.5-flash' },
   reflex_score: { provider: 'cerebras', model: 'llama-3.3-70b' },
   variation: { provider: 'groq', model: 'llama-3.3-70b-versatile' },
-  formula_extract: { provider: 'groq', model: 'llama-3.3-70b-versatile' }
+  formula_extract: { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+  formula_extract_image: { provider: 'gemini', model: 'gemini-2.5-flash' }
 };
 
 export const DAILY_LIMIT = 100;
@@ -68,6 +70,10 @@ export interface ProviderCallArgs {
   fetchFn?: typeof fetch;
   // For deep_doubt: Gemini uses a "thinking" instruction as a system prefix.
   systemPrefix?: string;
+  /** Base64-encoded image payload (no `data:` prefix). Only Gemini uses it. */
+  imageBase64?: string;
+  /** MIME type for `imageBase64`. Defaults to `image/jpeg`. */
+  imageMimeType?: string;
 }
 
 type FetchLike = typeof fetch;
@@ -107,13 +113,28 @@ export async function callGroq(args: ProviderCallArgs): Promise<CallResult> {
   };
 }
 
-// Gemini (Google generative language API).
+// Gemini (Google generative language API). Vision-capable: pass an image via
+// `imageBase64` + `imageMimeType` and it goes as an inline_data part alongside
+// the text prompt.
 export async function callGemini(args: ProviderCallArgs): Promise<CallResult> {
   const t0 = Date.now();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${args.model}:generateContent?key=${args.apiKey}`;
+  const parts: Array<Record<string, unknown>> = [];
+  if (args.imageBase64) {
+    parts.push({
+      inline_data: {
+        mime_type: args.imageMimeType ?? 'image/jpeg',
+        data: args.imageBase64
+      }
+    });
+  }
+  parts.push({ text: args.prompt });
   const body: Record<string, unknown> = {
-    contents: [{ role: 'user', parts: [{ text: args.prompt }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      temperature: args.imageBase64 ? 0 : 0.2,
+      maxOutputTokens: args.imageBase64 ? 3072 : 2048
+    }
   };
   if (args.systemPrefix) {
     body.systemInstruction = { role: 'system', parts: [{ text: args.systemPrefix }] };
@@ -127,8 +148,8 @@ export async function callGemini(args: ProviderCallArgs): Promise<CallResult> {
   const data = (await resp.json()) as {
     candidates?: { content?: { parts?: { text?: string }[] } }[];
   };
-  const parts = data.candidates?.[0]?.content?.parts ?? [];
-  const text = parts.map((p) => p.text ?? '').join('');
+  const geminiParts = data.candidates?.[0]?.content?.parts ?? [];
+  const text = geminiParts.map((p) => p.text ?? '').join('');
   return { text, latencyMs: Date.now() - t0 };
 }
 

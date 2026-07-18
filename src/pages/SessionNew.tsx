@@ -11,6 +11,7 @@ import { SUBJECTS, TARGET_DURATIONS_MIN, QUESTION_COUNT_CHOICES } from '@/lib/co
 import { useAuth } from '@/hooks/useAuth';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useSessionStore } from '@/stores/session';
+import { usePrefsStore } from '@/stores/prefs';
 import { writeLocal } from '@/lib/sync';
 import { db } from '@/lib/db';
 import { cn, uuid, todayISO, nowISO, formatDate } from '@/lib/utils';
@@ -58,9 +59,12 @@ export default function SessionNew() {
     const tagged = await db.questions.where('session_id').equals(row.id).count();
     return { row, tagged };
   }, [storedSessionId]);
-  const [subject, setSubject] = useState<string>();
-  const [duration, setDuration] = useState<number>(60);
-  const [count, setCount] = useState<number>(10);
+  const defaultSubject = usePrefsStore((s) => s.defaultSubject);
+  const defaultDuration = usePrefsStore((s) => s.defaultDurationMin);
+  const defaultCount = usePrefsStore((s) => s.defaultQuestionCount);
+  const [subject, setSubject] = useState<string | undefined>(defaultSubject ?? undefined);
+  const [duration, setDuration] = useState<number>(defaultDuration);
+  const [count, setCount] = useState<number>(defaultCount);
   const [starting, setStarting] = useState(false);
 
   async function start() {
