@@ -2,9 +2,25 @@
 // Shows per-subject accuracy + expected value + a nudge on whether to
 // raise/lower confidence threshold. Also lets the user quickly edit
 // mark_decision / mark_correct on questions that are missing them.
-import { useMemo, useState } from 'react';
+//
+// UX notes (2026-07-19 refresh):
+//   - Option labels are plain English instead of the internal MARK/SKIP/FIFTY_FIFTY
+//     codes. The Empty state below explains what each choice means.
+//   - Every decision keeps a 10s toast-style undo. If you close it, the row is
+//     also editable from the "Recently decided" panel so you can still fix
+//     mistakes days later.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AlertTriangle, Check, ChevronDown, Info, MinusCircle, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  History,
+  Info,
+  MinusCircle,
+  RotateCcw,
+  X
+} from 'lucide-react';
 import type { QuestionRow } from '@/types';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
@@ -14,10 +30,15 @@ import { Button } from '@/components/ui/Button';
 import { db } from '@/lib/db';
 import { writeLocal } from '@/lib/sync';
 import { useAuth } from '@/hooks/useAuth';
-import { calibrationBySubject, calibrationOverall, type CalibrationRow } from '@/lib/analysis';
+import {
+  calibrationBySubject,
+  calibrationOverall,
+  type CalibrationRow
+} from '@/lib/analysis';
 import { cn, formatDate, plural } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
-import { MARK_DECISIONS, OUTCOME_BY_CODE } from '@/lib/constants';
+import { OUTCOME_BY_CODE } from '@/lib/constants';
+import type { MarkDecision } from '@/types';
 
 function fmtPct(v: number | null): string {
   if (v === null) return '—';
@@ -28,14 +49,52 @@ function fmtEV(v: number): string {
   return v.toFixed(2);
 }
 
-const RECOMMENDATION_COPY: Record<CalibrationRow['recommendation'], { label: string; hint: string; tone: 'success' | 'warn' | 'neutral' }> = {
+/** Plain-language labels for the three decision options.
+ *
+ *  MARK is exam jargon: "I chose to answer this question under −⅓ negative
+ *  marking." Users kept confusing it with "marked-for-review". The renames
+ *  below stick with jargon-free verbs. */
+const DECISION_OPTIONS: {
+  value: MarkDecision;
+  label: string;
+  hint: string;
+  Icon: typeof Check;
+  tone: 'accent' | 'warn' | 'muted';
+}[] = [
+  {
+    value: 'MARK',
+    label: 'I answered it',
+    hint: 'You committed to an option under −⅓ negative marking.',
+    Icon: Check,
+    tone: 'accent'
+  },
+  {
+    value: 'FIFTY_FIFTY',
+    label: 'Guessed 50/50',
+    hint: 'You eliminated two options and picked between the other two.',
+    Icon: AlertTriangle,
+    tone: 'warn'
+  },
+  {
+    value: 'SKIP',
+    label: 'Left blank',
+    hint: 'You skipped this question to avoid the −⅓.',
+    Icon: MinusCircle,
+    tone: 'muted'
+  }
+];
+
+const RECOMMENDATION_COPY: Record<
+  CalibrationRow['recommendation'],
+  { label: string; hint: string; tone: 'success' | 'warn' | 'neutral' }
+> = {
   raise: {
-    label: 'Raise threshold — skip more',
-    hint: 'Accuracy < 40% and EV negative. You are gambling. Only MARK when you can justify.',
+    label: 'Skip more',
+    hint: 'Accuracy < 40% and EV negative. You are gambling. Only commit when you can justify.',
     tone: 'warn'
   },
   lower: {
-    label: 'Lower threshold — mark more',
+    label: 'Answer more',
     hint: 'Accuracy > 80% and EV > 0.6. You are leaving points on the table. Trust the guess a little.',
     tone: 'success'
   },
@@ -45,6 +104,13 @@ const RECOMMENDATION_COPY: Record<CalibrationRow['recommendation'], { label: str
     tone: 'neutral'
   }
 };
+
+interface UndoSnapshot {
+  id: string;
+  prev: Pick<QuestionRow, 'mark_decision' | 'mark_correct'>;
+  label: string;
+  at: number;
+}
 
 export default function Calibration() {
   const { userId } = useAuth();
@@ -57,7 +123,6 @@ export default function Calibration() {
   const rows = useMemo(() => calibrationBySubject(questions), [questions]);
   const overall = useMemo(() => calibrationOverall(rows), [rows]);
 
-  // Missing-decision inbox: questions with an outcome but no mark_decision yet.
   const missing = useMemo(
     () =>
       questions
@@ -67,11 +132,63 @@ export default function Calibration() {
     [questions]
   );
 
+  const recentDecided = useMemo(
+    () =>
+      questions
+        .filter((q) => q.mark_decision !== null)
+        .sort((a, b) => (a.created_at > b.created_at ? -1 : 1))
+        .slice(0, 15),
+    [questions]
+  );
+
+  const [undo, setUndo] = useState<UndoSnapshot | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!undo) return;
+    undoTimer.current = setTimeout(() => setUndo(null), 10_000);
+    return () => {
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+    };
+  }, [undo]);
+
+  async function stashUndoAndPersist(
+    q: QuestionRow,
+    update: Partial<Pick<QuestionRow, 'mark_decision' | 'mark_correct'>>,
+    label: string
+  ) {
+    setUndo({
+      id: q.id,
+      prev: { mark_decision: q.mark_decision, mark_correct: q.mark_correct },
+      label,
+      at: Date.now()
+    });
+    await writeLocal('questions', { ...q, ...update });
+  }
+
+  async function doUndo() {
+    if (!undo) return;
+    const q = questions.find((x) => x.id === undo.id);
+    if (!q) {
+      setUndo(null);
+      return;
+    }
+    await writeLocal('questions', { ...q, ...undo.prev });
+    setUndo(null);
+  }
+
+  async function resetRow(q: QuestionRow) {
+    await stashUndoAndPersist(
+      q,
+      { mark_decision: null, mark_correct: null },
+      'Cleared decision'
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Calibration"
-        description="How well your MARK/SKIP/50-50 calls hold up under −⅓ negative marking."
+        description="How well your answer/skip calls hold up under −⅓ negative marking."
       />
 
       <Card>
@@ -80,26 +197,32 @@ export default function Calibration() {
           {overall.decided === 0 && overall.skipped === 0 ? (
             <Empty
               title="Nothing to calibrate yet"
-              hint="Tag a mark decision on a question after solving it. It takes a second per row."
+              hint="Tell us what you did on a logged question below. It takes a second per row."
               className="border-0 py-8"
             />
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <StatCell label="Decided" value={overall.decided} />
+              <StatCell label="Decisions" value={overall.decided} />
               <StatCell label="Correct" value={overall.correct} color="text-success" />
               <StatCell label="Wrong" value={overall.wrong} color="text-danger" />
-              <StatCell label="Skipped" value={overall.skipped} muted />
+              <StatCell label="Left blank" value={overall.skipped} muted />
               <div className="flex flex-col gap-1 rounded border border-border bg-bg-overlay/40 px-3 py-2">
                 <span className="u-label">Expected value / Q</span>
                 <span
                   className={cn(
                     'u-num text-[20px] font-semibold leading-none',
-                    overall.expectedValue > 0 ? 'text-success' : overall.expectedValue < 0 ? 'text-danger' : 'text-text-faint'
+                    overall.expectedValue > 0
+                      ? 'text-success'
+                      : overall.expectedValue < 0
+                        ? 'text-danger'
+                        : 'text-text-faint'
                   )}
                 >
                   {fmtEV(overall.expectedValue)}
                 </span>
-                <span className="text-[11px] text-text-faint">MARK accuracy {fmtPct(overall.accuracy)}</span>
+                <span className="text-[11px] text-text-faint">
+                  Answer accuracy {fmtPct(overall.accuracy)}
+                </span>
               </div>
             </div>
           )}
@@ -118,9 +241,9 @@ export default function Calibration() {
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
                   <th className="px-4 py-2 font-mono">Subject</th>
-                  <th className="px-2 py-2 text-right font-mono">MARK</th>
-                  <th className="px-2 py-2 text-right font-mono">50-50</th>
-                  <th className="px-2 py-2 text-right font-mono">SKIP</th>
+                  <th className="px-2 py-2 text-right font-mono">Answered</th>
+                  <th className="px-2 py-2 text-right font-mono">50/50</th>
+                  <th className="px-2 py-2 text-right font-mono">Blank</th>
                   <th className="px-2 py-2 text-right font-mono">Accuracy</th>
                   <th className="px-2 py-2 text-right font-mono">EV / Q</th>
                   <th className="px-4 py-2 font-mono">Recommendation</th>
@@ -149,7 +272,11 @@ export default function Calibration() {
                       <td
                         className={cn(
                           'u-num px-2 py-2 text-right font-semibold',
-                          r.expectedValue > 0 ? 'text-success' : r.expectedValue < 0 ? 'text-danger' : 'text-text-faint'
+                          r.expectedValue > 0
+                            ? 'text-success'
+                            : r.expectedValue < 0
+                              ? 'text-danger'
+                              : 'text-text-faint'
                         )}
                       >
                         {fmtEV(r.expectedValue)}
@@ -197,35 +324,84 @@ export default function Calibration() {
         <CardBody className="p-0">
           {missing.length === 0 ? (
             <p className="p-4 text-[13px] text-text-faint">
-              Every logged question has a mark decision. Nothing to do here.
+              Every logged question has a decision. Nothing to do here.
             </p>
           ) : (
             <ul className="divide-y divide-border">
               {missing.map((q) => (
-                <MissingRow key={q.id} q={q} />
+                <MissingRow
+                  key={q.id}
+                  q={q}
+                  onDecide={(update, label) =>
+                    void stashUndoAndPersist(q, update, label)
+                  }
+                />
               ))}
             </ul>
           )}
         </CardBody>
       </Card>
 
+      {recentDecided.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Recently decided"
+            aside={
+              <span className="inline-flex items-center gap-1 text-[11px] text-text-faint">
+                <History size={11} strokeWidth={1.75} /> reset if you got it wrong
+              </span>
+            }
+          />
+          <CardBody className="p-0">
+            <ul className="divide-y divide-border">
+              {recentDecided.map((q) => (
+                <DecidedRow key={q.id} q={q} onReset={() => void resetRow(q)} />
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      )}
+
       <Card>
         <CardBody className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[12px] text-text-faint">
           <span className="u-label">EV math</span>
           <span>
-            Skip = <span className="u-num">0</span>
+            Blank = <span className="u-num">0</span>
           </span>
           <span>
-            MARK correct = <span className="u-num">+1</span>
+            Answered correct = <span className="u-num">+1</span>
           </span>
           <span>
-            MARK wrong = <span className="u-num">−⅓</span>
+            Answered wrong = <span className="u-num">−⅓</span>
           </span>
           <span className="ml-auto">
-            EV / Q averages over decisions taken (MARK + 50-50). Skips don't move the average.
+            EV / Q averages over decisions taken (answered + 50/50). Blank
+            answers don't move the average.
           </span>
         </CardBody>
       </Card>
+
+      {undo && (
+        <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-bg-raised px-4 py-2 shadow-lift">
+          <span className="text-[12.5px] text-text-muted">{undo.label}.</span>
+          <button
+            type="button"
+            onClick={() => void doUndo()}
+            className="inline-flex items-center gap-1 rounded-full bg-accent-faint px-3 py-1 text-[12px] font-semibold text-accent transition-colors hover:bg-accent hover:text-white"
+          >
+            <RotateCcw size={11} strokeWidth={2} />
+            Undo
+          </button>
+          <button
+            type="button"
+            onClick={() => setUndo(null)}
+            aria-label="Dismiss"
+            className="rounded-full p-0.5 text-text-faint hover:text-text"
+          >
+            <X size={12} strokeWidth={1.75} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -256,18 +432,40 @@ function StatCell({
   );
 }
 
-function MissingRow({ q }: { q: QuestionRow }) {
+function MissingRow({
+  q,
+  onDecide
+}: {
+  q: QuestionRow;
+  onDecide: (
+    update: Partial<Pick<QuestionRow, 'mark_decision' | 'mark_correct'>>,
+    label: string
+  ) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [decision, setDecision] = useState<MarkDecision | null>(null);
   const spec = OUTCOME_BY_CODE[q.outcome];
 
-  async function persist(update: Partial<Pick<QuestionRow, 'mark_decision' | 'mark_correct'>>) {
-    setSaving(true);
-    try {
-      await writeLocal('questions', { ...q, ...update });
-    } finally {
-      setSaving(false);
+  function pickDecision(v: MarkDecision) {
+    // SKIP has no correctness follow-up — persist immediately and collapse.
+    if (v === 'SKIP') {
+      onDecide({ mark_decision: 'SKIP', mark_correct: null }, 'Marked as left blank');
+      setOpen(false);
+      return;
     }
+    setDecision(v);
+  }
+
+  function pickOutcome(correct: boolean) {
+    if (!decision) return;
+    onDecide(
+      { mark_decision: decision, mark_correct: correct },
+      correct
+        ? 'Recorded correct answer'
+        : 'Recorded wrong answer'
+    );
+    setDecision(null);
+    setOpen(false);
   }
 
   return (
@@ -284,7 +482,17 @@ function MissingRow({ q }: { q: QuestionRow }) {
           <span className={cn('h-1.5 w-1.5 rounded-full', subjectInk(q.subject).dot)} />
           <span className="truncate text-[12px] text-text-muted">{q.subject}</span>
         </span>
-        <Badge tone={spec.tone === 'ok' ? 'success' : spec.tone === 'slow' ? 'warn' : spec.tone === 'guess' ? 'guess' : 'danger'}>
+        <Badge
+          tone={
+            spec.tone === 'ok'
+              ? 'success'
+              : spec.tone === 'slow'
+                ? 'warn'
+                : spec.tone === 'guess'
+                  ? 'guess'
+                  : 'danger'
+          }
+        >
           {q.outcome}
         </Badge>
         <span className="min-w-0 flex-1 truncate text-[13px]">
@@ -297,51 +505,106 @@ function MissingRow({ q }: { q: QuestionRow }) {
         />
       </button>
       {open && (
-        <div className="flex flex-wrap items-center gap-3 border-t border-border bg-bg-overlay/40 px-4 py-3">
-          <span className="u-label">Decision</span>
-          {MARK_DECISIONS.map((m) => (
-            <Button
-              key={m.value}
-              variant="ghost"
-              size="sm"
-              disabled={saving}
-              onClick={() => void persist({ mark_decision: m.value })}
-            >
-              {m.label}
-            </Button>
-          ))}
-          <span className="u-label ml-6">Outcome</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={saving}
-            onClick={() => void persist({ mark_correct: true })}
-          >
-            <Check size={14} strokeWidth={2} className="mr-1 text-success" />
-            Paid off
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={saving}
-            onClick={() => void persist({ mark_correct: false })}
-          >
-            <X size={14} strokeWidth={2} className="mr-1 text-danger" />
-            Did not
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={saving}
-            onClick={() =>
-              void persist({ mark_decision: 'SKIP', mark_correct: null })
-            }
-          >
-            <MinusCircle size={14} strokeWidth={2} className="mr-1 text-text-faint" />
-            Skip
-          </Button>
+        <div className="border-t border-border bg-bg-overlay/40 px-4 py-3">
+          {decision === null ? (
+            <div className="flex flex-col gap-2">
+              <p className="u-label">What did you do on this question in the mock/exam?</p>
+              <div className="flex flex-wrap gap-2">
+                {DECISION_OPTIONS.map((opt) => {
+                  const Icon = opt.Icon;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => pickDecision(opt.value)}
+                      title={opt.hint}
+                      className={cn(
+                        'inline-flex flex-col items-start gap-0.5 rounded border px-3 py-2 text-left transition-colors',
+                        opt.tone === 'accent' &&
+                          'border-border bg-bg-raised hover:border-accent hover:bg-accent-faint',
+                        opt.tone === 'warn' &&
+                          'border-border bg-bg-raised hover:border-warn hover:bg-warn/5',
+                        opt.tone === 'muted' &&
+                          'border-border bg-bg-raised hover:border-border-hover'
+                      )}
+                    >
+                      <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-text">
+                        <Icon size={13} strokeWidth={2} />
+                        {opt.label}
+                      </span>
+                      <span className="text-[11px] text-text-muted">{opt.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="u-label">
+                You picked <span className="text-text">
+                  {DECISION_OPTIONS.find((o) => o.value === decision)?.label}
+                </span>. Was your answer correct?
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="primary" size="sm" onClick={() => pickOutcome(true)}>
+                  <Check size={13} strokeWidth={2} className="mr-1" />
+                  Correct
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => pickOutcome(false)}>
+                  <X size={13} strokeWidth={2} className="mr-1" />
+                  Wrong
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setDecision(null)}>
+                  Back
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
+    </li>
+  );
+}
+
+function DecidedRow({ q, onReset }: { q: QuestionRow; onReset: () => void }) {
+  const decLabel =
+    DECISION_OPTIONS.find((o) => o.value === q.mark_decision)?.label ?? '—';
+  const outcomeLabel =
+    q.mark_decision === 'SKIP'
+      ? 'left blank'
+      : q.mark_correct === true
+        ? 'correct'
+        : q.mark_correct === false
+          ? 'wrong'
+          : 'no outcome';
+  const outcomeTone =
+    q.mark_decision === 'SKIP'
+      ? 'text-text-faint'
+      : q.mark_correct
+        ? 'text-success'
+        : 'text-danger';
+
+  return (
+    <li className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+      <span className="u-num w-[74px] shrink-0 text-[11px] text-text-faint">
+        {formatDate(q.created_at.slice(0, 10), 'dd MMM')}
+      </span>
+      <span className="flex w-[170px] shrink-0 items-center gap-1.5">
+        <span className={cn('h-1.5 w-1.5 rounded-full', subjectInk(q.subject).dot)} />
+        <span className="truncate text-[12px] text-text-muted">{q.subject}</span>
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-text">
+        {decLabel} · <span className={outcomeTone}>{outcomeLabel}</span>
+      </span>
+      <button
+        type="button"
+        onClick={onReset}
+        className="inline-flex items-center gap-1 rounded border border-border bg-bg-raised px-2 py-1 text-[11.5px] text-text-muted transition-colors hover:border-border-hover hover:text-text"
+        title="Clear this decision so it goes back to the inbox"
+      >
+        <RotateCcw size={11} strokeWidth={1.75} />
+        Reset
+      </button>
     </li>
   );
 }

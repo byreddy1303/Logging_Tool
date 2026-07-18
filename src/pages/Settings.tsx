@@ -942,27 +942,42 @@ function DataCard({
   return (
     <Card>
       <CardHeader
-        title="Data"
+        title="Backup & data"
         aside={<span className="text-[11px] text-text-faint">{backupSummary}</span>}
       />
       <CardBody className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="rounded border border-border/70 bg-bg-overlay/40 px-3 py-2 text-[12px] text-text-muted">
+          <p>
+            Take a copy of your journal off the app, put an old backup back
+            in, or clear this device's cache. Server data (Supabase) is
+            untouched by any of these unless you sign out.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
           <div>
-            <p className="font-display text-[13px] font-semibold text-text">Export</p>
+            <p className="font-display text-[13px] font-semibold text-text">
+              1 · Download a backup
+            </p>
             <p className="text-[12px] text-text-muted">
-              JSON dump of your local rows. Buddy-shared rows are excluded.
+              Saves a JSON file of every question, session, pattern, and note
+              on this device to your Downloads folder. Use it as a safety net
+              or to move to a new browser. Buddy-shared rows are excluded.
             </p>
           </div>
           <Button variant="primary" onClick={() => void onExport()} disabled={busy !== null}>
             <Download size={14} strokeWidth={1.75} className="mr-1" />
-            {busy === 'export' ? 'Preparing…' : 'Export JSON'}
+            {busy === 'export' ? 'Preparing…' : 'Download backup'}
           </Button>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
           <div>
-            <p className="font-display text-[13px] font-semibold text-text">Import</p>
+            <p className="font-display text-[13px] font-semibold text-text">
+              2 · Restore from a backup file
+            </p>
             <p className="text-[12px] text-text-muted">
-              Merges rows by id. Newer local edits are preserved.
+              Reads a JSON backup and merges it with what's here now. Rows
+              match by id — anything you've edited since the backup stays as
+              you left it. Nothing is deleted.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -980,15 +995,20 @@ function DataCard({
               disabled={busy !== null}
             >
               <Upload size={14} strokeWidth={1.75} className="mr-1" />
-              {busy === 'import' ? 'Merging…' : 'Choose file'}
+              {busy === 'import' ? 'Merging…' : 'Choose backup file'}
             </Button>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
           <div>
-            <p className="font-display text-[13px] font-semibold text-text">Wipe local</p>
+            <p className="font-display text-[13px] font-semibold text-text">
+              3 · Clear this device's local cache
+            </p>
             <p className="text-[12px] text-text-muted">
-              Delete Dexie on this device. Next sync pulls from Supabase; sandbox loses everything.
+              Rarely needed. Deletes the offline database on THIS device
+              only; your Supabase server data stays intact and re-syncs on
+              next open. Use if a stuck row is misbehaving. In sandbox mode
+              (no sign-in), everything is lost — download a backup first.
             </p>
           </div>
           {confirmClear ? (

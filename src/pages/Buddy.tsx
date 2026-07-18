@@ -286,6 +286,20 @@ export default function Buddy() {
     void reload();
   }
 
+  async function onUnfriend(bId: string) {
+    const { error } = await supabase.rpc('unfriend_buddy', { b_id: bId });
+    if (error) {
+      pushToast(error.message, 'neutral');
+      return;
+    }
+    pushToast('Unfriended.', 'neutral');
+    if (activeId === bId) {
+      setActiveId(null);
+      setMobileView('list');
+    }
+    void reload();
+  }
+
   const incoming = useMemo(
     () => buddies.filter((b) => b.row.status === 'pending' && b.row.requested_by !== userId),
     [buddies, userId]
@@ -487,6 +501,7 @@ export default function Buddy() {
                   buddyId={activeBuddy.row.id}
                   meId={userId}
                   peer={activeBuddy.peer}
+                  onUnfriend={() => void onUnfriend(activeBuddy.row.id)}
                 />
               </div>
             </div>

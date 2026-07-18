@@ -14,7 +14,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, CheckCheck, Image as ImageIcon, Send, ArrowUp, X } from 'lucide-react';
+import {
+  Check,
+  CheckCheck,
+  Image as ImageIcon,
+  MoreVertical,
+  Send,
+  ArrowUp,
+  UserX,
+  X
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { db } from '@/lib/db';
 import type {
@@ -32,6 +41,7 @@ interface Props {
   buddyId: string;
   meId: string;
   peer: Pick<UserRow, 'id' | 'name' | 'email' | 'username'>;
+  onUnfriend?: () => void;
 }
 
 const TEXT_LIMIT = 4000;
@@ -79,7 +89,7 @@ function mergeMessages(prev: BuddyMessageRow[], rows: BuddyMessageRow[]): BuddyM
   );
 }
 
-export default function BuddyChat({ buddyId, meId, peer }: Props) {
+export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
   const [messages, setMessages] = useState<BuddyMessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState('');
@@ -88,6 +98,8 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [peerOnline, setPeerOnline] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmUnfriend, setConfirmUnfriend] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const initialLoad = useRef(true);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -295,7 +307,7 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
 
   return (
     <div className="flex h-full min-h-[420px] flex-col overflow-hidden rounded-lg border border-border bg-bg-raised">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-3">
+      <header className="relative flex items-center gap-3 border-b border-border px-4 py-3">
         <div className="relative">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-cobalt/15 font-display text-[13px] font-bold text-ink-cobalt">
             {(nameToShow.replace(/^@/, '') || '?')[0].toUpperCase()}
@@ -315,7 +327,71 @@ export default function BuddyChat({ buddyId, meId, peer }: Props) {
             {peerTyping ? 'typing…' : peer.username ? `@${peer.username}` : peer.email || ''}
           </p>
         </div>
+        {onUnfriend && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Chat options"
+              className="rounded-full p-1.5 text-text-faint transition-colors hover:bg-bg-overlay hover:text-text"
+            >
+              <MoreVertical size={16} strokeWidth={1.75} />
+            </button>
+            {menuOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-hidden
+                  tabIndex={-1}
+                  onClick={() => setMenuOpen(false)}
+                  className="fixed inset-0 z-10 cursor-default"
+                />
+                <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-border bg-bg-raised shadow-lift">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setConfirmUnfriend(true);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-danger transition-colors hover:bg-danger-faint"
+                  >
+                    <UserX size={13} strokeWidth={1.75} />
+                    Unfriend
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </header>
+
+      {confirmUnfriend && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-border/60 bg-danger-faint/60 px-4 py-3 text-[12.5px] text-text">
+          <span className="flex-1">
+            Unfriend <span className="font-semibold">{nameToShow}</span>? This
+            deletes the pair and all messages on both sides. No cooldown — you
+            can send a fresh request afterwards.
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setConfirmUnfriend(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              setConfirmUnfriend(false);
+              onUnfriend?.();
+            }}
+          >
+            <UserX size={12} strokeWidth={1.75} className="mr-1" />
+            Confirm unfriend
+          </Button>
+        </div>
+      )}
 
       {error && (
         <div className="border-b border-border/60 px-4 py-2 text-[12px] text-warn">{error}</div>
