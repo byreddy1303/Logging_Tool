@@ -223,6 +223,28 @@ export function pinResetRequested(args: {
   };
 }
 
+export function buddyRequestReceived(args: {
+  recipientName: string;
+  senderName: string;
+  senderUsername: string;
+  buddyUrl: string;
+}): { subject: string; html: string } {
+  const inner = `
+    <p style="margin:0 0 8px 0;font-size:17px;font-weight:600;">${escape(args.senderName)} wants to pair up.</p>
+    <p style="margin:0 0 20px 0;color:#665D7E;line-height:1.65;">
+      <span style="font-weight:600;">@${escape(args.senderUsername)}</span> has sent you a buddy request on AIR Journal. Accept it to open a private chat where either of you can hand the other a hard question — nothing about your tags, patterns, or performance ever crosses over.
+    </p>
+    <p style="margin:0 0 22px 0;">
+      <a href="${escape(args.buddyUrl)}" style="display:inline-block;padding:12px 22px;background:#E14B32;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px;">Review the request</a>
+    </p>
+    <p style="margin:0;font-size:12.5px;color:#9C94AF;">You can decline in one click. Only accept if you know who this is.</p>
+  `;
+  return {
+    subject: `Buddy request from @${args.senderUsername}`,
+    html: shell(inner)
+  };
+}
+
 export function inviteDeclined(args: {
   name: string;
   reason?: string | null;

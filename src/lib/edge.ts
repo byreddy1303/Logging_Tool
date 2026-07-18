@@ -266,6 +266,28 @@ export async function requestPinReset(input: PinResetInput): Promise<{ ok: true 
   return { ok: false, status: res.status, error: body?.error ?? `reset ${res.status}` };
 }
 
+export async function sendBuddyRequest(
+  username: string
+): Promise<{ ok: true } | EdgeError> {
+  const jwt = await currentJwt();
+  if (!jwt) return { ok: false, status: 401, error: 'Sign in first.' };
+  const res = await fetch(`${functionsBase()}/buddy-request`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ username })
+  }).catch((e) => new Response(JSON.stringify({ error: (e as Error).message }), { status: 0 }));
+  const body = (await readJson(res)) as { ok?: boolean; error?: string } | null;
+  if (res.ok && body?.ok) return { ok: true };
+  return {
+    ok: false,
+    status: res.status,
+    error: body?.error ?? `buddy-request ${res.status}`
+  };
+}
+
 /** Optional client-side check before submitting the signup form. */
 export async function isUsernameAvailable(username: string): Promise<boolean> {
   const key = anonKey();

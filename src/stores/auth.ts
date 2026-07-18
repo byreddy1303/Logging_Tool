@@ -52,7 +52,13 @@ const SANDBOX_PROFILE: UserRow = {
   sadhana_practice: false,
   timezone: 'Asia/Kolkata',
   created_at: new Date().toISOString(),
-  welcome_seen_at: null
+  welcome_seen_at: null,
+  phone_e164: null,
+  digest_email_enabled: true,
+  digest_whatsapp_enabled: false,
+  digest_hour_local: 6,
+  wa_opted_in_at: null,
+  last_digest_sent_on: null
 };
 
 let initialized = false;

@@ -32,6 +32,36 @@ export interface UserRow {
   timezone: string;
   created_at: string;
   welcome_seen_at: string | null;
+  phone_e164: string | null;
+  digest_email_enabled: boolean;
+  digest_whatsapp_enabled: boolean;
+  digest_hour_local: number;
+  wa_opted_in_at: string | null;
+  last_digest_sent_on: string | null;
+}
+
+export type PlanRRuleKind = 'none' | 'daily' | 'weekdays' | 'weekly';
+
+export interface PlanItemRow {
+  id: string;
+  user_id: string;
+  title: string;
+  subject: string | null;
+  notes: string | null;
+  due_date: string;
+  rrule_kind: PlanRRuleKind;
+  ends_on: string | null;
+  target_min: number | null;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanItemCompletionRow {
+  item_id: string;
+  user_id: string;
+  on_date: string;
+  completed_at: string;
 }
 
 export interface SessionRow {
