@@ -22,3 +22,8 @@ vite.config.d.ts
 
 # Deploy secrets — sourced by scripts/deploy.sh, never committed
 .deploy.env
+.vercel
+.env*
+# ...but keep the templates so `git clone` gives new operators a starting shape
+!.env.example
+!.deploy.env.example
