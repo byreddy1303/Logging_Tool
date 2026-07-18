@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
+import { useAuthStore } from '@/stores/auth';
 
 export interface SessionEditorProps {
   session: SessionRow;
@@ -31,6 +32,7 @@ export default function SessionEditor({
   const [actual, setActual] = useState<number | null>(session.actual_duration_min);
   const [insight, setInsight] = useState(session.insight ?? '');
   const [sadhana, setSadhana] = useState(session.sadhana_done);
+  const sadhanaEnabled = useAuthStore((s) => s.profile?.sadhana_practice ?? false);
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -116,15 +118,17 @@ export default function SessionEditor({
           placeholder="One sentence — the takeaway from this session."
         />
       </Field>
-      <label className="flex items-center gap-2 text-[13px] text-text">
-        <input
-          type="checkbox"
-          checked={sadhana}
-          onChange={(e) => setSadhana(e.target.checked)}
-          className="h-4 w-4 accent-accent"
-        />
-        Sadhana done (mindfulness practice logged for this session)
-      </label>
+      {sadhanaEnabled && (
+        <label className="flex items-center gap-2 text-[13px] text-text">
+          <input
+            type="checkbox"
+            checked={sadhana}
+            onChange={(e) => setSadhana(e.target.checked)}
+            className="h-4 w-4 accent-accent"
+          />
+          Sadhana done (mindfulness practice logged for this session)
+        </label>
+      )}
 
       <div className="flex items-center justify-between border-t border-danger/25 pt-3">
         {confirmingDelete ? (
