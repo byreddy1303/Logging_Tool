@@ -31,6 +31,7 @@ export interface UserRow {
   sadhana_practice: boolean;
   timezone: string;
   created_at: string;
+  welcome_seen_at: string | null;
 }
 
 export interface SessionRow {

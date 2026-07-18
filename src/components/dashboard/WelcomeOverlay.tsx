@@ -1,17 +1,20 @@
-// First-run welcome overlay. Shown once, on the first Dashboard load per
-// device, and only when Dexie meta.welcome_seen_at is missing. Dismiss stores
-// the timestamp so it never fires again unless the user wipes local data.
+// First-run welcome overlay. Shown exactly once per account — the "seen"
+// timestamp lives on public.users so it survives sign-out (Dexie is wiped
+// on sign-out for tenant isolation).
 //
 // Explains the loop to a stranger in four calm paper slides. No emojis, no
 // hype, no counters, no dark patterns.
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowRight, X } from 'lucide-react';
+import { supabase, supabaseConfigured } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/auth';
 import { db } from '@/lib/db';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 
-const KEY = 'welcome_seen_at';
+/** Local fallback key for the sandbox / offline-only case. */
+const DEXIE_KEY = 'welcome_seen_at';
 
 interface Slide {
   eyebrow: string;
@@ -49,30 +52,49 @@ const SLIDES: Slide[] = [
 export default function WelcomeOverlay() {
   const [visible, setVisible] = useState(false);
   const [idx, setIdx] = useState(0);
+  const profile = useAuthStore((s) => s.profile);
+  const sandbox = useAuthStore((s) => s.sandbox);
+  const refreshProfile = useAuthStore((s) => s.refreshProfile);
 
   useEffect(() => {
     let cancelled = false;
     async function check() {
-      try {
-        const row = await db.meta.get(KEY);
-        if (!cancelled && !row?.value) setVisible(true);
-      } catch {
-        // If Dexie fails, don't block the app.
+      // Sandbox / offline: fall back to Dexie meta.
+      if (sandbox || !supabaseConfigured) {
+        try {
+          const row = await db.meta.get(DEXIE_KEY);
+          if (!cancelled && !row?.value) setVisible(true);
+        } catch {
+          // If Dexie fails, don't block the app.
+        }
+        return;
       }
+      if (!profile) return;
+      if (!cancelled && !profile.welcome_seen_at) setVisible(true);
     }
     void check();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [profile?.id, profile?.welcome_seen_at, sandbox]);
 
   async function dismiss() {
     setVisible(false);
-    try {
-      await db.meta.put({ key: KEY, value: new Date().toISOString() });
-    } catch {
-      // ignore write errors — worst case the overlay shows again once.
+    const stamp = new Date().toISOString();
+    if (sandbox || !supabaseConfigured) {
+      try {
+        await db.meta.put({ key: DEXIE_KEY, value: stamp });
+      } catch {
+        // ignore write errors — worst case the overlay shows again once.
+      }
+      return;
     }
+    if (!profile) return;
+    const { error } = await supabase
+      .from('users')
+      .update({ welcome_seen_at: stamp })
+      .eq('id', profile.id);
+    if (!error) void refreshProfile();
   }
 
   if (!visible) return null;

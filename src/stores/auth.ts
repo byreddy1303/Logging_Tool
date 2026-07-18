@@ -51,7 +51,8 @@ const SANDBOX_PROFILE: UserRow = {
   target_rank: 100,
   sadhana_practice: false,
   timezone: 'Asia/Kolkata',
-  created_at: new Date().toISOString()
+  created_at: new Date().toISOString(),
+  welcome_seen_at: null
 };
 
 let initialized = false;
