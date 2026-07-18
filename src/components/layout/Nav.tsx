@@ -8,6 +8,7 @@ import {
   Shapes,
   RotateCcw,
   CalendarCheck,
+  CalendarDays,
   Grid3x3,
   Target,
   Compass,
@@ -49,6 +50,13 @@ const LOG_ITEM: Item = {
   label: 'Log',
   icon: PenLine,
   active: 'bg-ink-rose/10 text-ink-rose'
+};
+
+const PLANNER_ITEM: Item = {
+  to: '/planner',
+  label: 'Planner',
+  icon: CalendarDays,
+  active: 'bg-ink-marigold/10 text-ink-marigold'
 };
 
 const ANALYSIS: Item[] = [
@@ -142,7 +150,8 @@ export default function Nav() {
           icon: Play,
           active: 'bg-ink-teal/10 text-ink-teal'
         },
-    JOURNAL_ITEM
+    JOURNAL_ITEM,
+    PLANNER_ITEM
   ];
 
   return (

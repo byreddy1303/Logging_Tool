@@ -15,6 +15,7 @@ import SessionActive from '@/pages/SessionActive';
 import SessionReview from '@/pages/SessionReview';
 import Journal from '@/pages/Journal';
 import Patterns from '@/pages/Patterns';
+import Planner from '@/pages/Planner';
 import Reattempts from '@/pages/Reattempts';
 import WeeklyReview from '@/pages/WeeklyReview';
 import Heatmap from '@/pages/Heatmap';
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
       { path: 'journal', element: <Journal /> },
       { path: 'log', element: <Log /> },
       { path: 'patterns', element: <Patterns /> },
+      { path: 'planner', element: <Planner /> },
       { path: 'reattempts', element: <Reattempts /> },
       { path: 'weekly-review', element: <WeeklyReview /> },
       { path: 'heatmap', element: <Heatmap /> },

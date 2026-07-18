@@ -98,19 +98,57 @@ export default function Buddy() {
       return;
     }
     if (cleaned === '') return;
+
+    const beforeIds = new Set(buddies.map((b) => b.row.id));
     setSending(true);
     const res = await sendBuddyRequest(cleaned);
-    setSending(false);
-    if ('ok' in res && res.ok) {
-      pushToast(
-        `If @${cleaned} exists, they'll see your request on their Buddy page.`,
-        'success'
-      );
-      setUname('');
-      void reload();
-    } else {
+    if (!('ok' in res && res.ok)) {
+      setSending(false);
       pushToast(res.error, 'neutral');
+      return;
     }
+    // Give Postgres a beat to commit, then check if we now have a new row
+    // to that peer. If yes → the target exists. Otherwise it silently
+    // no-ops (peer doesn't exist / already paired / rate-limited).
+    await new Promise((r) => setTimeout(r, 400));
+    await reload();
+    setSending(false);
+
+    // Re-read latest state (setState is async; but reload updated `buddies`
+    // via setBuddies — read from ref-free ref by fetching again quickly).
+    const { data: recent } = await supabase
+      .from('buddies')
+      .select('id, requested_by, user_a, user_b, status, created_at')
+      .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    const added = ((recent as { id: string }[]) ?? []).find((r) => !beforeIds.has(r.id));
+    if (added) {
+      pushToast(`Request sent to @${cleaned}. They'll see it next time they open the app.`, 'success');
+    } else {
+      // Either the peer doesn't exist, already paired, rate limited, or
+      // cooldown. We can't tell (anti-enumeration) — but if the row already
+      // exists locally we can be more precise.
+      const existing = buddies.find(
+        (b) => b.peer?.username?.toLowerCase() === cleaned
+      );
+      if (existing) {
+        pushToast(
+          existing.row.status === 'active'
+            ? `@${cleaned} is already your active buddy.`
+            : existing.row.status === 'pending'
+              ? `Already pending with @${cleaned}.`
+              : `Paused with @${cleaned}. Try again after 24 h.`,
+          'neutral'
+        );
+      } else {
+        pushToast(
+          `No visible request created. If @${cleaned} exists, they may already be paired with someone else, or you've hit today's request limit.`,
+          'neutral'
+        );
+      }
+    }
+    setUname('');
   }
 
   async function onRespond(bId: string, action: 'accept' | 'decline') {
