@@ -1,5 +1,5 @@
 // Cross-day analytics for the planner. Reads every localStorage DayPlan
-// (planner_YYYY-MM-DD keys) and rolls up the summaries that the /planner
+// (user-scoped air.planner.* keys) and rolls up the summaries that the /planner
 // insights card renders.
 //
 // Everything here is pure — pass an array of DayPlans in, get numbers back.
@@ -7,18 +7,22 @@
 // through so the caller controls IO.
 
 import type { DayPlan } from '@/lib/planner-storage';
-import { loadDayPlan } from '@/lib/planner-storage';
-
-const DAY_KEY_PREFIX = 'planner_';
+import {
+  dayKeyPrefix,
+  loadDayPlan,
+  migrateLegacyDayPlans
+} from '@/lib/planner-storage';
 
 /** Load every DayPlan currently in localStorage. Skips corrupt rows. */
 export function loadAllDayPlans(): DayPlan[] {
   const plans: DayPlan[] = [];
+  migrateLegacyDayPlans();
+  const prefix = dayKeyPrefix();
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (!k || !k.startsWith(DAY_KEY_PREFIX)) continue;
-      const date = k.slice(DAY_KEY_PREFIX.length);
+      if (!k || !k.startsWith(prefix)) continue;
+      const date = k.slice(prefix.length);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
       const p = loadDayPlan(date);
       if (p) plans.push(p);

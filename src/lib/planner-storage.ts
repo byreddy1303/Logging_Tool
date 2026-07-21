@@ -2,9 +2,39 @@
 // can migrate to Dexie/Supabase later without touching the UI.
 //
 // Storage keys:
-//   planner_YYYY-MM-DD                 → DayPlan for that date
+//   air.planner.<user-id>.YYYY-MM-DD   → DayPlan for that date
 
-const DAY_KEY_PREFIX = 'planner_';
+import { currentUserId } from '@/stores/auth';
+
+const LEGACY_DAY_KEY_PREFIX = 'planner_';
+
+export function dayKeyPrefix(): string {
+  return `air.planner.${currentUserId() ?? 'signed-out'}.`;
+}
+
+/** Claim pre-multi-user Planner rows for the currently signed-in user once. */
+export function migrateLegacyDayPlans(): void {
+  if (!currentUserId()) return;
+  try {
+    const legacyKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(LEGACY_DAY_KEY_PREFIX)) legacyKeys.push(key);
+    }
+    for (const legacyKey of legacyKeys) {
+      const date = legacyKey.slice(LEGACY_DAY_KEY_PREFIX.length);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const scopedKey = `${dayKeyPrefix()}${date}`;
+      if (!localStorage.getItem(scopedKey)) {
+        const value = localStorage.getItem(legacyKey);
+        if (value) localStorage.setItem(scopedKey, value);
+      }
+      localStorage.removeItem(legacyKey);
+    }
+  } catch {
+    // Best-effort migration; the legacy row remains available for retry.
+  }
+}
 
 /* ------------------------------ types ------------------------------ */
 
@@ -149,15 +179,23 @@ function safeSet(key: string, value: unknown): void {
 }
 
 export function keyFor(date: string): string {
-  return `${DAY_KEY_PREFIX}${date}`;
+  return `${dayKeyPrefix()}${date}`;
 }
 
 export function loadDayPlan(date: string): DayPlan | null {
+  migrateLegacyDayPlans();
   return safeGet<DayPlan>(keyFor(date));
 }
 
-export function saveDayPlan(plan: DayPlan): void {
-  safeSet(keyFor(plan.date), { ...plan, updatedAt: new Date().toISOString() });
+export function saveDayPlan(plan: DayPlan): DayPlan {
+  const saved = { ...plan, updatedAt: new Date().toISOString() };
+  safeSet(keyFor(plan.date), saved);
+  return saved;
+}
+
+/** Cache a server copy without making it look newer than the server row. */
+export function cacheDayPlan(plan: DayPlan): void {
+  safeSet(keyFor(plan.date), plan);
 }
 
 export function deleteDayPlan(date: string): void {
@@ -173,12 +211,13 @@ export function deleteDayPlan(date: string): void {
 /** Return a Set of YYYY-MM-DD keys that have a plan stored. */
 export function loadPlanIndexForMonth(year: number, monthIndex: number): Set<string> {
   const set = new Set<string>();
-  const prefix = `${DAY_KEY_PREFIX}${year}-${String(monthIndex + 1).padStart(2, '0')}-`;
+  migrateLegacyDayPlans();
+  const prefix = `${dayKeyPrefix()}${year}-${String(monthIndex + 1).padStart(2, '0')}-`;
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k) continue;
-      if (k.startsWith(prefix)) set.add(k.slice(DAY_KEY_PREFIX.length));
+      if (k.startsWith(prefix)) set.add(k.slice(dayKeyPrefix().length));
     }
   } catch {
     // ignore

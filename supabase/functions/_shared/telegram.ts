@@ -2,19 +2,20 @@ export interface TelegramCommand {
   name: 'start' | 'stop' | 'status' | 'help';
   argument: string | null;
 }
-export interface TelegramPlanItem {
-  title: string;
-  subject: string | null;
-  target_min: number | null;
+export interface TelegramStudySession {
+  subject: string;
+  customSubject?: string;
+  durationMin: number;
+  mode: string;
+  target: string;
 }
 
 export interface TelegramDigestInput {
-  greeting: string;
-  isoDate: string;
+  dateLabel: string;
+  quote: string;
+  sessions: TelegramStudySession[];
   reAttemptTotal: number;
   subjectCounts: Array<{ subject: string; count: number }>;
-  openItems: TelegramPlanItem[];
-  weeklyFix: string | null;
 }
 
 export interface TelegramSendResult {
@@ -41,40 +42,57 @@ export function escapeTelegramHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function formatDuration(totalMinutes: number): string {
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+}
+
 export function renderTelegramDigest(input: TelegramDigestInput): string {
+  const sessions = input.sessions.slice(0, 6);
+  const totalMinutes = input.sessions.reduce(
+    (sum, session) => sum + Math.max(0, session.durationMin || 0),
+    0
+  );
   const lines: string[] = [
-    `<b>AIR Journal · ${escapeTelegramHtml(input.isoDate)}</b>`,
-    escapeTelegramHtml(input.greeting),
+    '<b>AIR JOURNAL</b>',
+    `<b>${escapeTelegramHtml(input.dateLabel)}</b>`,
+    '',
+    `<i>“${escapeTelegramHtml(input.quote)}”</i>`,
+    '',
+    `<b>TODAY'S PLAN · ${formatDuration(totalMinutes)}</b>`,
     ''
   ];
 
-  lines.push('<b>Today\'s planner</b>');
-  if (input.openItems.length === 0) {
-    lines.push('No planner items are open today.');
-  } else {
-    for (const item of input.openItems.slice(0, 8)) {
-      const detail = [item.subject, item.target_min ? `${item.target_min} min` : null]
-        .filter(Boolean)
-        .join(' · ');
-      lines.push(`• ${escapeTelegramHtml(item.title)}${detail ? ` — ${escapeTelegramHtml(detail)}` : ''}`);
-    }
-    if (input.openItems.length > 8) {
-      lines.push(`• ${input.openItems.length - 8} more in the planner`);
-    }
+  sessions.forEach((session, index) => {
+    const subject =
+      session.subject === 'Custom...' && session.customSubject
+        ? session.customSubject
+        : session.subject;
+    lines.push(
+      `<b>${String(index + 1).padStart(2, '0')} · ${escapeTelegramHtml(subject)}</b>`,
+      `${formatDuration(session.durationMin)} · ${escapeTelegramHtml(session.mode)}`
+    );
+    if (session.target.trim()) lines.push(escapeTelegramHtml(session.target.trim()));
+    lines.push('');
+  });
+
+  if (input.sessions.length > sessions.length) {
+    lines.push(`${input.sessions.length - sessions.length} more sessions in AIR Journal`, '');
   }
 
-  lines.push('', `<b>Re-attempts due: ${input.reAttemptTotal}</b>`);
   if (input.reAttemptTotal === 0) {
-    lines.push('Your re-attempt queue is clear.');
+    lines.push('<b>RE-ATTEMPTS · CLEAR</b>');
   } else {
-    for (const row of input.subjectCounts.slice(0, 6)) {
-      lines.push(`• ${escapeTelegramHtml(row.subject)} — ${row.count}`);
+    lines.push(`<b>RE-ATTEMPTS · ${input.reAttemptTotal}</b>`);
+    for (const row of input.subjectCounts.slice(0, 4)) {
+      lines.push(`${escapeTelegramHtml(row.subject)} · ${row.count}`);
     }
   }
 
-  if (input.weeklyFix) {
-    lines.push('', '<b>This week\'s fix</b>', escapeTelegramHtml(input.weeklyFix));
-  }
+  const sessionWord = input.sessions.length === 1 ? 'session' : 'sessions';
+  lines.push('', `${input.sessions.length} ${sessionWord}. Finish them cleanly.`);
 
   return lines.join('\n').slice(0, 3900);
 }

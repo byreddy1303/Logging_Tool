@@ -215,9 +215,9 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
         <div className="flex items-start gap-3">
           <Bell size={15} strokeWidth={1.75} className="mt-0.5 shrink-0 text-accent" />
           <p className="text-[12.5px] leading-relaxed text-text-muted">
-            Configure everything here. AIR Journal sends one private Telegram message each day at
-            your chosen local time. The bot token stays on the server and is never entered in the
-            website.
+            Configure everything here. On days with a recorded study plan, AIR Journal sends one
+            private Telegram message at your chosen local time. The bot token stays on the server
+            and is never entered in the website.
           </p>
         </div>
 
@@ -342,8 +342,8 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
         <div className="rounded border border-border/70 bg-bg-overlay/35 px-3 py-2.5">
           <p className="u-label">Daily message contains</p>
           <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
-            Today&apos;s available planner items, due re-attempts grouped by subject, and your weekly
-            fix on Monday. No streaks or engagement prompts.
+            Today&apos;s study sessions, one short focus line, and due re-attempts grouped by subject.
+            Empty planning days stay silent.
           </p>
         </div>
 

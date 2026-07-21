@@ -20,27 +20,35 @@ describe('Telegram daily digest', () => {
 
   it('renders a compact, escaped study-only message', () => {
     const message = renderTelegramDigest({
-      greeting: 'Good morning, Kalyan.',
-      isoDate: '2026-07-21',
+      dateLabel: 'TUESDAY · 21 JULY',
+      quote: 'Your competition is still deciding. You already have the map.',
+      sessions: [
+        {
+          subject: 'Operating Systems',
+          durationMin: 90,
+          mode: 'PYQ Practice',
+          target: 'Process synchronization questions'
+        },
+        {
+          subject: 'DBMS',
+          durationMin: 60,
+          mode: 'Revision',
+          target: 'Revise paging < traps'
+        }
+      ],
       reAttemptTotal: 3,
       subjectCounts: [
         { subject: 'Operating Systems', count: 2 },
         { subject: 'DBMS', count: 1 }
-      ],
-      openItems: [
-        {
-          title: 'Revise paging < traps',
-          subject: 'Operating Systems',
-          target_min: 45
-        }
-      ],
-      weeklyFix: 'Read the exact quantifier before solving.'
+      ]
     });
 
-    expect(message).toContain('<b>Today\'s planner</b>');
+    expect(message).toContain('<b>TUESDAY · 21 JULY</b>');
+    expect(message).toContain('<b>TODAY\'S PLAN · 2h 30m</b>');
+    expect(message).toContain('<b>01 · Operating Systems</b>');
     expect(message).toContain('Revise paging &lt; traps');
-    expect(message).toContain('<b>Re-attempts due: 3</b>');
-    expect(message).toContain('<b>This week\'s fix</b>');
+    expect(message).toContain('<b>RE-ATTEMPTS · 3</b>');
+    expect(message).toContain('2 sessions. Finish them cleanly.');
     expect(message.length).toBeLessThan(4096);
   });
 

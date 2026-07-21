@@ -12,7 +12,8 @@
 //   greeting        — time-of-day + first name
 //   quote           — deterministic per-day pick, one per user
 //   re_attempts     — count + up-to-8 lines grouped by subject
-//   planner_items   — today's plan_items_due_on, minus completed today
+//   planner         — today's synced calendar study sessions
+//   planner_items   — legacy plan_items_due_on, for email compatibility
 //   weekly_fix      — Mondays only, latest 'this_weeks_fix' if present
 //
 // Delivery: optional email and opt-in Telegram bot message. Delivery markers
@@ -22,7 +23,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, json } from '../_shared/cors.ts';
 import { sendEmail } from '../_shared/email.ts';
 import { greetingForHour, pickQuoteForDay } from '../_shared/quotes.ts';
-import { renderTelegramDigest, sendTelegramMessage } from '../_shared/telegram.ts';
+import {
+  renderTelegramDigest,
+  sendTelegramMessage,
+  type TelegramStudySession
+} from '../_shared/telegram.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const Deno: any;
@@ -160,26 +165,38 @@ Deno.serve(async (req: Request): Promise<Response> => {
       u.digest_email_enabled &&
       (force || u.last_digest_sent_on !== isoDate)
     );
-    const telegramDue = Boolean(
+    const telegramEligible = Boolean(
       allowTelegram &&
       telegram?.enabled &&
       telegram.chat_id !== null &&
       (force || telegram.last_digest_sent_on !== isoDate)
     );
-    if (!emailDue && !telegramDue) {
+    if (!emailDue && !telegramEligible) {
       report.push({ user: u.id, skipped: 'already_sent_or_disabled' });
       continue;
     }
 
     const digest = await buildDigest(u, isoDate, hour, weekday);
+    const telegramDue = telegramEligible && digest.has_planner_sessions;
     if (dryRun) {
-      report.push({ user: u.id, dry: true, digest });
+      report.push({ user: u.id, dry: true, telegram_would_send: telegramDue, digest });
+      continue;
+    }
+    if (!emailDue && !telegramDue) {
+      report.push({
+        user: u.id,
+        skipped: 'no_planner_sessions',
+        telegram_err: 'No study sessions are planned for today.'
+      });
       continue;
     }
     let email_ok = false;
     let telegram_ok = false;
     let email_err: string | undefined;
-    let telegram_err: string | undefined;
+    let telegram_err: string | undefined =
+      telegramEligible && !digest.has_planner_sessions
+        ? 'No study sessions are planned for today.'
+        : undefined;
 
     if (emailDue && u.email) {
       const res = await sendEmail({
@@ -227,12 +244,62 @@ interface Digest {
   html: string;
   telegram_text: string;
   summary: string;
+  has_planner_sessions: boolean;
+}
+
+function parseStudySessions(value: unknown): TelegramStudySession[] {
+  if (!Array.isArray(value)) return [];
+  const sessions: TelegramStudySession[] = [];
+  for (const item of value.slice(0, 24)) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const subject = typeof row.subject === 'string' ? row.subject.trim().slice(0, 120) : '';
+    const durationMin =
+      typeof row.durationMin === 'number' && Number.isFinite(row.durationMin)
+        ? Math.max(0, Math.min(480, Math.round(row.durationMin)))
+        : 0;
+    if (!subject || durationMin === 0) continue;
+    sessions.push({
+      subject,
+      customSubject:
+        typeof row.customSubject === 'string' ? row.customSubject.trim().slice(0, 120) : undefined,
+      durationMin,
+      mode: typeof row.mode === 'string' ? row.mode.trim().slice(0, 80) : 'Study',
+      target: typeof row.target === 'string' ? row.target.trim().slice(0, 280) : ''
+    });
+  }
+  return sessions;
+}
+
+function telegramDateLabel(isoDate: string): string {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long'
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${value('weekday')} · ${value('day')} ${value('month')}`.toUpperCase();
 }
 
 async function buildDigest(u: UserForDigest, isoDate: string, hour: number, weekday: number): Promise<Digest> {
   const firstName = (u.name ?? '').split(/\s+/)[0] ?? '';
   const greeting = greetingForHour(hour, firstName);
   const quote = pickQuoteForDay(isoDate, u.id);
+
+  const { data: storedPlan, error: storedPlanError } = await admin
+    .from('planner_day_plans')
+    .select('sessions')
+    .eq('user_id', u.id)
+    .eq('plan_date', isoDate)
+    .maybeSingle();
+  if (storedPlanError) {
+    console.error('Planner day load failed:', u.id, storedPlanError.message);
+  }
+  const studySessions = parseStudySessions(
+    (storedPlan as { sessions?: unknown } | null)?.sessions
+  );
 
   // Re-attempts due today (not yet done)
   const { data: reattempts } = await admin
@@ -310,15 +377,19 @@ async function buildDigest(u: UserForDigest, isoDate: string, hour: number, week
   });
 
   const telegram_text = renderTelegramDigest({
-    greeting,
-    isoDate,
+    dateLabel: telegramDateLabel(isoDate),
+    quote,
+    sessions: studySessions,
     reAttemptTotal: reAttemptRows.length,
-    subjectCounts,
-    openItems,
-    weeklyFix
+    subjectCounts
   });
 
-  return { html, telegram_text, summary: summaryLine };
+  return {
+    html,
+    telegram_text,
+    summary: summaryLine,
+    has_planner_sessions: studySessions.length > 0
+  };
 }
 
 function esc(s: string): string {
