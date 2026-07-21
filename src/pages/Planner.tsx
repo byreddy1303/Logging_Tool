@@ -29,6 +29,7 @@ import {
   emptyDayPlan,
   loadDayPlan,
   loadPlanIndexForMonth,
+  plannerDateFromSearch,
   saveDayPlan,
   summarize,
   type DayCellSummary,
@@ -52,6 +53,7 @@ async function persistCloudPlan(userId: string, plan: CloudDayPlan): Promise<str
 export default function Planner() {
   const today = useMemo(() => new Date(), []);
   const todayISO = todayLocalISO(today);
+  const deepLinkedDate = useMemo(() => plannerDateFromSearch(window.location.search), []);
   const upcomingThroughISO = useMemo(() => {
     const through = new Date(today);
     through.setDate(through.getDate() + 44);
@@ -61,16 +63,22 @@ export default function Planner() {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const sandbox = useAuthStore((s) => s.sandbox);
 
-  const initialY = Math.max(today.getFullYear(), PLANNER_MIN_YEAR);
-  const initialM =
-    today.getFullYear() === PLANNER_MIN_YEAR
+  const deepLinkedDateValue = deepLinkedDate ? new Date(`${deepLinkedDate}T12:00:00Z`) : null;
+  const initialY = deepLinkedDateValue
+    ? deepLinkedDateValue.getUTCFullYear()
+    : Math.max(today.getFullYear(), PLANNER_MIN_YEAR);
+  const initialM = deepLinkedDateValue
+    ? deepLinkedDateValue.getUTCMonth()
+    : today.getFullYear() === PLANNER_MIN_YEAR
       ? Math.max(today.getMonth(), PLANNER_MIN_MONTH_INDEX)
       : today.getMonth();
 
   const [year, setYear] = useState(initialY);
   const [monthIndex, setMonthIndex] = useState(initialM);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [openPlan, setOpenPlan] = useState<DayPlan | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(deepLinkedDate);
+  const [openPlan, setOpenPlan] = useState<DayPlan | null>(() =>
+    deepLinkedDate ? (loadDayPlan(deepLinkedDate) ?? emptyDayPlan(deepLinkedDate)) : null
+  );
   // bumping `revision` after saves/deletes forces the summary memo to refetch
   // localStorage without diving into React refs.
   const [revision, setRevision] = useState(0);
@@ -134,13 +142,19 @@ export default function Planner() {
           })
         );
         if (active && changed.some(Boolean)) setRevision((value) => value + 1);
+        if (active && deepLinkedDate) {
+          const hydrated = loadDayPlan(deepLinkedDate);
+          if (hydrated) {
+            setOpenPlan((current) => (current?.date === deepLinkedDate ? hydrated : current));
+          }
+        }
       }
     );
 
     return () => {
       active = false;
     };
-  }, [sandbox, todayISO, upcomingThroughISO, userId]);
+  }, [deepLinkedDate, sandbox, todayISO, upcomingThroughISO, userId]);
 
   const { planIndex, summaries } = useMemo(() => {
     void revision;

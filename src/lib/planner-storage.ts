@@ -12,6 +12,15 @@ export function dayKeyPrefix(): string {
   return `air.planner.${currentUserId() ?? 'signed-out'}.`;
 }
 
+export function plannerDateFromSearch(search: string): string | null {
+  const value = new URLSearchParams(search).get('date');
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value
+    ? null
+    : value;
+}
+
 /** Claim pre-multi-user Planner rows for the currently signed-in user once. */
 export function migrateLegacyDayPlans(): void {
   if (!currentUserId()) return;
@@ -236,8 +245,7 @@ export function summarize(plan: DayPlan | null): DayCellSummary {
   const subjects: string[] = [];
   let totalMin = 0;
   for (const s of plan.sessions) {
-    const label =
-      s.subject === 'Custom...' && s.customSubject ? s.customSubject : s.subject;
+    const label = s.subject === 'Custom...' && s.customSubject ? s.customSubject : s.subject;
     if (label && !subjects.includes(label)) subjects.push(label);
     totalMin += s.durationMin || 0;
   }

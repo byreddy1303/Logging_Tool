@@ -4,6 +4,7 @@ import {
   emptyDayPlan,
   keyFor,
   loadDayPlan,
+  plannerDateFromSearch,
   saveDayPlan
 } from '@/lib/planner-storage';
 import { useAuthStore } from '@/stores/auth';
@@ -49,5 +50,11 @@ describe('Planner local isolation', () => {
     expect(loadDayPlan(date)?.date).toBe(date);
     expect(localStorage.getItem(`planner_${date}`)).toBeNull();
     expect(localStorage.getItem(keyFor(date))).not.toBeNull();
+  });
+
+  it('accepts only real ISO dates from Telegram planner links', () => {
+    expect(plannerDateFromSearch('?date=2026-07-23')).toBe('2026-07-23');
+    expect(plannerDateFromSearch('?date=2026-02-31')).toBeNull();
+    expect(plannerDateFromSearch('?date=tomorrow')).toBeNull();
   });
 });
