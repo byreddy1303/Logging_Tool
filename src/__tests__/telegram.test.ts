@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  isoDateForTimezone,
   parseTelegramCommand,
+  parseTelegramStudySessions,
   renderTelegramConnectionTest,
   renderTelegramDigest,
-  sendTelegramMessage
+  renderTelegramTimetable,
+  sendTelegramMessage,
+  weekIsoDatesForTimezone
 } from '../../supabase/functions/_shared/telegram';
 import { QUOTES, pickQuoteForDay } from '../../supabase/functions/_shared/quotes';
 
@@ -17,7 +21,36 @@ describe('Telegram daily digest', () => {
       name: 'status',
       argument: null
     });
+    expect(parseTelegramCommand('/timetable@Gate_prep_reminder_bot')).toEqual({
+      name: 'timetable',
+      argument: null
+    });
     expect(parseTelegramCommand('send me a digest')).toBeNull();
+  });
+
+  it('uses the connected user timezone to find the current Monday-to-Sunday week', () => {
+    const instant = new Date('2026-07-19T20:00:00.000Z');
+
+    expect(isoDateForTimezone(instant, 'Asia/Kolkata')).toBe('2026-07-20');
+    expect(weekIsoDatesForTimezone(instant, 'Asia/Kolkata')).toEqual([
+      '2026-07-20',
+      '2026-07-21',
+      '2026-07-22',
+      '2026-07-23',
+      '2026-07-24',
+      '2026-07-25',
+      '2026-07-26'
+    ]);
+  });
+
+  it('sanitizes stored planner sessions before Telegram rendering', () => {
+    expect(parseTelegramStudySessions([
+      { subject: 'OS', durationMin: 90, mode: 'PYQ', target: 'Deadlocks' },
+      { subject: '', durationMin: 60, mode: 'Study', target: '' },
+      { subject: 'DBMS', durationMin: Number.POSITIVE_INFINITY, mode: 'Study', target: '' }
+    ])).toEqual([
+      { subject: 'OS', customSubject: undefined, durationMin: 90, mode: 'PYQ', target: 'Deadlocks' }
+    ]);
   });
 
   it('renders a compact, escaped study-only message', () => {
@@ -62,6 +95,46 @@ describe('Telegram daily digest', () => {
     expect(message).toContain('<b>AIR JOURNAL · CONNECTED</b>');
     expect(message).toContain('Telegram delivery is working.');
     expect(message).toContain('<b>No plan. No noise.</b>');
+  });
+
+  it('renders a compact, escaped Monday-to-Sunday timetable', () => {
+    const message = renderTelegramTimetable({
+      todayIsoDate: '2026-07-21',
+      days: [
+        {
+          isoDate: '2026-07-20',
+          sessions: [
+            { subject: 'Operating Systems', durationMin: 90, mode: 'PYQ Practice', target: '' }
+          ]
+        },
+        {
+          isoDate: '2026-07-21',
+          sessions: [
+            {
+              subject: 'Custom...',
+              customSubject: 'Compiler < Design',
+              durationMin: 60,
+              mode: 'Revision & Recall',
+              target: ''
+            }
+          ]
+        },
+        ...['22', '23', '24', '25', '26'].map((day) => ({
+          isoDate: `2026-07-${day}`,
+          sessions: []
+        }))
+      ]
+    });
+
+    expect(message).toContain('<b>AIR JOURNAL · TIMETABLE</b>');
+    expect(message).toContain('<b>WEEK OF 20 JULY 2026</b>');
+    expect(message).toContain('<b>2 SESSIONS · 2h 30m</b>');
+    expect(message).toContain('<b>TUE · 21 JUL · TODAY · 1h</b>');
+    expect(message).toContain('Compiler &lt; Design');
+    expect(message).toContain('Revision &amp; Recall');
+    expect(message).toContain('<b>SUN · 26 JUL · OPEN</b>');
+    expect(message).toContain('The week is visible. Now execute it.');
+    expect(message.length).toBeLessThan(4096);
   });
 
   it('ships 60 unique, attributed quotes with stable daily selection', () => {

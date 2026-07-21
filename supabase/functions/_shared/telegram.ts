@@ -1,5 +1,5 @@
 export interface TelegramCommand {
-  name: 'start' | 'stop' | 'status' | 'help';
+  name: 'start' | 'stop' | 'status' | 'timetable' | 'help';
   argument: string | null;
 }
 export interface TelegramStudySession {
@@ -19,6 +19,16 @@ export interface TelegramDigestInput {
   subjectCounts: Array<{ subject: string; count: number }>;
 }
 
+export interface TelegramTimetableDay {
+  isoDate: string;
+  sessions: TelegramStudySession[];
+}
+
+export interface TelegramTimetableInput {
+  todayIsoDate: string;
+  days: TelegramTimetableDay[];
+}
+
 export interface TelegramSendResult {
   ok: boolean;
   id?: number;
@@ -27,12 +37,66 @@ export interface TelegramSendResult {
 
 export function parseTelegramCommand(text: string | undefined): TelegramCommand | null {
   if (!text) return null;
-  const match = text.trim().match(/^\/(start|stop|status|help)(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?\s*$/i);
+  const match = text.trim().match(/^\/(start|stop|status|timetable|help)(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?\s*$/i);
   if (!match) return null;
   return {
     name: match[1].toLowerCase() as TelegramCommand['name'],
     argument: match[2] ?? null
   };
+}
+
+export function parseTelegramStudySessions(value: unknown): TelegramStudySession[] {
+  if (!Array.isArray(value)) return [];
+  const sessions: TelegramStudySession[] = [];
+  for (const item of value.slice(0, 24)) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const subject = typeof row.subject === 'string' ? row.subject.trim().slice(0, 120) : '';
+    const durationMin =
+      typeof row.durationMin === 'number' && Number.isFinite(row.durationMin)
+        ? Math.max(0, Math.min(480, Math.round(row.durationMin)))
+        : 0;
+    if (!subject || durationMin === 0) continue;
+    sessions.push({
+      subject,
+      customSubject:
+        typeof row.customSubject === 'string' ? row.customSubject.trim().slice(0, 120) : undefined,
+      durationMin,
+      mode: typeof row.mode === 'string' ? row.mode.trim().slice(0, 80) : 'Study',
+      target: typeof row.target === 'string' ? row.target.trim().slice(0, 280) : ''
+    });
+  }
+  return sessions;
+}
+
+export function isoDateForTimezone(now: Date, timeZone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(now);
+    const part = (type: string) => parts.find((value) => value.type === type)?.value ?? '';
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  } catch {
+    return now.toISOString().slice(0, 10);
+  }
+}
+
+function addUtcDays(isoDate: string, amount: number): string {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + amount);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Monday-through-Sunday dates for the week containing `now` in a user's timezone. */
+export function weekIsoDatesForTimezone(now: Date, timeZone: string): string[] {
+  const localIsoDate = isoDateForTimezone(now, timeZone);
+  const weekday = new Date(`${localIsoDate}T12:00:00Z`).getUTCDay();
+  const daysSinceMonday = weekday === 0 ? 6 : weekday - 1;
+  const monday = addUtcDays(localIsoDate, -daysSinceMonday);
+  return Array.from({ length: 7 }, (_, index) => addUtcDays(monday, index));
 }
 
 export function escapeTelegramHtml(value: string): string {
@@ -48,6 +112,48 @@ function formatDuration(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+}
+
+function compactText(value: string, maxLength: number): string {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function escapeCompactTelegramHtml(
+  value: string,
+  maxVisibleLength: number,
+  maxEncodedLength: number
+): string {
+  let clean = compactText(value, maxVisibleLength);
+  let encoded = escapeTelegramHtml(clean);
+  while (encoded.length > maxEncodedLength && clean.length > 1) {
+    clean = `${clean.slice(0, Math.max(1, clean.length - 2)).trimEnd()}…`;
+    encoded = escapeTelegramHtml(clean);
+  }
+  return encoded;
+}
+
+function timetableDayLabel(isoDate: string): string {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short'
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((value) => value.type === type)?.value ?? '';
+  return `${part('weekday')} · ${part('day')} ${part('month')}`.toUpperCase();
+}
+
+function timetableWeekLabel(isoDate: string): string {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  }).format(date).toUpperCase();
 }
 
 export function renderTelegramDigest(input: TelegramDigestInput): string {
@@ -111,6 +217,61 @@ export function renderTelegramConnectionTest(): string {
     '',
     '<b>No plan. No noise.</b>'
   ].join('\n');
+}
+
+export function renderTelegramTimetable(input: TelegramTimetableInput): string {
+  const totalSessions = input.days.reduce((sum, day) => sum + day.sessions.length, 0);
+  const totalMinutes = input.days.reduce(
+    (sum, day) => sum + day.sessions.reduce(
+      (daySum, session) => daySum + Math.max(0, session.durationMin || 0),
+      0
+    ),
+    0
+  );
+  const weekStart = input.days[0]?.isoDate ?? input.todayIsoDate;
+  const lines: string[] = [
+    '<b>AIR JOURNAL · TIMETABLE</b>',
+    `<b>WEEK OF ${timetableWeekLabel(weekStart)}</b>`,
+    '',
+    `<b>${totalSessions} ${totalSessions === 1 ? 'SESSION' : 'SESSIONS'} · ${formatDuration(totalMinutes)}</b>`,
+    ''
+  ];
+
+  for (const day of input.days.slice(0, 7)) {
+    const dayMinutes = day.sessions.reduce(
+      (sum, session) => sum + Math.max(0, session.durationMin || 0),
+      0
+    );
+    const todayMark = day.isoDate === input.todayIsoDate ? ' · TODAY' : '';
+    const durationMark = dayMinutes > 0 ? ` · ${formatDuration(dayMinutes)}` : ' · OPEN';
+    lines.push(`<b>${timetableDayLabel(day.isoDate)}${todayMark}${durationMark}</b>`);
+
+    if (day.sessions.length === 0) {
+      lines.push('<i>No study sessions planned.</i>', '');
+      continue;
+    }
+
+    const visibleSessions = day.sessions.slice(0, 3);
+    visibleSessions.forEach((session, index) => {
+      const rawSubject =
+        session.subject === 'Custom...' && session.customSubject
+          ? session.customSubject
+          : session.subject;
+      const subject = escapeCompactTelegramHtml(rawSubject, 48, 58);
+      const mode = escapeCompactTelegramHtml(session.mode || 'Study', 32, 38);
+      lines.push(
+        `${String(index + 1).padStart(2, '0')}  <b>${subject}</b> · ${formatDuration(session.durationMin)} · <i>${mode}</i>`
+      );
+    });
+
+    if (day.sessions.length > visibleSessions.length) {
+      lines.push(`    +${day.sessions.length - visibleSessions.length} more in Planner`);
+    }
+    lines.push('');
+  }
+
+  lines.push('<b>The week is visible. Now execute it.</b>');
+  return lines.join('\n');
 }
 
 export async function sendTelegramMessage(args: {

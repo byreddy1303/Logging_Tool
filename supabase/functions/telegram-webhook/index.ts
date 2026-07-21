@@ -4,11 +4,19 @@
 //   /start <short-lived token> — bind this Telegram chat to AIR Journal
 //   /stop                      — pause the daily digest
 //   /status                    — show the current connection state
+//   /timetable                 — show this user's current-week study plan
 //   /help                      — show the available commands
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { json } from '../_shared/cors.ts';
-import { parseTelegramCommand, sendTelegramMessage } from '../_shared/telegram.ts';
+import {
+  isoDateForTimezone,
+  parseTelegramCommand,
+  parseTelegramStudySessions,
+  renderTelegramTimetable,
+  sendTelegramMessage,
+  weekIsoDatesForTimezone
+} from '../_shared/telegram.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const Deno: any;
@@ -17,6 +25,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? '';
+const APP_URL = Deno.env.get('VITE_APP_URL') ?? 'https://air-journal-omega.vercel.app';
 
 const admin = createClient(SUPABASE_URL, SERVICE, {
   auth: { persistSession: false, autoRefreshToken: false }
@@ -32,8 +41,53 @@ interface TelegramUpdate {
   };
 }
 
-async function reply(chatId: number, text: string): Promise<void> {
-  const result = await sendTelegramMessage({ token: BOT_TOKEN, chatId, text });
+interface StoredPlannerDay {
+  plan_date: string;
+  sessions: unknown;
+}
+
+let commandMenuReady = false;
+let commandMenuPromise: Promise<void> | null = null;
+
+async function ensureTelegramCommandMenu(): Promise<void> {
+  if (commandMenuReady) return;
+  if (commandMenuPromise) return commandMenuPromise;
+  commandMenuPromise = (async () => {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commands: [
+            { command: 'timetable', description: "Show this week's study timetable" },
+            { command: 'status', description: 'Check Telegram delivery status' },
+            { command: 'stop', description: 'Pause the daily digest' },
+            { command: 'help', description: 'Show available commands' }
+          ]
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean };
+      if (!response.ok || payload.ok !== true) {
+        console.error('Telegram command menu registration failed:', response.status);
+        return;
+      }
+      commandMenuReady = true;
+    } catch (error) {
+      console.error('Telegram command menu registration failed:', error);
+    } finally {
+      commandMenuPromise = null;
+    }
+  })();
+  return commandMenuPromise;
+}
+
+async function reply(chatId: number, text: string, withAppButton = false): Promise<void> {
+  const result = await sendTelegramMessage({
+    token: BOT_TOKEN,
+    chatId,
+    text,
+    appUrl: withAppButton ? APP_URL : undefined
+  });
   if (!result.ok) console.error('Telegram reply failed:', result.error);
 }
 
@@ -50,6 +104,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: 'server not configured' }, 503);
   }
 
+  await ensureTelegramCommandMenu();
+
   let update: TelegramUpdate;
   try {
     update = (await req.json()) as TelegramUpdate;
@@ -64,7 +120,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const command = parseTelegramCommand(message.text);
 
   if (!command) {
-    await reply(chatId, 'Open AIR Journal Settings and use the private Connect Telegram link.');
+    await reply(chatId, 'Use /timetable for this week or /help to see every command.');
     return json({ ok: true });
   }
 
@@ -110,7 +166,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     await reply(
       chatId,
-      '<b>AIR Journal connected.</b>\n\nYour optional daily study digest is on. Change its time or pause it from Settings. Use /stop here to pause immediately.'
+      '<b>AIR Journal connected.</b>\n\nYour optional daily study digest is on. Change its time or pause it from Settings. Use /timetable whenever you want this week\'s plan.'
     );
     return json({ ok: true });
   }
@@ -120,6 +176,58 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .select('user_id, enabled')
     .eq('chat_id', chatId)
     .maybeSingle();
+
+  if (command.name === 'timetable') {
+    if (!subscription) {
+      await reply(chatId, 'Connect this Telegram account from AIR Journal Settings before using /timetable.');
+      return json({ ok: true });
+    }
+
+    const { data: user, error: userError } = await admin
+      .from('users')
+      .select('timezone')
+      .eq('id', subscription.user_id)
+      .maybeSingle();
+    if (userError || !user) {
+      console.error('Telegram timetable profile load failed:', userError?.message);
+      await reply(chatId, 'I could not load your timetable right now. Try again in a moment.');
+      return json({ ok: true });
+    }
+
+    const timezone = typeof user.timezone === 'string' && user.timezone
+      ? user.timezone
+      : 'Asia/Kolkata';
+    const now = new Date();
+    const weekDates = weekIsoDatesForTimezone(now, timezone);
+    const { data: storedPlans, error: plansError } = await admin
+      .from('planner_day_plans')
+      .select('plan_date, sessions')
+      .eq('user_id', subscription.user_id)
+      .gte('plan_date', weekDates[0])
+      .lte('plan_date', weekDates[6])
+      .order('plan_date', { ascending: true });
+    if (plansError) {
+      console.error('Telegram timetable load failed:', subscription.user_id, plansError.message);
+      await reply(chatId, 'I could not load your timetable right now. Try again in a moment.');
+      return json({ ok: true });
+    }
+
+    const sessionsByDate = new Map(
+      ((storedPlans as StoredPlannerDay[]) ?? []).map((plan) => [
+        plan.plan_date,
+        parseTelegramStudySessions(plan.sessions)
+      ])
+    );
+    const timetable = renderTelegramTimetable({
+      todayIsoDate: isoDateForTimezone(now, timezone),
+      days: weekDates.map((isoDate) => ({
+        isoDate,
+        sessions: sessionsByDate.get(isoDate) ?? []
+      }))
+    });
+    await reply(chatId, timetable, true);
+    return json({ ok: true });
+  }
 
   if (command.name === 'stop') {
     if (subscription) {
@@ -144,7 +252,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   await reply(
     chatId,
-    '<b>AIR Journal bot</b>\n/start — connect using the private Settings link\n/status — check delivery\n/stop — pause the daily digest'
+    '<b>AIR Journal bot</b>\n/timetable — show this week\'s study timetable\n/status — check delivery\n/stop — pause the daily digest\n/start — connect using the private Settings link'
   );
   return json({ ok: true });
 });
