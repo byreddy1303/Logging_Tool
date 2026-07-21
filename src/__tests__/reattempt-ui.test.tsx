@@ -85,7 +85,7 @@ describe('re-attempt solve flow', () => {
     ]);
   });
 
-  it('opens the exact question from its pattern and records a timed response', async () => {
+  it('opens the first exact question on entry and records a timed response', async () => {
     await seedDueQuestion();
     const user = userEvent.setup();
 
@@ -95,10 +95,8 @@ describe('re-attempt solve flow', () => {
       </MemoryRouter>
     );
 
-    expect(screen.queryByText(QUESTION)).not.toBeInTheDocument();
-    await user.click(await screen.findByText(PATTERN));
-
     expect(await screen.findByText(QUESTION)).toBeInTheDocument();
+    expect(screen.getByText(PATTERN)).toBeInTheDocument();
     expect(screen.getByText('carried forward')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Start timer' }));

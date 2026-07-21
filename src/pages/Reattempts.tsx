@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Empty } from '@/components/ui/Empty';
 import { Textarea } from '@/components/ui/Textarea';
+import '@/reattempt.css';
 
 const TONE_BADGE: Record<
   'ok' | 'slow' | 'guess' | 'wrong',
@@ -164,6 +165,7 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
         'reattempt-card overflow-hidden rounded-[20px] border bg-bg-raised shadow-card transition-colors',
         expanded ? 'border-accent/35' : 'border-border'
       )}
+      data-expanded={expanded}
     >
       <button
         type="button"
@@ -197,7 +199,7 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
         <span className="flex w-full items-end justify-between gap-4">
           <span className="min-w-0">
             <span className="u-label">Pattern to revisit</span>
-            <span className="mt-1 block font-display text-[18px] font-semibold leading-snug text-text">
+            <span className="reattempt-pattern mt-1 block font-display text-[18px] font-semibold leading-snug text-text">
               {question?.pattern_name ? (
                 <span className="u-highlight">{question.pattern_name}</span>
               ) : (
@@ -205,7 +207,7 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
               )}
             </span>
           </span>
-          <span className="shrink-0 text-[11.5px] text-text-faint">
+          <span className="reattempt-due-date shrink-0 text-[11.5px] text-text-faint">
             {carriedForward ? 'carried from' : 'due'} {formatDate(row.scheduled_date, 'dd MMM')}
           </span>
         </span>
@@ -416,10 +418,10 @@ export default function Reattempts() {
   );
 
   useEffect(() => {
-    if (autoOpened.current || searchParams.get('open') !== 'first' || due.length === 0) return;
+    if (autoOpened.current || due.length === 0) return;
     autoOpened.current = true;
     setOpenId(due[0].id);
-    setSearchParams({}, { replace: true });
+    if (searchParams.get('open') === 'first') setSearchParams({}, { replace: true });
   }, [due, searchParams, setSearchParams]);
 
   function toggleCard(rowId: string) {
@@ -454,7 +456,7 @@ export default function Reattempts() {
   }
 
   return (
-    <div className="native-reattempt-page flex flex-col gap-4">
+    <div className="reattempt-page native-reattempt-page flex flex-col gap-4">
       <PageHeader
         title="Re-attempts"
         description={
