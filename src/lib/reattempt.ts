@@ -8,30 +8,65 @@ import { addDaysISO, nowISO, todayISO, uuid } from '@/lib/utils';
 import { db } from '@/lib/db';
 import { writeLocal } from '@/lib/sync';
 
-const NEXT_ON_CLEAN: Record<ReattemptStage, { stage: ReattemptStage; delayDays: number | null }> =
-  {
-    D3: { stage: 'D10', delayDays: 10 },
-    D10: { stage: 'D30', delayDays: 30 },
-    D30: { stage: 'MASTERED', delayDays: null },
-    MASTERED: { stage: 'MASTERED', delayDays: null }
-  };
+const NEXT_ON_CLEAN: Record<ReattemptStage, { stage: ReattemptStage; delayDays: number | null }> = {
+  D3: { stage: 'D10', delayDays: 10 },
+  D10: { stage: 'D30', delayDays: 30 },
+  D30: { stage: 'MASTERED', delayDays: null },
+  MASTERED: { stage: 'MASTERED', delayDays: null }
+};
 
 export function needsReattempt(outcome: Outcome): boolean {
   return OUTCOME_BY_CODE[outcome].needsReattempt;
+}
+
+export interface ReattemptQueue {
+  due: ReattemptRow[];
+  upcoming: ReattemptRow[];
+  mastered: number;
+}
+
+/**
+ * Build the visible queue without rewriting dates. A missed row remains due on
+ * every later day until the learner records a result; this preserves the
+ * original due date while providing the requested automatic carry-forward.
+ */
+export function buildReattemptQueue(
+  rows: ReattemptRow[],
+  today: string = todayISO()
+): ReattemptQueue {
+  const open = rows.filter((row) => row.stage !== 'MASTERED');
+  return {
+    due: open
+      .filter((row) => row.scheduled_date <= today)
+      .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date)),
+    upcoming: open
+      .filter((row) => row.scheduled_date > today)
+      .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date)),
+    mastered: rows.filter((row) => row.stage === 'MASTERED').length
+  };
 }
 
 /** Pure ladder transition. Same semantics as SQL advance_reattempt(). */
 export function advance(
   row: Pick<ReattemptRow, 'stage' | 'scheduled_date' | 'history'>,
   result: ReattemptResult,
-  today: string = todayISO()
+  today: string = todayISO(),
+  timeSpent?: number
 ): Pick<ReattemptRow, 'stage' | 'scheduled_date' | 'history'> {
   const next =
     result === 'clean' ? NEXT_ON_CLEAN[row.stage] : { stage: 'D3' as const, delayDays: 3 };
   return {
     stage: next.stage,
-    scheduled_date: next.delayDays === null ? row.scheduled_date : addDaysISO(today, next.delayDays),
-    history: [...row.history, { date: today, result }]
+    scheduled_date:
+      next.delayDays === null ? row.scheduled_date : addDaysISO(today, next.delayDays),
+    history: [
+      ...row.history,
+      {
+        date: today,
+        result,
+        ...(timeSpent !== undefined ? { timeSpent: Math.max(0, Math.round(timeSpent)) } : {})
+      }
+    ]
   };
 }
 
@@ -63,9 +98,10 @@ export async function scheduleReattempt(
 export async function recordReattemptResult(
   row: ReattemptRow,
   result: ReattemptResult,
-  today: string = todayISO()
+  today: string = todayISO(),
+  timeSpent?: number
 ): Promise<ReattemptRow> {
-  const updated: ReattemptRow = { ...row, ...advance(row, result, today) };
+  const updated: ReattemptRow = { ...row, ...advance(row, result, today, timeSpent) };
   await writeLocal('reattempts', updated);
   return updated;
 }

@@ -1,7 +1,13 @@
 // F3.3 DoD: ladder progression D3→D10→D30→MASTERED; failure resets to D3.
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ReattemptRow } from '@/types';
-import { advance, needsReattempt, scheduleReattempt, recordReattemptResult } from '@/lib/reattempt';
+import {
+  advance,
+  buildReattemptQueue,
+  needsReattempt,
+  scheduleReattempt,
+  recordReattemptResult
+} from '@/lib/reattempt';
 import { db } from '@/lib/db';
 
 const USER = '00000000-0000-4000-8000-000000000001';
@@ -51,6 +57,11 @@ describe('advance (pure ladder)', () => {
     expect(next.stage).toBe('MASTERED');
     expect(next.scheduled_date).toBe('2026-08-16');
   });
+
+  it('stores rounded solve time when a timed attempt is reported', () => {
+    const next = advance(ladderRow('D3'), 'clean', TODAY, 94.6);
+    expect(next.history).toEqual([{ date: TODAY, result: 'clean', timeSpent: 95 }]);
+  });
 });
 
 describe('needsReattempt', () => {
@@ -59,6 +70,23 @@ describe('needsReattempt', () => {
     for (const o of ['RBS', 'RBG', 'W-C', 'W-E', 'W-R'] as const) {
       expect(needsReattempt(o)).toBe(true);
     }
+  });
+});
+
+describe('buildReattemptQueue', () => {
+  it('carries every unanswered earlier row into today until a result is recorded', () => {
+    const rows = [
+      ladderRow('D3', '2026-07-15'),
+      { ...ladderRow('D10', '2026-07-17'), id: 'ra-2' },
+      { ...ladderRow('D30', '2026-07-20'), id: 'ra-3' },
+      { ...ladderRow('MASTERED', '2026-07-15'), id: 'ra-4' }
+    ];
+
+    const queue = buildReattemptQueue(rows, '2026-07-17');
+
+    expect(queue.due.map((row) => row.id)).toEqual(['ra-1', 'ra-2']);
+    expect(queue.upcoming.map((row) => row.id)).toEqual(['ra-3']);
+    expect(queue.mastered).toBe(1);
   });
 });
 

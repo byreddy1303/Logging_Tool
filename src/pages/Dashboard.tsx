@@ -47,16 +47,20 @@ function Stat({
   value,
   color,
   dot,
-  hint
+  hint,
+  onClick,
+  actionLabel
 }: {
   label: string;
   value: number;
   color: string;
   dot: string;
   hint?: React.ReactNode;
+  onClick?: () => void;
+  actionLabel?: string;
 }) {
-  return (
-    <div className="flex flex-col gap-1.5 px-4 py-4">
+  const content = (
+    <>
       <span className="flex items-center gap-1.5">
         <span className={cn('h-1.5 w-1.5 rounded-full', dot)} />
         <span className="u-label">{label}</span>
@@ -70,7 +74,26 @@ function Stat({
         {value}
       </span>
       {hint && <span className="text-[12px] text-text-faint">{hint}</span>}
-    </div>
+      {onClick && actionLabel ? (
+        <span className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium text-accent">
+          {actionLabel}
+          <ArrowRight size={13} strokeWidth={2} />
+        </span>
+      ) : null}
+    </>
+  );
+
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex min-h-[104px] w-full flex-col gap-1.5 px-4 py-4 text-left transition-colors hover:bg-accent-faint/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+      aria-label={`${label}: ${value}. ${actionLabel ?? 'Open'}`}
+    >
+      {content}
+    </button>
+  ) : (
+    <div className="flex min-h-[104px] flex-col gap-1.5 px-4 py-4">{content}</div>
   );
 }
 
@@ -98,7 +121,10 @@ function ProgressBlock({
         </span>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded bg-bg-overlay">
-        <div className={cn('h-2 transition-all', bar)} style={{ width: `${Math.round(pct * 100)}%` }} />
+        <div
+          className={cn('h-2 transition-all', bar)}
+          style={{ width: `${Math.round(pct * 100)}%` }}
+        />
       </div>
       <p className="mt-1 text-[11px] text-text-faint">
         {met ? 'On target for today.' : `${target - done} to go.`}
@@ -222,7 +248,7 @@ export default function Dashboard() {
     async () => {
       if (!userId) return 0;
       const rows = await db.questions.where('user_id').equals(userId).toArray();
-      return rows.filter((q) => q.created_at.slice(0, 10) === today).length;
+      return rows.filter((question) => question.created_at.slice(0, 10) === today).length;
     },
     [userId, today],
     0
@@ -269,7 +295,14 @@ export default function Dashboard() {
 
       <Card>
         <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          <Stat label="Due today" value={due} color="text-accent" dot="bg-accent" />
+          <Stat
+            label="Due today"
+            value={due}
+            color="text-accent"
+            dot="bg-accent"
+            onClick={due > 0 ? () => navigate('/reattempts?open=first') : undefined}
+            actionLabel="Open first question"
+          />
           <Stat
             label="Mistake surface"
             value={trend.current}
@@ -312,8 +345,8 @@ export default function Dashboard() {
           title="Re-attempts due"
           aside={
             due > 0 && (
-              <Button size="sm" onClick={() => navigate('/reattempts')}>
-                Start review
+              <Button size="sm" onClick={() => navigate('/reattempts?open=first')}>
+                Open first question
               </Button>
             )
           }
@@ -321,8 +354,8 @@ export default function Dashboard() {
         <CardBody>
           {due > 0 ? (
             <p className="text-[13px] text-text-muted">
-              <span className="u-num text-text">{due}</span>{' '}
-              {plural(due, 'question')} scheduled for re-attempt today.
+              <span className="u-num text-text">{due}</span> {plural(due, 'question')} ready now.
+              Missed questions stay here every day until you record a result.
             </p>
           ) : (
             <p className="text-[13px] text-text-faint">
@@ -354,7 +387,11 @@ export default function Dashboard() {
             <div className="flex items-center gap-2">
               {last && lastSessionQuestions.length > 0 && <OutcomeLegend />}
               {last && (
-                <Button size="sm" variant="ghost" onClick={() => navigate(`/session/${last.id}/review`)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => navigate(`/session/${last.id}/review`)}
+                >
                   Open review
                 </Button>
               )}
@@ -367,7 +404,9 @@ export default function Dashboard() {
               <div className="flex items-baseline justify-between gap-3">
                 <div>
                   <p className="flex items-center gap-2 text-sm">
-                    <span className={cn('h-1.5 w-1.5 rounded-full', subjectInk(last.subject).dot)} />
+                    <span
+                      className={cn('h-1.5 w-1.5 rounded-full', subjectInk(last.subject).dot)}
+                    />
                     <span className="font-medium">{last.subject}</span>
                   </p>
                   <p className="mt-0.5 text-[12px] text-text-faint">
@@ -379,7 +418,8 @@ export default function Dashboard() {
                       </>
                     ) : (
                       <>
-                        target <span className="u-num">{last.target_duration_min}</span> min · in progress
+                        target <span className="u-num">{last.target_duration_min}</span> min · in
+                        progress
                       </>
                     )}
                     {' · '}
@@ -400,8 +440,7 @@ export default function Dashboard() {
                   {(() => {
                     const clean = dist['R'];
                     const wrong = dist['W-C'] + dist['W-E'] + dist['W-R'];
-                    if (wrong > 0)
-                      return `${wrong} to re-attempt · ${clean} clean.`;
+                    if (wrong > 0) return `${wrong} to re-attempt · ${clean} clean.`;
                     if (dist['RBS'] + dist['RBG'] > 0)
                       return `${dist['RBS'] + dist['RBG']} slow/guess to revisit.`;
                     return `Clean session — nothing queued.`;
@@ -415,9 +454,7 @@ export default function Dashboard() {
             <Empty
               title="No sessions yet"
               hint="Start a timed session, tag every question, and this page starts earning its keep."
-              action={
-                <Button onClick={() => navigate('/session/new')}>Start first session</Button>
-              }
+              action={<Button onClick={() => navigate('/session/new')}>Start first session</Button>}
               className="border-0 py-8"
             />
           )}
