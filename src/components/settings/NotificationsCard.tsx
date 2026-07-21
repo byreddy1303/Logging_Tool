@@ -26,7 +26,11 @@ interface Props {
   sandbox: boolean;
 }
 
-const botUsername = String(import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? '')
+// Telegram usernames are public identifiers, so the production bot is a safe
+// fallback when a preview/local build has not supplied the optional env value.
+const botUsername = String(
+  import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'Gate_prep_reminder_bot'
+)
   .trim()
   .replace(/^@/, '');
 
@@ -121,10 +125,6 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
   }
 
   async function beginConnection() {
-    if (!botUsername) {
-      pushToast('Telegram bot setup is not finished yet.', 'neutral');
-      return;
-    }
     setConnecting(true);
     const { data, error } = await supabase.rpc('begin_telegram_connection');
     setConnecting(false);
@@ -239,18 +239,14 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <DetailField label="Telegram bot" icon={<Bot size={13} strokeWidth={1.75} />}>
-            {botUsername ? (
-              <a
-                href={`https://t.me/${botUsername}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[13px] font-medium text-accent hover:underline"
-              >
-                @{botUsername}
-              </a>
-            ) : (
-              <span className="text-[13px] text-text-muted">Bot configuration pending</span>
-            )}
+            <a
+              href={`https://t.me/${botUsername}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[13px] font-medium text-accent hover:underline"
+            >
+              @{botUsername}
+            </a>
           </DetailField>
 
           <DetailField
@@ -270,7 +266,7 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
                   size="sm"
                   variant="secondary"
                   onClick={() => void beginConnection()}
-                  disabled={connecting || !botUsername}
+                  disabled={connecting}
                 >
                   <Link2 size={12} strokeWidth={1.75} className="mr-1" />
                   {connecting ? 'Preparing…' : 'Connect Telegram'}
