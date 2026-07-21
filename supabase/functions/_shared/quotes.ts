@@ -1,45 +1,95 @@
-// Deterministic pick of one motivational quote per calendar day.
-// Tone: "cocky" per Kalyan's ask — sharp, no filler, no emojis.
-// Keep the list long enough that a full month doesn't repeat.
+// Deterministic pick of one compact, high-energy quote per calendar day.
+// Most lines are original AIR Journal copy. The four character quotes are
+// deliberately short, accurately attributed, and kept as a small accent.
 
-export const QUOTES: string[] = [
-  "Rank isn't given. It's taken.",
-  "Nobody's coming to save you. Sit down and solve.",
-  "Your competition is asleep. Are you?",
-  "Every mistake you tag today is one you won't make in February.",
-  "Focus is the whole game. Everyone else is playing checkers.",
-  "Discipline eats motivation for breakfast. Especially at 6 AM.",
-  "Compression compounds. Today is one click on the ratchet.",
-  "AIR under 100 is not luck. It's inventory + reflex.",
-  "Everyone reads the theorem. Very few practice the trigger.",
-  "Miss a re-attempt today, and February will collect the debt.",
-  "Rank isn't about IQ. It's about not lying to yourself about weak spots.",
-  "You don't need more books. You need to close the ones you already opened.",
-  "One weekly fix, done ruthlessly, beats twenty half-hearted resolutions.",
-  "You're not behind. You're just being honest for the first time.",
-  "The pattern is boring only until it costs you 2 marks.",
-  "GATE is a scored exam, not a poem. Precision > vibes.",
-  "Every 'silly mistake' is a strategy problem in disguise.",
-  "Study now with intent, or panic later with excuses.",
-  "Solve the question in the paper, not the one you wished they asked.",
-  "The rank is decided in July, not in February. February just prints it.",
-  "Talent gets you 500 marks. Bookkeeping gets you 900.",
-  "Stop rehearsing sympathy. Start rehearsing questions.",
-  "You already know the theory. What you owe yourself is the reps.",
-  "The people getting AIR 1 today were tagging patterns in July.",
-  "You can outwork almost anyone in this exam. Almost.",
-  "Motivation is unreliable. Systems are lethal.",
-  "Every W-C you skip becomes a W-C on the paper.",
-  "Nobody watches your daily grind. That's the point.",
-  "Two hours of pattern drills > eight hours of tutorials.",
-  "You're not lazy. You're just optimising for comfort. Change the objective.",
-  "There is no 'later'. There's this morning.",
-  "You want the rank, or you want the story about wanting it?"
+export interface QuotePreset {
+  text: string;
+  attribution: string;
+}
+
+const original = (text: string): QuotePreset => ({
+  text,
+  attribution: 'AIR Journal'
+});
+
+export const QUOTES: readonly QuotePreset[] = [
+  original("Rank isn't given. It's taken - one clean session at a time."),
+  original('Let them count hours. You collect marks.'),
+  original("The paper doesn't know your fear. Keep it that way."),
+  original("While they negotiate with comfort, you're building an unfair advantage."),
+  original('Make the hard question regret showing up.'),
+  original('Your competition has motivation. You have a system.'),
+  original('Calm face. Violent focus. Clean execution.'),
+  original("Don't chase confidence. Stack proof until doubt looks stupid."),
+  original("Today's weak spot is tomorrow's free mark."),
+  original("You don't need a perfect day. You need a finished plan."),
+  original('The rank is already moving. Decide which direction.'),
+  original('Read less. Recall more. Miss nothing twice.'),
+  original("The syllabus is finite. Your excuses shouldn't be infinite."),
+  original('Every tagged mistake is a future trap disarmed.'),
+  original('You came for a rank, not a participation story.'),
+  original('Outwork the version of you that keeps asking for Monday.'),
+  original('Let the mock test talk. Then answer with corrections.'),
+  original('Precision is louder than potential.'),
+  original('Start cold. Finish dangerous.'),
+  original('The plan is small. The consequences are not.'),
+  original('Build the reflex now; collect the mark in February.'),
+  original('One hard block can change the temperature of your whole day.'),
+  original('No drama. No delay. Just the next target.'),
+  original('The question setter brought traps. Bring receipts.'),
+  original('Be so prepared the hard set feels familiar.'),
+  original('Your edge is hidden inside the work you keep postponing.'),
+  original('Win the hour. Let the rank handle itself.'),
+  original("You don't rise to ambition. You fall to preparation."),
+  original('Make consistency look like talent.'),
+  original('Average waits for the mood. You start the timer.'),
+  original("The goal isn't to study everything. It's to miss nothing predictable."),
+  original('Brutal honesty today. Brutal accuracy on exam day.'),
+  original("The backlog isn't a verdict. It's a hit list."),
+  original('Turn every wrong answer into stolen intelligence.'),
+  original('Your future rank is watching what you do with this hour.'),
+  original('The cleanest flex is a completed plan.'),
+  original('Stop auditioning for success. Rehearse the paper.'),
+  original('They hope the easy questions appear. You prepare for the ugly ones.'),
+  original('Quiet room. Loud ambition.'),
+  original('The exam is one day. Your advantage is built daily.'),
+  original("A re-attempt isn't punishment. It's where marks come back."),
+  original('Face the chapter that keeps shrinking your confidence.'),
+  original('Speed without accuracy is just expensive panic.'),
+  original('Your comfort zone has never solved a NAT question.'),
+  original("Don't fear the clock. Train it."),
+  original('If it exposed you once, master it before it returns.'),
+  original("The day doesn't need hype. It needs a first move."),
+  original('Be bored. Be tired. Be consistent. Then be ranked.'),
+  original('Nobody can compete with your corrected mistakes.'),
+  original("You're not chasing AIR. You're engineering it."),
+  original('The next session is where the gap starts showing.'),
+  original("Finish today's plan before tomorrow starts making demands."),
+  original('Study like the result has your signature on it.'),
+  original("Don't announce the comeback. Put it in the score."),
+  original('The target is clear. Make hesitation irrelevant.'),
+  original('Confidence is the memory of promises kept to yourself.'),
+  {
+    text: "I don't have dreams. I have goals.",
+    attribution: 'Harvey Specter · Suits'
+  },
+  {
+    text: 'One step at a time. One punch at a time. One round at a time.',
+    attribution: 'Rocky Balboa · Creed'
+  },
+  {
+    text: 'Why do we fall? So we can learn to pick ourselves up.',
+    attribution: 'Alfred Pennyworth · Batman Begins'
+  },
+  {
+    text: 'Do, or do not. There is no try.',
+    attribution: 'Yoda · The Empire Strikes Back'
+  }
 ];
 
 /** Deterministic per-day pick, seeded by ISO date + user id so multiple
  *  users on the same day see different quotes but each user is stable. */
-export function pickQuoteForDay(isoDate: string, seedSalt = ''): string {
+export function pickQuoteForDay(isoDate: string, seedSalt = ''): QuotePreset {
   const src = `${isoDate}:${seedSalt}`;
   let h = 2166136261;
   for (let i = 0; i < src.length; i++) {

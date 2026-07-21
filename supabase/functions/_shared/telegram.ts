@@ -13,6 +13,7 @@ export interface TelegramStudySession {
 export interface TelegramDigestInput {
   dateLabel: string;
   quote: string;
+  quoteAttribution: string;
   sessions: TelegramStudySession[];
   reAttemptTotal: number;
   subjectCounts: Array<{ subject: string; count: number }>;
@@ -60,6 +61,7 @@ export function renderTelegramDigest(input: TelegramDigestInput): string {
     `<b>${escapeTelegramHtml(input.dateLabel)}</b>`,
     '',
     `<i>“${escapeTelegramHtml(input.quote)}”</i>`,
+    `— ${escapeTelegramHtml(input.quoteAttribution)}`,
     '',
     `<b>TODAY'S PLAN · ${formatDuration(totalMinutes)}</b>`,
     ''
@@ -95,6 +97,20 @@ export function renderTelegramDigest(input: TelegramDigestInput): string {
   lines.push('', `${input.sessions.length} ${sessionWord}. Finish them cleanly.`);
 
   return lines.join('\n').slice(0, 3900);
+}
+
+export function renderTelegramConnectionTest(): string {
+  return [
+    '<b>AIR JOURNAL · CONNECTED</b>',
+    '',
+    '<i>“The line is live. The rest is execution.”</i>',
+    '— AIR Journal',
+    '',
+    'Telegram delivery is working.',
+    'Planned days will arrive here at your chosen local time.',
+    '',
+    '<b>No plan. No noise.</b>'
+  ].join('\n');
 }
 
 export async function sendTelegramMessage(args: {

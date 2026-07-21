@@ -24,6 +24,7 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 import { sendEmail } from '../_shared/email.ts';
 import { greetingForHour, pickQuoteForDay } from '../_shared/quotes.ts';
 import {
+  renderTelegramConnectionTest,
   renderTelegramDigest,
   sendTelegramMessage,
   type TelegramStudySession
@@ -177,7 +178,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const digest = await buildDigest(u, isoDate, hour, weekday);
-    const telegramDue = telegramEligible && digest.has_planner_sessions;
+    // A manual test proves the Telegram connection even on an empty planning
+    // day. Scheduled delivery remains silent when there is no recorded plan.
+    const telegramDue = telegramEligible && (test || digest.has_planner_sessions);
     if (dryRun) {
       report.push({ user: u.id, dry: true, telegram_would_send: telegramDue, digest });
       continue;
@@ -194,7 +197,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let telegram_ok = false;
     let email_err: string | undefined;
     let telegram_err: string | undefined =
-      telegramEligible && !digest.has_planner_sessions
+      telegramEligible && !test && !digest.has_planner_sessions
         ? 'No study sessions are planned for today.'
         : undefined;
 
@@ -212,7 +215,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const res = await sendTelegramMessage({
         token: TELEGRAM_BOT_TOKEN,
         chatId: telegram.chat_id,
-        text: digest.telegram_text,
+        text: test ? renderTelegramConnectionTest() : digest.telegram_text,
         appUrl: APP_URL || 'https://air-journal-omega.vercel.app'
       });
       telegram_ok = res.ok;
@@ -366,7 +369,8 @@ async function buildDigest(u: UserForDigest, isoDate: string, hour: number, week
 
   const html = renderEmail({
     greeting,
-    quote,
+    quote: quote.text,
+    quoteAttribution: quote.attribution,
     isoDate,
     subjectCounts,
     sampleTitles,
@@ -378,7 +382,8 @@ async function buildDigest(u: UserForDigest, isoDate: string, hour: number, week
 
   const telegram_text = renderTelegramDigest({
     dateLabel: telegramDateLabel(isoDate),
-    quote,
+    quote: quote.text,
+    quoteAttribution: quote.attribution,
     sessions: studySessions,
     reAttemptTotal: reAttemptRows.length,
     subjectCounts
@@ -403,6 +408,7 @@ function esc(s: string): string {
 function renderEmail(args: {
   greeting: string;
   quote: string;
+  quoteAttribution: string;
   isoDate: string;
   subjectCounts: { subject: string; count: number }[];
   sampleTitles: string[];
@@ -414,6 +420,7 @@ function renderEmail(args: {
   const {
     greeting,
     quote,
+    quoteAttribution,
     isoDate,
     subjectCounts,
     sampleTitles,
@@ -473,6 +480,7 @@ function renderEmail(args: {
           <p style="margin:0 0 12px 0;font-size:15px;font-style:italic;line-height:1.55;color:#241E35;">
             <span style="background:linear-gradient(180deg,transparent 62%,#FBE8B0 62%,#FBE8B0 92%,transparent 92%);padding:0 2px;">${esc(quote)}</span>
           </p>
+          <p style="margin:-8px 0 14px 0;font-size:11.5px;color:#9C94AF;">— ${esc(quoteAttribution)}</p>
           ${fixBlock}
           <p style="margin:16px 0 4px 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#665D7E;">re-attempts due today</p>
           ${reBlock}
