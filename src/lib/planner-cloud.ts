@@ -28,6 +28,13 @@ function isStudySession(value: unknown): value is StudySession {
   );
 }
 
+function toCloudDayPlan(row: CloudDayPlanRow): CloudDayPlan {
+  const sessions = Array.isArray(row.sessions)
+    ? row.sessions.filter(isStudySession).slice(0, 24)
+    : [];
+  return { date: row.plan_date, sessions, updatedAt: row.updated_at };
+}
+
 export async function loadCloudDayPlan(
   userId: string,
   date: string
@@ -42,20 +49,31 @@ export async function loadCloudDayPlan(
   if (error) return { plan: null, error: error.message };
   if (!data) return { plan: null, error: null };
 
-  const row = data as CloudDayPlanRow;
-  const sessions = Array.isArray(row.sessions)
-    ? row.sessions.filter(isStudySession).slice(0, 24)
-    : [];
+  return { plan: toCloudDayPlan(data as CloudDayPlanRow), error: null };
+}
+
+/** Load a date range so cloud-only plans can enter the local calendar index. */
+export async function loadCloudDayPlans(
+  userId: string,
+  fromDate: string,
+  throughDate: string
+): Promise<{ plans: CloudDayPlan[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from('planner_day_plans')
+    .select('plan_date, sessions, updated_at')
+    .eq('user_id', userId)
+    .gte('plan_date', fromDate)
+    .lte('plan_date', throughDate)
+    .order('plan_date', { ascending: true });
+
+  if (error) return { plans: [], error: error.message };
   return {
-    plan: { date: row.plan_date, sessions, updatedAt: row.updated_at },
+    plans: ((data ?? []) as CloudDayPlanRow[]).map(toCloudDayPlan),
     error: null
   };
 }
 
-export async function saveCloudDayPlan(
-  userId: string,
-  plan: CloudDayPlan
-): Promise<string | null> {
+export async function saveCloudDayPlan(userId: string, plan: CloudDayPlan): Promise<string | null> {
   const { error } = await supabase.from('planner_day_plans').upsert(
     {
       user_id: userId,
@@ -68,10 +86,7 @@ export async function saveCloudDayPlan(
   return error?.message ?? null;
 }
 
-export async function deleteCloudDayPlan(
-  userId: string,
-  date: string
-): Promise<string | null> {
+export async function deleteCloudDayPlan(userId: string, date: string): Promise<string | null> {
   const { error } = await supabase
     .from('planner_day_plans')
     .delete()

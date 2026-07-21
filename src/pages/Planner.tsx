@@ -17,6 +17,7 @@ import PlannerInsights from '@/components/planner/PlannerInsights';
 import {
   deleteCloudDayPlan,
   loadCloudDayPlan,
+  loadCloudDayPlans,
   saveCloudDayPlan,
   type CloudDayPlan
 } from '@/lib/planner-cloud';
@@ -33,10 +34,7 @@ import {
   type DayCellSummary,
   type DayPlan
 } from '@/lib/planner-storage';
-import {
-  PLANNER_MIN_MONTH_INDEX,
-  PLANNER_MIN_YEAR
-} from '@/lib/planner-constants';
+import { PLANNER_MIN_MONTH_INDEX, PLANNER_MIN_YEAR } from '@/lib/planner-constants';
 import { loadAllDayPlans } from '@/lib/planner-insights';
 
 function todayLocalISO(d: Date): string {
@@ -54,6 +52,11 @@ async function persistCloudPlan(userId: string, plan: CloudDayPlan): Promise<str
 export default function Planner() {
   const today = useMemo(() => new Date(), []);
   const todayISO = todayLocalISO(today);
+  const upcomingThroughISO = useMemo(() => {
+    const through = new Date(today);
+    through.setDate(through.getDate() + 44);
+    return todayLocalISO(through);
+  }, [today]);
   const pushToast = useUiStore((s) => s.pushToast);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const sandbox = useAuthStore((s) => s.sandbox);
@@ -87,39 +90,57 @@ export default function Planner() {
   useEffect(() => {
     if (!userId || sandbox) return;
     let active = true;
-    const upcoming = loadAllDayPlans()
+    const localUpcoming = loadAllDayPlans()
       .filter((plan) => plan.date >= todayISO && plan.sessions.length > 0)
       .slice(0, 45);
 
-    void Promise.all(
-      upcoming.map(async (local) => {
-        const { plan: remote, error } = await loadCloudDayPlan(userId, local.date);
-        if (error) return false;
-        const localUpdated = Date.parse(local.updatedAt);
-        const remoteUpdated = remote ? Date.parse(remote.updatedAt) : 0;
-        if (!remote || localUpdated >= remoteUpdated) {
-          await saveCloudDayPlan(userId, {
-            date: local.date,
-            sessions: local.sessions,
-            updatedAt: local.updatedAt
-          });
-          return false;
-        }
-        cacheDayPlan({
-          ...local,
-          sessions: remote.sessions,
-          updatedAt: remote.updatedAt
-        });
-        return true;
-      })
-    ).then((changed) => {
-      if (active && changed.some(Boolean)) setRevision((value) => value + 1);
-    });
+    void loadCloudDayPlans(userId, todayISO, upcomingThroughISO).then(
+      async ({ plans: remotePlans, error }) => {
+        if (error) return;
+        const localByDate = new Map(localUpcoming.map((plan) => [plan.date, plan]));
+        const remoteByDate = new Map(remotePlans.map((plan) => [plan.date, plan]));
+        const dates = new Set([...localByDate.keys(), ...remoteByDate.keys()]);
+
+        const changed = await Promise.all(
+          [...dates].map(async (date) => {
+            const local = localByDate.get(date) ?? loadDayPlan(date);
+            const remote = remoteByDate.get(date) ?? null;
+            if (!local) {
+              if (!remote) return false;
+              cacheDayPlan({
+                ...emptyDayPlan(date),
+                sessions: remote.sessions,
+                updatedAt: remote.updatedAt
+              });
+              return true;
+            }
+
+            const localUpdated = Date.parse(local.updatedAt);
+            const remoteUpdated = remote ? Date.parse(remote.updatedAt) : 0;
+            if (!remote || localUpdated >= remoteUpdated) {
+              await saveCloudDayPlan(userId, {
+                date: local.date,
+                sessions: local.sessions,
+                updatedAt: local.updatedAt
+              });
+              return false;
+            }
+            cacheDayPlan({
+              ...local,
+              sessions: remote.sessions,
+              updatedAt: remote.updatedAt
+            });
+            return true;
+          })
+        );
+        if (active && changed.some(Boolean)) setRevision((value) => value + 1);
+      }
+    );
 
     return () => {
       active = false;
     };
-  }, [sandbox, todayISO, userId]);
+  }, [sandbox, todayISO, upcomingThroughISO, userId]);
 
   const { planIndex, summaries } = useMemo(() => {
     void revision;
