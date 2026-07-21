@@ -10,6 +10,7 @@ import { EXAM_DATE_DEFAULT } from '@/lib/constants';
 import { Button } from '@/components/ui/Button';
 import PinInput from '@/components/auth/PinInput';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
+import Brand from '@/components/shared/Brand';
 
 type ScreenState =
   | { kind: 'checking' }
@@ -72,7 +73,7 @@ export default function ResetPin() {
   return (
     <div className="relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
-        <span className="u-label text-text-muted">AIR Journal</span>
+        <Brand size="sm" />
         <Link to="/auth" className="u-label hover:text-text">
           Back to sign in
         </Link>

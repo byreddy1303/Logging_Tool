@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { requestPinReset } from '@/lib/edge';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
+import Brand from '@/components/shared/Brand';
 
 type SubmitState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'error'; message: string };
 const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
@@ -43,7 +44,7 @@ export default function ForgotPin() {
   return (
     <div className="relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
-        <span className="u-label text-text-muted">AIR Journal</span>
+        <Brand size="sm" />
         <Link to="/auth" className="u-label hover:text-text">
           Back to sign in
         </Link>

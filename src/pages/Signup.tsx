@@ -14,6 +14,7 @@ import PinInput from '@/components/auth/PinInput';
 import { isUsernameAvailable } from '@/lib/edge';
 import { cn } from '@/lib/utils';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
+import Brand from '@/components/shared/Brand';
 
 type SubmitState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'error'; message: string };
 
@@ -105,7 +106,7 @@ export default function Signup() {
   return (
     <div className="relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
-        <span className="u-label text-text-muted">AIR Journal</span>
+        <Brand size="sm" />
         <Link to="/auth" className="u-label hover:text-text">
           Have an account?
         </Link>

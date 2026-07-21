@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { formatDate, todayISO } from '@/lib/utils';
 import { pickOneLinerFor } from '@/lib/one_liners';
+import { BrandMark } from '@/components/shared/Brand';
 
 function greeting(hour: number, firstName: string): string {
   const who = firstName.trim() || 'friend';
@@ -51,6 +52,7 @@ export default function HeroCard({ name, userId, showCountdown, daysLeft, action
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {action}
+            <BrandMark className="h-10 w-10 md:hidden" />
             <span className="u-stamp hidden md:inline">rank notebook</span>
           </div>
         </div>

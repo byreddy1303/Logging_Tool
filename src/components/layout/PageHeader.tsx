@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { BrandMark } from '@/components/shared/Brand';
 
 export default function PageHeader({
   title,
@@ -20,7 +21,10 @@ export default function PageHeader({
         </h1>
         {description && <p className="mt-0.5 text-[13.5px] text-text-muted">{description}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      <div className="flex items-center gap-2">
+        <BrandMark className="h-9 w-9 md:hidden" />
+        {actions}
+      </div>
     </header>
   );
 }

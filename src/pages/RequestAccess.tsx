@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
 import { requestAccess } from '@/lib/edge';
 import { cn } from '@/lib/utils';
+import Brand, { BrandMark } from '@/components/shared/Brand';
 
 type FormState =
   | { kind: 'idle' }
@@ -60,7 +61,7 @@ export default function RequestAccess() {
   return (
     <div className="relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
-        <span className="u-label text-text-muted">AIR Journal</span>
+        <Brand size="sm" />
         <Link to="/auth" className="u-label hover:text-text">
           I have an invite
         </Link>
@@ -227,9 +228,12 @@ function Pitch({ daysLeft }: { daysLeft: number }) {
     >
       <div className="u-margin-line">
         <span className="u-label text-accent">the rank notebook</span>
-        <h1 className="mt-2 font-display text-[38px] font-bold leading-none tracking-tight text-text">
-          AIR<span className="text-accent">.</span>
-        </h1>
+        <div className="mt-2 flex items-center gap-3">
+          <BrandMark className="h-14 w-14" />
+          <h1 className="font-display text-[38px] font-bold leading-none tracking-tight text-text">
+            AIR<span className="text-accent">.</span>
+          </h1>
+        </div>
         <p className="mt-3 text-[14.5px] leading-relaxed text-text-muted">
           Every solved question becomes data.{' '}
           <span className="u-highlight font-medium text-text">

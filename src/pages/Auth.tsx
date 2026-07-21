@@ -13,6 +13,7 @@ import { EXAM_DATE_DEFAULT } from '@/lib/constants';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import PinInput from '@/components/auth/PinInput';
+import Brand, { BrandMark } from '@/components/shared/Brand';
 
 type SubmitState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'error'; message: string };
 
@@ -51,7 +52,7 @@ export default function Auth() {
   return (
     <div className="relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
-        <span className="u-label text-text-muted">AIR Journal</span>
+        <Brand size="sm" />
         <span className="u-label">invite-only</span>
       </header>
 
@@ -64,11 +65,16 @@ export default function Auth() {
         >
           <span className="u-stamp absolute right-6 top-7">gate 2027</span>
 
-          <div className="u-margin-line">
-            <h1 className="font-display text-[38px] font-bold leading-none tracking-tight">
-              AIR<span className="text-accent">.</span>
-            </h1>
-            <p className="u-label mt-2">the rank notebook</p>
+          <div className="u-margin-line flex items-center gap-3">
+            <BrandMark className="h-14 w-14" />
+            <div>
+              <h1 className="font-display text-[38px] font-bold leading-none tracking-tight">
+                AIR<span className="text-accent">.</span>
+              </h1>
+              <p className="u-label mt-2">the rank notebook</p>
+            </div>
+          </div>
+          <div className="pl-6">
             <p className="mt-4 text-[13.5px] leading-relaxed text-text-muted">
               Sign in with your{' '}
               <span className="u-highlight font-medium text-text">username and PIN</span>.
