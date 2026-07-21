@@ -846,8 +846,8 @@ function cellTone(key: ReadinessComponentKey, v: number, hasSignal: boolean): st
 function SubjectMatrix({ rows }: { rows: SubjectReadiness[] }) {
   const shown = rows.filter((r) => r.hasSignal || true); // show all for context
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] border-collapse text-[12.5px]">
+    <div className="u-table-wrap">
+      <table className="u-data-table min-w-[680px] text-[12.5px]">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
             <th className="px-4 py-2 font-mono">Subject</th>

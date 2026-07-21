@@ -22,6 +22,7 @@ import { useKeyboard } from '@/hooks/useKeyboard';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { Textarea } from '@/components/ui/Textarea';
 import { Kbd } from '@/components/ui/Kbd';
 import type { SourceDraft } from '@/components/tags/sourceDraft';
 
@@ -189,6 +190,7 @@ export default function SourceStep({
       year: isYearBased ? draft.year : null,
       set: isPyq && yearHasSets ? draft.set : null,
       questionNumber: draft.questionNumber?.trim() ? draft.questionNumber.trim() : null,
+      questionText: draft.questionText?.trim() ? draft.questionText.trim() : null,
       imageDataUrl: draft.imageDataUrl
     };
     onSubmit(normalized);
@@ -310,6 +312,24 @@ export default function SourceStep({
           )}
         </div>
       )}
+
+      <div className="flex flex-col gap-1.5">
+        <label className="u-label" htmlFor="src-question-text">
+          Question text (recommended)
+        </label>
+        <Textarea
+          id="src-question-text"
+          rows={4}
+          value={draft.questionText ?? ''}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, questionText: event.target.value || null }))
+          }
+          placeholder="Paste the prompt so the exact question appears in your re-attempt queue."
+        />
+        <p className="text-[11px] leading-relaxed text-text-faint">
+          Add text or a photo now; the re-attempt page uses this as your question sheet.
+        </p>
+      </div>
 
       <ImageUpload
         dataUrl={draft.imageDataUrl}

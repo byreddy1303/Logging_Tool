@@ -18,6 +18,7 @@ export interface SourceDraft {
   questionNumber: string | null;
   marks: 1 | 2 | null;
   format: QuestionFormat | null;
+  questionText: string | null;
   imageDataUrl: string | null;
 }
 
@@ -33,6 +34,7 @@ export function makeInitialSource(subject: string): SourceDraft {
     questionNumber: null,
     marks: null,
     format: null,
+    questionText: null,
     imageDataUrl: null
   };
 }

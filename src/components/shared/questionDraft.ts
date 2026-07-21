@@ -25,6 +25,7 @@ export interface EditorDraft {
   questionNumber: string | null;
   format: QuestionFormat | null;
   marks: 1 | 2 | null;
+  questionText: string | null;
   imageDataUrl: string | null;
   outcome: Outcome;
   patternName: string | null;
@@ -85,6 +86,7 @@ export function draftFromRow(row: QuestionRow): EditorDraft {
     questionNumber: src.questionNumber,
     format: src.format,
     marks,
+    questionText: row.question_text,
     imageDataUrl: row.image_url,
     outcome: row.outcome,
     patternName: row.pattern_name,
@@ -108,6 +110,7 @@ export function emptyDraft(subject: string, today: string): EditorDraft {
     questionNumber: null,
     format: null,
     marks: null,
+    questionText: null,
     imageDataUrl: null,
     outcome: 'R',
     patternName: null,
@@ -141,6 +144,7 @@ export function applyDraftToRow(row: QuestionRow, draft: EditorDraft): QuestionR
       draft.questionNumber,
       draft.format
     ),
+    question_text: draft.questionText?.trim() || null,
     image_url: draft.imageDataUrl,
     time_spent_sec: draft.timeSpentSec,
     target_time_sec: target,

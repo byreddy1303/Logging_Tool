@@ -50,6 +50,7 @@ import {
   TIMEZONES
 } from '@/lib/constants';
 import { cn, formatDate, uuid } from '@/lib/utils';
+import { haptic, isNativeApp } from '@/lib/native';
 import {
   BACKUP_VERSION,
   downloadEnvelope,
@@ -196,6 +197,16 @@ export default function Settings() {
               hint="Days-until-exam pill in the sidebar and dashboard header."
               value={prefs.showCountdown}
               onChange={(v) => prefs.set('showCountdown', v)}
+            />
+            <ToggleRow
+              label="Tactile feedback"
+              hint={
+                isNativeApp
+                  ? 'Subtle taps for selections, completed work, and errors.'
+                  : 'Used when AIR Journal runs as the Android app.'
+              }
+              value={prefs.hapticsEnabled}
+              onChange={(v) => prefs.set('hapticsEnabled', v)}
             />
           </div>
           <SegmentField
@@ -395,7 +406,9 @@ function SegmentField({
               onClick={() => onChange(o.value)}
               className={cn(
                 'flex-1 px-3 py-1.5 text-[12.5px] transition-colors',
-                on ? 'bg-accent-faint font-semibold text-accent' : 'text-text-muted hover:bg-bg-overlay hover:text-text'
+                on
+                  ? 'bg-accent-faint font-semibold text-accent'
+                  : 'text-text-muted hover:bg-bg-overlay hover:text-text'
               )}
             >
               {o.label}
@@ -427,7 +440,10 @@ function ToggleRow({
       </div>
       <button
         type="button"
-        onClick={() => onChange(!value)}
+        onClick={() => {
+          haptic('selection');
+          onChange(!value);
+        }}
         aria-pressed={value}
         className={cn(
           'relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
@@ -506,11 +522,7 @@ function ProfileCard({
             <Badge tone={sandbox ? 'warn' : 'neutral'}>
               {sandbox ? 'sandbox' : supabaseConfigured ? 'signed in' : 'no auth'}
             </Badge>
-            {dirtyCount > 0 && (
-              <Badge tone="warn">
-                {dirtyCount} unsaved
-              </Badge>
-            )}
+            {dirtyCount > 0 && <Badge tone="warn">{dirtyCount} unsaved</Badge>}
           </div>
         }
       />
@@ -583,7 +595,9 @@ function ProfileCard({
               min={1}
               max={100000}
               value={form?.target_rank ?? ''}
-              onChange={(e) => mark('target_rank', Math.max(1, Math.round(Number(e.target.value) || 1)))}
+              onChange={(e) =>
+                mark('target_rank', Math.max(1, Math.round(Number(e.target.value) || 1)))
+              }
               disabled={saving.has('target_rank')}
             />
             {dirty.has('target_rank') && form?.target_rank != null && (
@@ -742,14 +756,21 @@ function InvitesCard({ userId, sandbox }: { userId: string | null; sandbox: bool
               <RefreshCcw size={12} strokeWidth={1.75} className="mr-1" />
               Refresh
             </Button>
-            <Button variant="primary" size="sm" onClick={() => void createInvite()} disabled={creating}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void createInvite()}
+              disabled={creating}
+            >
               <Plus size={12} strokeWidth={1.75} className="mr-1" />
               {creating ? 'Creating…' : 'New invite'}
             </Button>
           </div>
         }
       />
-      {error && <div className="border-b border-border/60 px-4 py-2 text-[12px] text-warn">{error}</div>}
+      {error && (
+        <div className="border-b border-border/60 px-4 py-2 text-[12px] text-warn">{error}</div>
+      )}
       {loading ? (
         <div className="px-4 py-4 text-[12px] text-text-faint">Loading…</div>
       ) : !invites || invites.length === 0 ? (
@@ -765,7 +786,10 @@ function InvitesCard({ userId, sandbox }: { userId: string | null; sandbox: bool
             const expired = new Date(inv.expires_at) < new Date();
             const used = !!inv.used_by;
             return (
-              <li key={inv.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-[12px]">
+              <li
+                key={inv.id}
+                className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-[12px]"
+              >
                 <span className="u-num truncate text-text-muted">{inv.token}</span>
                 {used ? (
                   <Badge tone="success">used</Badge>
@@ -796,13 +820,7 @@ function InvitesCard({ userId, sandbox }: { userId: string | null; sandbox: bool
 
 /* ---------------- data card ---------------- */
 
-function DataCard({
-  profile,
-  onBackup
-}: {
-  profile: UserRow | null;
-  onBackup: () => void;
-}) {
+function DataCard({ profile, onBackup }: { profile: UserRow | null; onBackup: () => void }) {
   const pushToast = useUiStore((s) => s.pushToast);
   const [busy, setBusy] = useState<'export' | 'import' | 'clear' | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -865,9 +883,8 @@ function DataCard({
       <CardBody className="flex flex-col gap-3">
         <div className="rounded border border-border/70 bg-bg-overlay/40 px-3 py-2 text-[12px] text-text-muted">
           <p>
-            Take a copy of your journal off the app, put an old backup back
-            in, or clear this device's cache. Server data (Supabase) is
-            untouched by any of these unless you sign out.
+            Take a copy of your journal off the app, put an old backup back in, or clear this
+            device's cache. Server data (Supabase) is untouched by any of these unless you sign out.
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
@@ -876,9 +893,9 @@ function DataCard({
               1 · Download a backup
             </p>
             <p className="text-[12px] text-text-muted">
-              Saves a JSON file of every question, session, pattern, and note
-              on this device to your Downloads folder. Use it as a safety net
-              or to move to a new browser. Buddy-shared rows are excluded.
+              Saves a JSON file of every question, session, pattern, and note on this device to your
+              Downloads folder. Use it as a safety net or to move to a new browser. Buddy-shared
+              rows are excluded.
             </p>
           </div>
           <Button variant="primary" onClick={() => void onExport()} disabled={busy !== null}>
@@ -892,9 +909,8 @@ function DataCard({
               2 · Restore from a backup file
             </p>
             <p className="text-[12px] text-text-muted">
-              Reads a JSON backup and merges it with what's here now. Rows
-              match by id — anything you've edited since the backup stays as
-              you left it. Nothing is deleted.
+              Reads a JSON backup and merges it with what's here now. Rows match by id — anything
+              you've edited since the backup stays as you left it. Nothing is deleted.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -922,18 +938,27 @@ function DataCard({
               3 · Clear this device's local cache
             </p>
             <p className="text-[12px] text-text-muted">
-              Rarely needed. Deletes the offline database on THIS device
-              only; your Supabase server data stays intact and re-syncs on
-              next open. Use if a stuck row is misbehaving. In sandbox mode
-              (no sign-in), everything is lost — download a backup first.
+              Rarely needed. Deletes the offline database on THIS device only; your Supabase server
+              data stays intact and re-syncs on next open. Use if a stuck row is misbehaving. In
+              sandbox mode (no sign-in), everything is lost — download a backup first.
             </p>
           </div>
           {confirmClear ? (
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setConfirmClear(false)} disabled={busy !== null}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmClear(false)}
+                disabled={busy !== null}
+              >
                 <X size={12} strokeWidth={1.75} className="mr-1" /> Cancel
               </Button>
-              <Button variant="danger" size="sm" onClick={() => void onClear()} disabled={busy !== null}>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => void onClear()}
+                disabled={busy !== null}
+              >
                 <Trash2 size={12} strokeWidth={1.75} className="mr-1" />
                 {busy === 'clear' ? 'Wiping…' : 'Confirm wipe'}
               </Button>

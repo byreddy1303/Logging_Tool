@@ -645,8 +645,8 @@ export default function Journal() {
       <Card>
         {pageRows.length > 0 ? (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-[13px]">
+            <div className="u-table-wrap">
+              <table className="u-data-table min-w-[780px] text-[13px]">
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
                     <th className="px-3 py-2 font-mono">Date</th>
@@ -657,7 +657,7 @@ export default function Journal() {
                     <th className="px-3 py-2 font-mono">Pattern</th>
                     <th className="px-3 py-2 font-mono">Photo</th>
                     <th className="hidden px-3 py-2 text-right font-mono sm:table-cell">Time</th>
-                    <th className="w-[88px] px-3 py-2" />
+                    <th className="w-[88px] px-3 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">

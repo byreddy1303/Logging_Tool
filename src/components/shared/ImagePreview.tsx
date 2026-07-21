@@ -32,7 +32,10 @@ export function ImagePreview({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-text/70 p-4 backdrop-blur-[3px]"
+          className="native-image-preview fixed inset-0 z-50 flex flex-col items-center justify-center bg-text/70 p-4 backdrop-blur-[3px]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image preview"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
@@ -41,7 +44,7 @@ export function ImagePreview({
             type="button"
             onClick={onClose}
             aria-label="Close preview"
-            className="absolute right-4 top-4 rounded-full bg-bg-raised/90 p-2 text-text shadow-lift transition-colors hover:bg-bg-raised"
+            className="native-image-preview-close absolute right-4 top-4 rounded-full bg-bg-raised/90 p-2 text-text shadow-lift transition-colors hover:bg-bg-raised"
           >
             <X size={18} strokeWidth={1.75} />
           </button>

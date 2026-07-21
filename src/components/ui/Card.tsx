@@ -17,7 +17,7 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        'flex min-h-[40px] items-center justify-between gap-3 border-b border-border px-4 py-2',
+        'u-card-header flex min-h-[40px] items-center justify-between gap-3 border-b border-border px-4 py-2',
         className
       )}
     >
@@ -28,5 +28,5 @@ export function CardHeader({
 }
 
 export function CardBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('p-4', className)} {...props} />;
+  return <div className={cn('u-card-body p-4', className)} {...props} />;
 }

@@ -303,8 +303,8 @@ export default function SessionReview() {
               </span>
             }
           />
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-[13px]">
+          <div className="u-table-wrap">
+            <table className="u-data-table min-w-[620px] text-[13px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
                   <th className="px-3 py-2 font-mono">#</th>
@@ -312,7 +312,7 @@ export default function SessionReview() {
                   <th className="px-3 py-2 font-mono">Pattern</th>
                   <th className="hidden px-3 py-2 font-mono sm:table-cell">Source</th>
                   <th className="px-3 py-2 text-right font-mono">Time</th>
-                  <th className="w-[52px] px-3 py-2" />
+                  <th className="w-[64px] px-3 py-2 text-right">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">

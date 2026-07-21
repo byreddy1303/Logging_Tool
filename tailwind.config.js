@@ -5,29 +5,29 @@ export default {
     extend: {
       colors: {
         bg: {
-          DEFAULT: '#faf6ec',
-          raised: '#ffffff',
-          overlay: '#f2ecdd'
+          DEFAULT: '#fffaf0',
+          raised: '#fffefd',
+          overlay: '#fff1d6'
         },
         border: {
-          DEFAULT: '#e8e0cc',
-          hover: '#d6caad'
+          DEFAULT: '#ead8b6',
+          hover: '#d9bd87'
         },
         text: {
-          DEFAULT: '#241e35',
-          muted: '#665d7e',
-          faint: '#9c94af'
+          DEFAULT: '#241735',
+          muted: '#675276',
+          faint: '#9885a2'
         },
         accent: {
-          DEFAULT: '#e14b32',
-          hover: '#c73d26',
-          faint: '#fbe7e2'
+          DEFAULT: '#f04b2f',
+          hover: '#d83b22',
+          faint: '#ffe5dc'
         },
-        success: { DEFAULT: '#278c52', faint: '#e3f2e9' },
-        danger: { DEFAULT: '#b3273e', faint: '#f8e4e8' },
-        warn: { DEFAULT: '#c98a04', faint: '#faf0d8' },
-        guess: { DEFAULT: '#7048b6', faint: '#eee7f9' },
-        highlight: '#ffde59',
+        success: { DEFAULT: '#168653', faint: '#ddf6e8' },
+        danger: { DEFAULT: '#bd2844', faint: '#ffe1e7' },
+        warn: { DEFAULT: '#b87800', faint: '#fff0c7' },
+        guess: { DEFAULT: '#7048c4', faint: '#eee5ff' },
+        highlight: '#ffe16a',
         ink: {
           cobalt: '#2e5eaa',
           teal: '#0e8a74',
@@ -51,8 +51,8 @@ export default {
       },
       boxShadow: {
         sm: '0 1px 2px rgba(36, 30, 53, 0.05)',
-        card: '0 1px 2px rgba(36, 30, 53, 0.04), 0 3px 10px rgba(36, 30, 53, 0.07)',
-        lift: '0 2px 4px rgba(36, 30, 53, 0.05), 0 10px 24px rgba(36, 30, 53, 0.10)',
+        card: '0 1px 2px rgba(66, 36, 12, 0.04), 0 6px 18px rgba(83, 49, 14, 0.07)',
+        lift: '0 2px 4px rgba(66, 36, 12, 0.05), 0 14px 34px rgba(83, 49, 14, 0.12)',
         press: 'inset 0 1px 2px rgba(36, 30, 53, 0.08)'
       },
       spacing: {

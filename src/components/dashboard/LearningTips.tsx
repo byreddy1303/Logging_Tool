@@ -24,9 +24,9 @@ export default function LearningTips({ tips }: { tips: LearningTip[] }) {
   const tone = TONE[tip.tone];
 
   return (
-    <section className={cn('relative overflow-hidden rounded-lg border border-border bg-bg-raised shadow-card', tone.wash)} aria-labelledby="learning-tip-title">
+    <section className={cn('native-learning-tips relative overflow-hidden rounded-lg border border-border bg-bg-raised shadow-card', tone.wash)} aria-labelledby="learning-tip-title">
       <span className={cn('absolute inset-y-0 left-0 w-1', tone.line)} aria-hidden />
-      <div className="flex min-h-[116px] gap-3 px-5 py-4 sm:px-6">
+      <div className="native-learning-tips-content flex min-h-[116px] gap-3 px-5 py-4 sm:px-6">
         <Lightbulb size={18} strokeWidth={1.7} className={cn('mt-0.5 shrink-0', tone.icon)} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
@@ -52,7 +52,7 @@ export default function LearningTips({ tips }: { tips: LearningTip[] }) {
           </AnimatePresence>
         </div>
         {tips.length > 1 && (
-          <div className="flex shrink-0 items-center gap-1 self-end">
+          <div className="native-learning-controls flex shrink-0 items-center gap-1 self-end">
             <button
               type="button"
               onClick={() => setIndex((current) => (current - 1 + tips.length) % tips.length)}

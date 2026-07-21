@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { router } from '@/router';
@@ -6,6 +6,8 @@ import { queryClient } from '@/lib/queryClient';
 import { useAuthStore } from '@/stores/auth';
 import { usePrefsStore } from '@/stores/prefs';
 import { Toaster } from '@/components/ui/Toast';
+import NativeRuntime from '@/components/native/NativeRuntime';
+import LoadingScreen from '@/components/shared/LoadingScreen';
 
 const FONT_SCALE_PX: Record<'small' | 'normal' | 'large', string> = {
   small: '14px',
@@ -26,7 +28,10 @@ export default function App() {
   }, [compactRows]);
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <NativeRuntime />
+      <Suspense fallback={<LoadingScreen />}>
+        <RouterProvider router={router} />
+      </Suspense>
       <Toaster />
     </QueryClientProvider>
   );

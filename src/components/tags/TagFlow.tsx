@@ -2,8 +2,9 @@
 // Keyboard-first; root cause is skipped when the outcome is R.
 // Source records subject/kind/year/set/image/marks so questions can be looked up
 // and time targets can be pegged to 1-mark (~90s) vs 2-mark (~180s).
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { ArrowLeft } from 'lucide-react';
 import type { Outcome, PatternRow, RootCause } from '@/types';
 import { OUTCOME_BY_CODE } from '@/lib/constants';
 import { cn, secondsToClock } from '@/lib/utils';
@@ -14,6 +15,8 @@ import OutcomeStep from '@/components/tags/OutcomeStep';
 import PatternStep from '@/components/tags/PatternStep';
 import TriggerStep from '@/components/tags/TriggerStep';
 import RootCauseStep from '@/components/tags/RootCauseStep';
+import { haptic, isNativeApp } from '@/lib/native';
+import { Button } from '@/components/ui/Button';
 
 export interface TagDraft {
   source: SourceDraft;
@@ -76,6 +79,7 @@ export default function TagFlow({
   const steps = STEP_LABELS.filter((s) => s.id !== 'cause' || outcome !== 'R');
 
   function go(next: Step, d: 1 | -1) {
+    clearTimeout(advanceTimer.current);
     dir.current = d;
     setStep(next);
   }
@@ -132,9 +136,84 @@ export default function TagFlow({
   }
 
   const activeIdx = steps.findIndex((s) => s.id === step);
+  const activeLabel = steps[activeIdx]?.label ?? '';
+  const previousStep = activeIdx > 0 ? steps[activeIdx - 1] : null;
+
+  function goBack() {
+    if (previousStep) {
+      haptic('selection');
+      go(previousStep.id, -1);
+    } else {
+      onCancel();
+    }
+  }
+
+  useEffect(() => {
+    if (!isNativeApp) return;
+    const onNativeBack = (event: Event) => {
+      event.preventDefault();
+      goBack();
+    };
+    window.addEventListener('air:native-back', onNativeBack);
+    return () => window.removeEventListener('air:native-back', onNativeBack);
+  });
+
+  useEffect(() => () => clearTimeout(advanceTimer.current), []);
 
   return (
-    <div className="flex flex-col gap-5" data-testid="tag-flow">
+    <div className="native-tag-flow flex flex-col gap-5" data-testid="tag-flow">
+      {isNativeApp ? (
+        <div className="native-tag-header border-b border-border pb-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="u-label">Step {activeIdx + 1} of {steps.length}</p>
+              <p className="mt-1 font-display text-[20px] font-semibold capitalize text-text">
+                {activeLabel}
+              </p>
+            </div>
+            <span className="u-num text-right text-[12px] leading-relaxed text-text-muted">
+              {questionLabel}<br />{secondsToClock(timeSpentSec)}
+            </span>
+          </div>
+          <ol className="mt-4 flex gap-1.5" aria-label="Tagging progress">
+            {steps.map((item, index) => (
+              <li key={item.id} className="flex-1">
+                <button
+                  type="button"
+                  disabled={index >= activeIdx}
+                  onClick={() => {
+                    haptic('selection');
+                    go(item.id, -1);
+                  }}
+                  className={cn(
+                    'block h-5 w-full rounded-full p-0 transition-colors',
+                    index < activeIdx ? 'cursor-pointer' : 'cursor-default'
+                  )}
+                  aria-label={`${item.label}${index === activeIdx ? ', current step' : index < activeIdx ? ', edit step' : ''}`}
+                >
+                  <span
+                    className={cn(
+                      'mx-auto block h-1.5 w-full rounded-full transition-colors',
+                      index <= activeIdx ? 'bg-accent' : 'bg-border'
+                    )}
+                  />
+                </button>
+              </li>
+            ))}
+          </ol>
+          <div className="native-tag-step-nav mt-3 flex items-center justify-between gap-3">
+            <Button variant="ghost" size="sm" onClick={goBack}>
+              <ArrowLeft size={15} strokeWidth={1.8} className="mr-1.5" />
+              {previousStep ? `Back to ${previousStep.label}` : 'Back to question'}
+            </Button>
+            {activeIdx > 1 && (
+              <span className="text-right text-[11px] leading-relaxed text-text-faint">
+                Tap an earlier bar to edit
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
         <ol className="flex items-center gap-1.5">
           {steps.map((s, i) => (
@@ -169,6 +248,7 @@ export default function TagFlow({
           )}
         </span>
       </div>
+      )}
 
       <div className="overflow-x-clip">
         <AnimatePresence mode="popLayout" initial={false} custom={dir.current}>
@@ -215,7 +295,11 @@ export default function TagFlow({
       </div>
 
       <p className="u-label text-text-faint">
-        {saving ? 'saving…' : 'esc goes back · this should take under 30 seconds'}
+        {saving
+          ? 'saving…'
+          : isNativeApp
+            ? 'saves locally first'
+            : 'esc goes back · this should take under 30 seconds'}
       </p>
     </div>
   );

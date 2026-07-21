@@ -162,7 +162,7 @@ export default function Nav() {
   ];
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[224px] flex-col border-r border-border bg-bg md:flex">
+    <aside className="native-side-nav fixed inset-y-0 left-0 z-30 hidden w-[224px] flex-col border-r border-border bg-bg md:flex">
       <div className="flex items-center justify-between px-4 pb-4 pt-4">
         <Brand />
         {showCountdown && (

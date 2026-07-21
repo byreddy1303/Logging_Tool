@@ -237,9 +237,10 @@ export default function Calibration() {
               Nothing tagged yet. Set a decision on any question via the inbox below.
             </p>
           ) : (
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
+            <div className="u-table-wrap">
+              <table className="u-data-table min-w-[760px] text-[13px]">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
                   <th className="px-4 py-2 font-mono">Subject</th>
                   <th className="px-2 py-2 text-right font-mono">Answered</th>
                   <th className="px-2 py-2 text-right font-mono">50/50</th>
@@ -247,9 +248,9 @@ export default function Calibration() {
                   <th className="px-2 py-2 text-right font-mono">Accuracy</th>
                   <th className="px-2 py-2 text-right font-mono">EV / Q</th>
                   <th className="px-4 py-2 font-mono">Recommendation</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
                 {rows.map((r) => {
                   const rec = RECOMMENDATION_COPY[r.recommendation];
                   const ink = subjectInk(r.subject);
@@ -304,8 +305,9 @@ export default function Calibration() {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           )}
         </CardBody>
       </Card>

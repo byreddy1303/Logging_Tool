@@ -104,7 +104,7 @@ export default function Signup() {
   const daysLeft = differenceInCalendarDays(parseISO(EXAM_DATE_DEFAULT), new Date());
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-bg">
+    <div className="native-auth-page relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
         <Brand size="sm" />
         <Link to="/auth" className="u-label hover:text-text">
@@ -117,7 +117,7 @@ export default function Signup() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.28, ease: 'easeOut' }}
-          className="u-panel relative w-full max-w-[440px] p-8"
+          className="native-auth-panel u-panel relative w-full max-w-[440px] p-8"
         >
           <span className="u-stamp absolute right-6 top-7">
             {invited ? 'invite' : 'closed'}

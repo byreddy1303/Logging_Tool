@@ -448,8 +448,8 @@ export default function Buddy() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-8rem)] flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="native-buddy-page flex h-[calc(100dvh-8rem)] flex-col gap-3">
+      <div className="native-buddy-header flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="font-display text-[22px] font-bold leading-tight text-text">
             Buddy
@@ -525,11 +525,11 @@ export default function Buddy() {
         )}
       </AnimatePresence>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="native-buddy-layout grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-[300px_minmax(0,1fr)]">
         {/* Buddies list */}
         <div
           className={cn(
-            'flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-bg-raised',
+            'native-buddy-list flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-bg-raised',
             mobileView === 'chat' ? 'hidden md:flex' : 'flex'
           )}
         >
@@ -601,13 +601,13 @@ export default function Buddy() {
         {/* Chat pane */}
         <div
           className={cn(
-            'min-h-0 overflow-hidden',
+            'native-buddy-pane min-h-0 overflow-hidden',
             mobileView === 'list' ? 'hidden md:block' : 'block'
           )}
         >
           {activeBuddy && userId ? (
             <div className="flex h-full min-h-0 flex-col">
-              <div className="mb-2 flex items-center gap-2 md:hidden">
+              <div className="native-buddy-back-row mb-2 flex items-center gap-2 md:hidden">
                 <button
                   type="button"
                   onClick={() => setMobileView('list')}

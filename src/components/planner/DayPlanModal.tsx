@@ -34,6 +34,7 @@ import type {
   StudyMode,
   StudySession
 } from '@/lib/planner-storage';
+import { isNativeApp } from '@/lib/native';
 
 interface Props {
   date: string;
@@ -67,6 +68,7 @@ export default function DayPlanModal({
   const [mode, setMode] = useState<'view' | 'edit'>(() =>
     planHasContent(plan) ? 'view' : 'edit'
   );
+  const native = isNativeApp;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -86,7 +88,7 @@ export default function DayPlanModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-text/30 p-3 backdrop-blur-[2px] sm:p-6"
+      className="planner-day-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-text/30 p-3 backdrop-blur-[2px] sm:p-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -96,12 +98,15 @@ export default function DayPlanModal({
         animate={{ y: 0, opacity: 1, scale: 1 }}
         exit={{ y: 8, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-        className="my-4 w-full max-w-[860px] overflow-hidden rounded-lg border border-border bg-bg-raised shadow-lift"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="day-plan-title"
+        className="planner-day-sheet my-4 w-full max-w-[860px] overflow-hidden rounded-lg border border-border bg-bg-raised shadow-lift"
       >
-        <header className="flex flex-wrap items-center gap-3 border-b border-border bg-bg-overlay/30 px-4 py-3 sm:px-5">
+        <header className="planner-day-header flex flex-wrap items-center gap-3 border-b border-border bg-bg-overlay/30 px-4 py-3 sm:px-5">
           <div className="min-w-0 flex-1">
             <p className="u-label">Day plan</p>
-            <h2 className="font-display text-[18px] font-bold text-text">
+            <h2 id="day-plan-title" className="font-display text-[18px] font-bold text-text">
               {formatDate(date, 'EEEE, dd MMM yyyy')}
             </h2>
           </div>
@@ -129,10 +134,10 @@ export default function DayPlanModal({
                 disabled={!planHasContent(plan)}
               >
                 <Check size={11} strokeWidth={2} className="mr-1" />
-                Save
+                {native ? 'Done' : 'Save'}
               </Button>
             )}
-            {mode === 'edit' &&
+            {mode === 'edit' && !native &&
               (!confirmDelete ? (
                 <Button
                   variant="ghost"
@@ -167,7 +172,7 @@ export default function DayPlanModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full p-1 text-text-faint transition-colors hover:bg-bg-overlay hover:text-text"
+              className="planner-day-close rounded-full p-1 text-text-faint transition-colors hover:bg-bg-overlay hover:text-text"
               aria-label="Close"
             >
               <X size={16} strokeWidth={1.75} />
@@ -175,24 +180,63 @@ export default function DayPlanModal({
           </div>
         </header>
 
-        <div className="flex flex-col gap-3 p-4 sm:p-5">
+        <div className="planner-day-body flex flex-col gap-3 p-4 sm:p-5">
           {mode === 'view' ? (
             <ViewMode plan={plan} />
           ) : (
             <>
-              <Section title="1 · Study sessions" defaultOpen>
+              <Section
+                title={native ? 'Study sessions' : '1 · Study sessions'}
+                description={native ? 'Build a realistic sequence for this day.' : undefined}
+                defaultOpen
+              >
                 <SessionsEditor
                   sessions={plan.sessions}
                   onChange={(sessions) => update('sessions', sessions)}
                 />
               </Section>
 
-              <Section title="2 · Review (fill after the day)">
+              <Section
+                title={native ? 'Review the day' : '2 · Review (fill after the day)'}
+                description={native ? 'Return after studying and record what actually happened.' : undefined}
+              >
                 <ReviewEditor
                   review={plan.review}
                   onChange={(review) => update('review', review)}
                 />
               </Section>
+
+              {native && (
+                <div className="planner-clear-zone flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[13px] font-medium text-text">Clear this day</p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-text-faint">
+                      Removes its sessions and review from this device.
+                    </p>
+                  </div>
+                  {!confirmDelete ? (
+                    <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}>
+                      Clear plan
+                    </Button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
+                        Keep it
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => {
+                          onDelete();
+                          setConfirmDelete(false);
+                        }}
+                      >
+                        Confirm clear
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -211,9 +255,9 @@ function ViewMode({ plan }: { plan: DayPlan }) {
       : null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="planner-view flex flex-col gap-4">
       {/* Sessions */}
-      <div className="rounded border border-border bg-bg">
+      <div className="planner-view-block rounded border border-border bg-bg">
         <div className="flex items-center justify-between border-b border-border/70 px-3 py-2">
           <p className="font-display text-[13.5px] font-semibold text-text">
             Study sessions ({plan.sessions.length})
@@ -232,7 +276,7 @@ function ViewMode({ plan }: { plan: DayPlan }) {
                   ? s.customSubject
                   : s.subject;
               return (
-                <li key={s.id} className="px-3 py-2.5">
+                <li key={s.id} className="planner-view-session px-3 py-2.5">
                   <div className="flex flex-wrap items-baseline gap-2">
                     <span className="u-num text-[11px] text-text-faint">
                       {String(i + 1).padStart(2, '0')}
@@ -272,7 +316,7 @@ function ViewMode({ plan }: { plan: DayPlan }) {
         plan.review.missed ||
         plan.review.endMood ||
         plan.review.replicate) && (
-        <div className="rounded border border-border bg-bg">
+        <div className="planner-view-block rounded border border-border bg-bg">
           <div className="border-b border-border/70 px-3 py-2">
             <p className="font-display text-[13.5px] font-semibold text-text">
               End-of-day review
@@ -325,14 +369,30 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 
 function Section({
   title,
+  description,
   defaultOpen = false,
   children
 }: {
   title: string;
+  description?: string;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const native = isNativeApp;
+  if (native) {
+    return (
+      <section className="planner-section overflow-hidden rounded border border-border bg-bg">
+        <div className="planner-section-heading">
+          <h3 className="font-display text-[18px] font-semibold text-text">{title}</h3>
+          {description && (
+            <p className="mt-1.5 text-[13px] leading-relaxed text-text-muted">{description}</p>
+          )}
+        </div>
+        <div className="planner-section-body border-t border-border/70">{children}</div>
+      </section>
+    );
+  }
   return (
     <section className="overflow-hidden rounded border border-border bg-bg">
       <button
@@ -346,10 +406,7 @@ function Section({
         <ChevronDown
           size={14}
           strokeWidth={1.75}
-          className={cn(
-            'text-text-faint transition-transform',
-            open && 'rotate-180'
-          )}
+          className={cn('text-text-faint transition-transform', open && 'rotate-180')}
         />
       </button>
       {open && <div className="border-t border-border/70 p-3">{children}</div>}
@@ -387,13 +444,13 @@ function SessionsEditor({
   const total = sessions.reduce((s, x) => s + (x.durationMin || 0), 0);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="planner-sessions-editor flex flex-col gap-3">
       {sessions.length === 0 ? (
         <p className="text-[12px] text-text-muted">
           No sessions yet. Add one to start planning the day.
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="planner-session-list flex flex-col gap-2">
           {sessions.map((s, i) => (
             <SessionRow
               key={s.id}
@@ -405,7 +462,7 @@ function SessionsEditor({
           ))}
         </div>
       )}
-      <div className="flex items-center justify-between">
+      <div className="planner-session-footer flex items-center justify-between">
         <Button variant="secondary" size="sm" onClick={addSession}>
           <Plus size={11} strokeWidth={2} className="mr-1" />
           Add subject
@@ -432,7 +489,7 @@ function SessionRow({
   const isCustomSubject = session.subject === 'Custom...';
 
   return (
-    <div className="rounded border border-border/70 bg-bg-raised px-3 py-2.5">
+    <div className="planner-session-card rounded border border-border/70 bg-bg-raised px-3 py-2.5">
       <div className="mb-2 flex items-center justify-between">
         <p className="u-label">Session {index + 1}</p>
         <button
@@ -444,7 +501,7 @@ function SessionRow({
           <Trash2 size={12} strokeWidth={1.75} />
         </button>
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="planner-session-fields grid grid-cols-1 gap-2 sm:grid-cols-2">
         <Field label="Subject">
           <Select
             value={session.subject}
@@ -488,7 +545,7 @@ function SessionRow({
               = {formatHours(session.durationMin)}
             </span>
           </div>
-          <div className="mt-1.5 flex flex-wrap gap-1">
+          <div className="planner-duration-options mt-1.5 flex flex-wrap gap-1">
             {DURATIONS.filter((d) => d.value > 0).map((d) => {
               const on = d.value === session.durationMin;
               return (
@@ -565,7 +622,7 @@ function ReviewEditor({
   onChange: (next: DayPlan['review']) => void;
 }) {
   return (
-    <div className="flex flex-col gap-3">
+    <div className="planner-review-editor flex flex-col gap-3">
       <Field label={`Completion — ${review.completionPct}%`}>
         <input
           type="range"
@@ -663,7 +720,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn('flex flex-col gap-1', className)}>
+    <div className={cn('planner-field flex flex-col gap-1', className)}>
       <span className="u-label">{label}</span>
       {children}
     </div>

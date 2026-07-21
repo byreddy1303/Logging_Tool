@@ -36,11 +36,12 @@ export function useOnline(): boolean {
 export function usePendingCount(): number {
   return (
     useLiveQuery(async () => {
-      let total = 0;
-      for (const name of SYNCED_TABLES) {
-        total += await table(name).where('sync_status').anyOf('pending', 'error').count();
-      }
-      return total;
+      const counts = await Promise.all(
+        SYNCED_TABLES.map((name) =>
+          table(name).where('sync_status').anyOf('pending', 'error').count()
+        )
+      );
+      return counts.reduce((total, count) => total + count, 0);
     }, []) ?? 0
   );
 }

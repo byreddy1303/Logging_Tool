@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { haptic } from '@/lib/native';
 
 export interface TabItem<T extends string = string> {
   value: T;
@@ -17,7 +18,7 @@ export function Tabs<T extends string>({
   className?: string;
 }) {
   return (
-    <div role="tablist" className={cn('flex gap-5 border-b border-border', className)}>
+    <div role="tablist" className={cn('u-tabs flex gap-5 border-b border-border', className)}>
       {items.map((item) => {
         const active = item.value === value;
         return (
@@ -25,9 +26,12 @@ export function Tabs<T extends string>({
             key={item.value}
             role="tab"
             aria-selected={active}
-            onClick={() => onChange(item.value)}
+            onClick={() => {
+              if (!active) haptic('selection');
+              onChange(item.value);
+            }}
             className={cn(
-              '-mb-px border-b-2 pb-2 pt-1 text-[13px] transition-colors',
+              'u-tab -mb-px border-b-2 pb-2 pt-1 text-[13px] transition-colors',
               active
                 ? 'border-accent font-semibold text-text'
                 : 'border-transparent font-medium text-text-faint hover:text-text-muted'

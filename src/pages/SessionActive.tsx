@@ -31,9 +31,8 @@ import { Empty } from '@/components/ui/Empty';
 
 async function reconcilePattern(userId: string, subject: string, name: string) {
   const count = await db.questions
-    .where('user_id')
-    .equals(userId)
-    .filter((q) => q.pattern_name === name)
+    .where('[user_id+pattern_name]')
+    .equals([userId, name])
     .count();
   const existing = await db.patterns.where('[user_id+name]').equals([userId, name]).first();
   if (existing) {
@@ -129,7 +128,7 @@ export default function SessionActive() {
         source.questionNumber,
         source.format
       ),
-      question_text: null,
+      question_text: source.questionText,
       image_url: source.imageDataUrl,
       time_spent_sec: timeSpent,
       target_time_sec: target,

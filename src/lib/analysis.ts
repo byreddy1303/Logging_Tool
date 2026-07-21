@@ -65,10 +65,11 @@ export function outcomeDistribution(questions: QuestionRow[]): Record<Outcome, n
   return empty;
 }
 
-/** Newest session by created_at, or null. */
+/** Newest finished session by created_at, or null. */
 export function latestSession(sessions: SessionRow[]): SessionRow | null {
-  if (sessions.length === 0) return null;
-  return [...sessions].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+  const finished = sessions.filter((session) => session.actual_duration_min !== null);
+  if (finished.length === 0) return null;
+  return [...finished].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
 }
 
 /** Reattempts due today or overdue and not yet mastered. */

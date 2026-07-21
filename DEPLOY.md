@@ -4,7 +4,7 @@ Follow this document top-to-bottom to take AIR Journal from a fresh clone to a w
 
 ## 0. Prerequisites
 
-- Node 20 LTS locally.
+- Node 22 LTS or newer locally (required by the maintained Capacitor toolchain).
 - `npm i -g supabase vercel` (or `npx …` — used everywhere below).
 - A Supabase account (free tier is sufficient for the first ~50 active users).
 - A Vercel account (Hobby plan is fine).
@@ -112,7 +112,7 @@ vercel env add VITE_SENTRY_DSN production       # optional
 vercel --prod
 ```
 
-Vercel's default Node runtime is 20 LTS, matching the build spec.
+Set the Vercel project's Node runtime to 22.x or newer, matching `package.json` and `.nvmrc`.
 
 ## 8. Smoke test
 

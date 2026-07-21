@@ -101,13 +101,13 @@ export default function Heatmap() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="native-heatmap-page flex flex-col gap-4">
       <PageHeader
         title="Weakness heatmap"
         description="Where mistakes concentrate. Loud cells are targets. Click a cell to open the journal there."
       />
 
-      <Card>
+      <Card className="native-heatmap-filters">
         <CardBody className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1.5">
             <span className="u-label">From</span>
@@ -165,12 +165,82 @@ export default function Heatmap() {
           />
         </Card>
       ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-[12px]">
+        <Card className="native-heatmap-card overflow-hidden">
+          <div className="native-heatmap-list hidden" aria-label="Weakness heatmap by subject">
+            <div className="native-heatmap-list-intro">
+              <p className="u-label text-accent">Mistake concentration</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
+                Darker cells need more attention. Tap any numbered cause to open those questions.
+              </p>
+            </div>
+            {rowsShown.map((row) => {
+              const ink = subjectInk(row.subject);
+              const rowKey = `${row.subject}||${row.subtopic ?? ''}`;
+              const rowTotal = rowTotals.get(rowKey) ?? 0;
+              return (
+                <article key={rowKey} className="native-heatmap-row-card">
+                  <header className="flex items-start justify-between gap-3">
+                    <span className="flex min-w-0 items-start gap-2.5">
+                      <span className={cn('mt-2 h-2 w-2 shrink-0 rounded-full', ink.dot)} />
+                      <span className="min-w-0">
+                        <span className="block font-display text-[17px] font-semibold leading-snug text-text">
+                          {row.subject}
+                        </span>
+                        {row.subtopic ? (
+                          <span className="mt-1 block text-[12px] leading-relaxed text-text-muted">
+                            {row.subtopic}
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                    <span className="native-heatmap-total shrink-0">
+                      <span className="u-num text-[17px] font-semibold">{rowTotal}</span>
+                      <span className="text-[9px] uppercase tracking-[0.08em]">total</span>
+                    </span>
+                  </header>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2.5">
+                    {CAUSE_COLUMNS.map((cause) => {
+                      const count = cellByKey.get(`${rowKey}||${cause.key}`) ?? 0;
+                      const intensity = count === 0 ? 0 : count / rowMax;
+                      const { bg, text } = cellColor(intensity);
+                      const label = `${count} ${plural(count, 'mistake')} in ${row.subject}${row.subtopic ? ` · ${row.subtopic}` : ''} · ${cause.label}`;
+                      return (
+                        <button
+                          key={cause.key}
+                          type="button"
+                          disabled={count === 0}
+                          onClick={() => openJournalForCell(row.subject, row.subtopic, cause.key)}
+                          aria-label={label}
+                          className={cn(
+                            'native-heatmap-cause flex min-h-[62px] items-center justify-between gap-2 rounded-xl border px-3 text-left transition-transform',
+                            bg,
+                            text,
+                            count > 0
+                              ? 'border-current/10 active:scale-[0.98]'
+                              : 'cursor-default border-border/55'
+                          )}
+                        >
+                          <span className="min-w-0 text-[11px] font-semibold leading-tight">
+                            {cause.label}
+                          </span>
+                          <span className="u-num text-[19px] font-semibold">
+                            {count === 0 ? '·' : count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="native-heatmap-desktop u-table-wrap">
+            <table className="heatmap-matrix u-matrix-table min-w-[720px] text-[12px]">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-10 bg-bg-raised px-3 py-2 text-left font-semibold text-text-muted">
+                  <th className="heatmap-row-heading sticky left-0 z-20 bg-bg-raised px-3 py-2 text-left font-semibold text-text-muted">
                     Subject{groupBySubtopic ? ' · Subtopic' : ''}
                   </th>
                   {CAUSE_COLUMNS.map((c) => (
@@ -191,13 +261,17 @@ export default function Heatmap() {
                   const rowTotal = rowTotals.get(rowKey) ?? 0;
                   return (
                     <tr key={rowKey} className={cn(i % 2 === 1 && 'bg-bg-overlay/25')}>
-                      <td className="sticky left-0 z-10 whitespace-nowrap border-r border-border bg-inherit px-3 py-2">
-                        <span className="flex items-center gap-2">
+                      <td className="heatmap-row-label sticky left-0 z-10 border-r border-border bg-bg-raised px-3 py-2">
+                        <span className="flex min-w-0 items-center gap-2">
                           <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', ink.dot)} />
-                          <span className="font-medium text-text">{r.subject}</span>
-                          {r.subtopic && (
-                            <span className="text-text-muted">· {r.subtopic}</span>
-                          )}
+                          <span className="min-w-0">
+                            <span className="block font-medium text-text">{r.subject}</span>
+                            {r.subtopic && (
+                              <span className="heatmap-subtopic mt-0.5 block truncate text-[11px] text-text-muted">
+                                {r.subtopic}
+                              </span>
+                            )}
+                          </span>
                         </span>
                       </td>
                       {CAUSE_COLUMNS.map((c) => {

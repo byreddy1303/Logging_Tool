@@ -42,7 +42,7 @@ export default function ForgotPin() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-bg">
+    <div className="native-auth-page relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
         <Brand size="sm" />
         <Link to="/auth" className="u-label hover:text-text">
@@ -55,7 +55,7 @@ export default function ForgotPin() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.28, ease: 'easeOut' }}
-          className="u-panel relative w-full max-w-[400px] p-8"
+          className="native-auth-panel u-panel relative w-full max-w-[400px] p-8"
         >
           <div className="u-margin-line">
             <h1 className="font-display text-[24px] font-bold leading-tight tracking-tight text-text">

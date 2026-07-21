@@ -15,6 +15,16 @@ coverage
 playwright-report
 test-results
 
+# Native build outputs and machine-local Android configuration
+android/.gradle
+android/.idea
+android/local.properties
+android/app/build
+android/build
+*.jks
+*.keystore
+keystore.properties
+
 # Build artefacts that leak from tsc / vite type-checking
 *.tsbuildinfo
 vite.config.js
@@ -27,3 +37,4 @@ vite.config.d.ts
 # ...but keep the templates so `git clone` gives new operators a starting shape
 !.env.example
 !.deploy.env.example
+!.env.capacitor.example

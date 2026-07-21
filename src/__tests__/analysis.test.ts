@@ -123,6 +123,28 @@ describe('latestSession', () => {
   it('returns null for empty', () => {
     expect(latestSession([])).toBeNull();
   });
+
+  it('ignores a newer session that is still running', () => {
+    const finished: SessionRow = {
+      id: 's-finished',
+      user_id: USER,
+      date: '2026-07-17',
+      subject: 'Algorithms',
+      target_duration_min: 60,
+      actual_duration_min: 42,
+      insight: null,
+      sadhana_done: false,
+      interruptions_count: 0,
+      created_at: '2026-07-17T09:00:00.000Z'
+    };
+    const running: SessionRow = {
+      ...finished,
+      id: 's-running',
+      actual_duration_min: null,
+      created_at: '2026-07-22T09:00:00.000Z'
+    };
+    expect(latestSession([finished, running])?.id).toBe('s-finished');
+  });
 });
 
 describe('dueTodayCount', () => {

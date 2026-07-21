@@ -116,17 +116,15 @@ export default function Patterns() {
     setMerging(true);
     try {
       const qs = await db.questions
-        .where('user_id')
-        .equals(userId)
-        .filter((q) => q.pattern_name === from.row.name)
+        .where('[user_id+pattern_name]')
+        .equals([userId, from.row.name])
         .toArray();
       for (const q of qs) {
         await writeLocal('questions', { ...q, pattern_name: into.row.name });
       }
       const total = await db.questions
-        .where('user_id')
-        .equals(userId)
-        .filter((q) => q.pattern_name === into.row.name)
+        .where('[user_id+pattern_name]')
+        .equals([userId, into.row.name])
         .count();
       await writeLocal('patterns', { ...into.row, count: total });
       await deleteLocal('patterns', from.row.id);

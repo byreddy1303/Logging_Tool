@@ -1,5 +1,6 @@
 import { Kbd } from '@/components/ui/Kbd';
 import { cn } from '@/lib/utils';
+import { haptic } from '@/lib/native';
 
 export type TagTone = 'ok' | 'slow' | 'guess' | 'wrong' | 'neutral';
 
@@ -30,7 +31,10 @@ export default function TagOption({
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={() => {
+        haptic('selection');
+        onSelect();
+      }}
       className={cn(
         'relative flex w-full items-center gap-3 rounded border bg-bg-raised px-4 py-3 text-left shadow-sm transition-all duration-150',
         'before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:opacity-0 before:transition-opacity',

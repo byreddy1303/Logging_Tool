@@ -50,7 +50,7 @@ export default function Auth() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-bg">
+    <div className="native-auth-page relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
         <Brand size="sm" />
         <span className="u-label">invite-only</span>
@@ -61,7 +61,7 @@ export default function Auth() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.28, ease: 'easeOut' }}
-          className="u-panel relative w-full max-w-[400px] p-8"
+          className="native-auth-panel u-panel relative w-full max-w-[400px] p-8"
         >
           <span className="u-stamp absolute right-6 top-7">gate 2027</span>
 

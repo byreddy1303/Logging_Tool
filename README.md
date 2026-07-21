@@ -61,6 +61,7 @@ Each account's data is fully separate:
 
 - [`BUILD.md`](./BUILD.md) — Master build specification. Everything technical lives here.
 - [`DEPLOY.md`](./DEPLOY.md) — Production deployment walkthrough (Supabase + Vercel + Resend).
+- [`ANDROID.md`](./ANDROID.md) — Android APK/AAB builds, signing, device QA, and release workflow.
 - [`CLAUDE.md`](./CLAUDE.md) — Autonomy contract for AI-assisted builds.
 - [`FROZEN.md`](./FROZEN.md) — Feature-freeze commitment (2026-10-31).
 - [`DECISIONS.md`](./DECISIONS.md) — Log of choices made mid-build.
@@ -116,6 +117,16 @@ npx vercel --prod
 ```
 
 After the first Vercel deploy, put the resulting URL into `.deploy.env` as `VITE_APP_URL` and re-run `bash scripts/deploy.sh` so invite emails link to your real domain.
+
+## Android
+
+AIR Journal ships from the same codebase as a Capacitor Android app. Create `.env.capacitor.local` from the template, then run:
+
+```bash
+npm run android:apk
+```
+
+See [`ANDROID.md`](./ANDROID.md) before distributing a build; release APKs/AABs must be signed and tested on a physical device.
 
 ## License
 

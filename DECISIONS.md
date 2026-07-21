@@ -112,3 +112,19 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 **Rejected**: notification controls inside Planner and the Day structure, Mindset & energy, and Non-study task sections.
 
 **Reason**: direct user direction. Planner should carry only the study-planning workflow; delivery configuration belongs to a single, predictable control surface.
+
+## 2026-07-21 — Android shell with current Capacitor runtime
+
+**Chose**: Capacitor 8, Android package `in.airjournal.app`, one shared React build, edge-to-edge safe-area CSS, native lifecycle handling, and opt-out haptics.
+
+**Rejected**: a remote-only WebView wrapper, a separate React Native rewrite, and the unmaintained Capacitor 7 line.
+
+**Reason**: Capacitor preserves AIR Journal's tested local-first implementation while providing a maintained Android runtime and a clean path to native behavior without duplicating product logic; the required Node baseline moves from 20 to 22.
+
+## 2026-07-21 — Bright data rails and parallel background hydration
+
+**Chose**: retain the sunlit notebook identity with a brighter morning-paper palette, one shared table alignment system, compound IndexedDB indexes for common scoped lookups, and parallel deduplicated Supabase pulls.
+
+**Rejected**: a generic white dashboard redesign and claims of literal O(1) remote fetching.
+
+**Reason**: local keyed reads can be constant-time or logarithmic, but network latency and returned row count remain real. Parallel stale-while-revalidate hydration keeps the interface immediate while preserving complete multi-device sync semantics.

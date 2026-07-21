@@ -189,6 +189,19 @@ export default function QuestionEditor({
       )}
 
       {/* Photo — available for every source, always. */}
+      <Field label="Question text (recommended)">
+        <Textarea
+          rows={4}
+          value={draft.questionText ?? ''}
+          onChange={(event) => set('questionText', event.target.value || null)}
+          placeholder="Paste the prompt so it is available during re-attempts."
+        />
+        <p className="text-[11px] leading-relaxed text-text-faint">
+          Saved with the question and shown on its timed re-attempt card.
+        </p>
+      </Field>
+
+      {/* Photo — available for every source, always. */}
       <Field label="Question photo (optional)">
         <input
           ref={fileRef}

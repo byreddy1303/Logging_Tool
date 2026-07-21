@@ -4,7 +4,7 @@
 //
 // Explains the loop to a stranger in four calm paper slides. No emojis, no
 // hype, no counters, no dark patterns.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowRight, X } from 'lucide-react';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
@@ -78,7 +78,7 @@ export default function WelcomeOverlay() {
     };
   }, [profile, sandbox]);
 
-  async function dismiss() {
+  const dismiss = useCallback(async () => {
     setVisible(false);
     const stamp = new Date().toISOString();
     if (sandbox || !supabaseConfigured) {
@@ -95,7 +95,16 @@ export default function WelcomeOverlay() {
       .update({ welcome_seen_at: stamp })
       .eq('id', profile.id);
     if (!error) void refreshProfile();
-  }
+  }, [profile, refreshProfile, sandbox]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') void dismiss();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [dismiss, visible]);
 
   if (!visible) return null;
 
@@ -109,7 +118,7 @@ export default function WelcomeOverlay() {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 px-4 py-8 backdrop-blur-sm"
+        className="native-welcome-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/25 px-4 py-8 backdrop-blur-sm"
         role="dialog"
         aria-modal="true"
         aria-labelledby="welcome-title"
@@ -119,7 +128,7 @@ export default function WelcomeOverlay() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8, scale: 0.98 }}
           transition={{ duration: 0.28, ease: 'easeOut' }}
-          className="u-panel relative w-full max-w-[520px] overflow-hidden"
+          className="native-welcome-panel u-panel relative w-full max-w-[520px] overflow-hidden"
         >
           <button
             type="button"

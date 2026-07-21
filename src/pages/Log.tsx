@@ -41,9 +41,8 @@ const DEFAULT_SUBJECT = 'Discrete Mathematics';
 
 async function reconcilePattern(userId: string, subject: string, name: string) {
   const count = await db.questions
-    .where('user_id')
-    .equals(userId)
-    .filter((q) => q.pattern_name === name)
+    .where('[user_id+pattern_name]')
+    .equals([userId, name])
     .count();
   const existing = await db.patterns.where('[user_id+name]').equals([userId, name]).first();
   if (existing) {
@@ -423,8 +422,8 @@ export default function Log() {
             className="border-0 py-8"
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-[13px]">
+          <div className="u-table-wrap">
+            <table className="u-data-table min-w-[700px] text-[13px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
                   <th className="px-3 py-2 font-mono">Date</th>
@@ -434,7 +433,7 @@ export default function Log() {
                   <th className="hidden px-3 py-2 font-mono md:table-cell">Source</th>
                   <th className="px-3 py-2 font-mono">Pattern</th>
                   <th className="hidden px-3 py-2 text-right font-mono sm:table-cell">Time</th>
-                  <th className="w-[52px] px-3 py-2" />
+                  <th className="w-[64px] px-3 py-2 text-right">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">

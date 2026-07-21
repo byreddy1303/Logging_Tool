@@ -1,5 +1,6 @@
-import { forwardRef, type ButtonHTMLAttributes } from 'react';
+import { forwardRef, type ButtonHTMLAttributes, type PointerEvent } from 'react';
 import { cn } from '@/lib/utils';
+import { haptic, type HapticIntent } from '@/lib/native';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md';
@@ -7,6 +8,7 @@ type Size = 'sm' | 'md';
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
+  hapticIntent?: HapticIntent | 'none';
 }
 
 /* Key-cap physics: rest on a hard under-shadow, sink into it on press. */
@@ -35,15 +37,34 @@ const sizeClasses: Record<Size, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'md', className, type = 'button', ...props },
+  {
+    variant = 'secondary',
+    size = 'md',
+    hapticIntent,
+    className,
+    type = 'button',
+    onPointerUp,
+    disabled,
+    ...props
+  },
   ref
 ) {
+  const resolvedHaptic =
+    hapticIntent ?? (variant === 'primary' ? 'light' : variant === 'danger' ? 'warning' : 'none');
+
+  function handlePointerUp(event: PointerEvent<HTMLButtonElement>) {
+    if (!disabled && resolvedHaptic !== 'none') haptic(resolvedHaptic);
+    onPointerUp?.(event);
+  }
+
   return (
     <button
       ref={ref}
       type={type}
+      disabled={disabled}
+      onPointerUp={handlePointerUp}
       className={cn(
-        'inline-flex select-none items-center justify-center gap-2 rounded',
+        'u-button inline-flex select-none items-center justify-center gap-2 rounded',
         'transition-[transform,background-color,border-color,box-shadow,color] duration-100',
         'disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none disabled:hover:translate-y-0',
         variantClasses[variant],

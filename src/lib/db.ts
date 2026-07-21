@@ -55,6 +55,25 @@ class AirDB extends Dexie {
       triangulate_logs: 'id, user_id, created_at, sync_status',
       meta: 'key'
     });
+    // Compound indexes keep the common user-scoped date and pattern lookups
+    // on an IndexedDB key range instead of scanning a learner's full history.
+    this.version(2).stores({
+      sessions:
+        'id, user_id, date, created_at, sync_status, [user_id+date], [user_id+created_at]',
+      questions:
+        'id, user_id, session_id, subject, outcome, pattern_name, created_at, sync_status, [user_id+created_at], [user_id+pattern_name]',
+      patterns: 'id, user_id, name, subject, count, sync_status, [user_id+name]',
+      reattempts:
+        'id, user_id, question_id, scheduled_date, stage, sync_status, [user_id+scheduled_date]',
+      formulas: 'id, user_id, next_review, sync_status, [user_id+next_review]',
+      trigger_phrases: 'id, user_id, sync_status',
+      weekly_reviews: 'id, user_id, week_start, sync_status, [user_id+week_start]',
+      interruption_logs: 'id, user_id, session_id, sync_status',
+      doubt_sessions: 'id, user_id, created_at, sync_status',
+      variations: 'id, user_id, parent_question_id, sync_status',
+      triangulate_logs: 'id, user_id, created_at, sync_status',
+      meta: 'key'
+    });
   }
 }
 

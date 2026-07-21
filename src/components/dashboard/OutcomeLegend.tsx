@@ -59,7 +59,9 @@ export default function OutcomeLegend() {
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15 }}
             role="dialog"
-            className="absolute right-0 top-full z-30 mt-1 w-[260px] rounded border border-border bg-bg-raised p-3 shadow-lift"
+            aria-modal="true"
+            aria-label="Outcome code legend"
+            className="native-outcome-legend absolute right-0 top-full z-30 mt-1 w-[260px] rounded border border-border bg-bg-raised p-3 shadow-lift"
           >
             <p className="u-label mb-2 text-text-muted">outcome codes</p>
             <ul className="flex flex-col gap-1.5">

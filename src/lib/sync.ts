@@ -12,11 +12,13 @@ interface QueuedDelete {
 
 let syncEnabled = false;
 let started = false;
-let pushing = false;
 let backoffMs = 2000;
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
+let pushInFlight: Promise<void> | null = null;
 let lastPullAt = 0;
 let currentUserId: string | null = null;
+let pullInFlight: Promise<void> | null = null;
+let pullingForUserId: string | null = null;
 
 const BACKOFF_MAX_MS = 60_000;
 const PULL_MIN_GAP_MS = 30_000;
@@ -50,12 +52,15 @@ function schedulePush(delayMs: number) {
 }
 
 /** Push every pending row (and queued deletes). Exposed for tests + listeners. */
-export async function flushPushQueue(): Promise<void> {
-  if (!syncEnabled || pushing) return;
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-  pushing = true;
-  let hadError = false;
-  try {
+export function flushPushQueue(): Promise<void> {
+  if (!syncEnabled) return Promise.resolve();
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return Promise.resolve();
+  // Callers that overlap an auto-scheduled push must await the same work instead
+  // of returning early while deletes or pending rows are still in flight.
+  if (pushInFlight) return pushInFlight;
+
+  pushInFlight = (async () => {
+    let hadError = false;
     for (const name of SYNCED_TABLES) {
       const rows = await table(name).where('sync_status').anyOf('pending', 'error').toArray();
       if (rows.length === 0) continue;
@@ -83,40 +88,71 @@ export async function flushPushQueue(): Promise<void> {
       }
       await db.meta.put({ key: 'delete_queue', value: remaining });
     }
-  } finally {
-    pushing = false;
-  }
 
-  if (hadError) {
-    backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
-    schedulePush(backoffMs);
-  } else {
-    backoffMs = 2000;
-  }
+    if (hadError) {
+      backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
+      schedulePush(backoffMs);
+    } else {
+      backoffMs = 2000;
+    }
+  })().finally(() => {
+    pushInFlight = null;
+  });
+
+  return pushInFlight;
 }
 
 /** Merge all server rows for this user into Dexie. Local pending rows win. */
-export async function pullAll(userId: string): Promise<void> {
-  if (!syncEnabled) return;
-  lastPullAt = Date.now();
-  for (const name of SYNCED_TABLES) {
-    const { data, error } = await supabase.from(name).select('*').eq('user_id', userId);
-    if (error) {
-      console.warn(`[sync] pull failed for ${name}: ${error.message}`);
-      continue;
-    }
-    if (!data?.length) continue;
-    await db.transaction('rw', table(name), async () => {
-      for (const remote of data as { id: string }[]) {
-        const local = await table(name).get(remote.id);
-        if (local && local.sync_status !== 'synced') {
-          console.info(`[sync] conflict on ${name}/${remote.id}: local pending wins`);
-          continue;
+export function pullAll(userId: string): Promise<void> {
+  if (!syncEnabled) return Promise.resolve();
+  if (pullInFlight && pullingForUserId === userId) return pullInFlight;
+
+  pullingForUserId = userId;
+  pullInFlight = (async () => {
+    // Every table is independent on pull. Starting all requests together makes
+    // refresh latency approach the slowest request, not the sum of eight RTTs.
+    const results = await Promise.all(
+      SYNCED_TABLES.map(async (name) => ({
+        name,
+        result: await supabase.from(name).select('*').eq('user_id', userId)
+      }))
+    );
+
+    // A sign-out/user switch can happen while the network batch is in flight.
+    // Never merge the previous account's response into the newly opened DB.
+    if (!syncEnabled || currentUserId !== userId) return;
+
+    await Promise.all(
+      results.map(async ({ name, result: { data, error } }) => {
+        if (error) {
+          console.warn(`[sync] pull failed for ${name}: ${error.message}`);
+          return;
         }
-        await table(name).put({ ...remote, sync_status: 'synced' });
-      }
-    });
-  }
+        if (!data?.length) return;
+
+        const remoteRows = data as { id: string }[];
+        const target = table(name);
+        await db.transaction('rw', target, async () => {
+          const localRows = await target.bulkGet(remoteRows.map((row) => row.id));
+          const merged = remoteRows.flatMap((remote, index) => {
+            const local = localRows[index];
+            if (local && local.sync_status !== 'synced') {
+              console.info(`[sync] conflict on ${name}/${remote.id}: local pending wins`);
+              return [];
+            }
+            return [{ ...remote, sync_status: 'synced' as const }];
+          });
+          if (merged.length > 0) await target.bulkPut(merged);
+        });
+      })
+    );
+    lastPullAt = Date.now();
+  })().finally(() => {
+    pullInFlight = null;
+    pullingForUserId = null;
+  });
+
+  return pullInFlight;
 }
 
 function onOnline() {
@@ -127,6 +163,12 @@ function onOnline() {
 function onFocus() {
   if (currentUserId && Date.now() - lastPullAt > PULL_MIN_GAP_MS) void pullAll(currentUserId);
   schedulePush(0);
+}
+
+/** Reconcile immediately when a native shell returns to the foreground. */
+export function resumeSync(): void {
+  if (!syncEnabled) return;
+  onFocus();
 }
 
 /** Start the engine for a signed-in (non-sandbox) user. Idempotent. */
@@ -146,6 +188,7 @@ export function initSync(userId: string): void {
 export function stopSync(): void {
   syncEnabled = false;
   currentUserId = null;
+  pullingForUserId = null;
   clearTimeout(pushTimer);
 }
 

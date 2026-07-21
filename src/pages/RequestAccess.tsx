@@ -59,7 +59,7 @@ export default function RequestAccess() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-bg">
+    <div className="native-auth-page relative flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-6 py-4">
         <Brand size="sm" />
         <Link to="/auth" className="u-label hover:text-text">
@@ -68,7 +68,7 @@ export default function RequestAccess() {
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 py-8">
-        <div className="grid w-full max-w-[960px] grid-cols-1 gap-6 md:grid-cols-[1fr_1fr]">
+        <div className="native-request-grid grid w-full max-w-[960px] grid-cols-1 gap-6 md:grid-cols-[1fr_1fr]">
           {/* Left: what this is */}
           <Pitch daysLeft={daysLeft} />
 
@@ -77,7 +77,7 @@ export default function RequestAccess() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: 'easeOut' }}
-            className="u-panel relative p-7"
+            className="native-auth-panel u-panel relative p-7"
           >
             <span className="u-stamp absolute right-6 top-6">request access</span>
             <div className="u-margin-line">

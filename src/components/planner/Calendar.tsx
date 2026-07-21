@@ -14,6 +14,7 @@ import {
   subjectChipInk
 } from '@/lib/planner-constants';
 import type { DayCellSummary } from '@/lib/planner-storage';
+import { haptic, isNativeApp } from '@/lib/native';
 
 interface Props {
   year: number;
@@ -91,23 +92,24 @@ export default function Calendar({
   }, [year, monthIndex]);
 
   const todayISO = iso(today.getFullYear(), today.getMonth(), today.getDate());
+  const native = isNativeApp;
 
   return (
-    <div className="flex flex-col rounded-lg border border-border bg-bg-raised">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+    <div className="native-planner-calendar flex flex-col rounded-lg border border-border bg-bg-raised">
+      <div className="native-calendar-toolbar flex items-center justify-between border-b border-border px-4 py-3">
         <button
           type="button"
           onClick={onPrevMonth}
           disabled={atMin}
           className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-full border border-border bg-bg-raised text-text-muted transition-all hover:border-border-hover hover:text-text',
+            'native-calendar-arrow flex h-8 w-8 items-center justify-center rounded-full border border-border bg-bg-raised text-text-muted transition-all hover:border-border-hover hover:text-text',
             atMin && 'cursor-not-allowed opacity-40 hover:border-border hover:text-text-muted'
           )}
           aria-label="Previous month"
         >
           <ChevronLeft size={16} strokeWidth={1.75} />
         </button>
-        <div className="flex items-baseline gap-2">
+        <div className="native-calendar-title flex items-baseline gap-2">
           <h2 className="font-display text-[18px] font-bold text-text">
             {MONTH_NAMES[monthIndex]}
           </h2>
@@ -116,7 +118,7 @@ export default function Calendar({
         <button
           type="button"
           onClick={onNextMonth}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-bg-raised text-text-muted transition-all hover:border-border-hover hover:text-text"
+          className="native-calendar-arrow flex h-8 w-8 items-center justify-center rounded-full border border-border bg-bg-raised text-text-muted transition-all hover:border-border-hover hover:text-text"
           aria-label="Next month"
         >
           <ChevronRight size={16} strokeWidth={1.75} />
@@ -129,7 +131,7 @@ export default function Calendar({
             key={w}
             className="px-2 py-1.5 text-center text-[10.5px] font-semibold uppercase tracking-wider text-text-muted"
           >
-            {w}
+            {native ? w.slice(0, 1) : w}
           </div>
         ))}
       </div>
@@ -144,10 +146,15 @@ export default function Calendar({
             <button
               key={`${c.iso}-${i}`}
               type="button"
-              onClick={() => c.inMonth && onPickDate(c.iso)}
+              onClick={() => {
+                if (!c.inMonth) return;
+                haptic('selection');
+                onPickDate(c.iso);
+              }}
               disabled={!c.inMonth}
+              aria-label={`${c.iso}${summary?.totalMin ? `, ${formatMin(summary.totalMin)} planned` : ', no plan'}`}
               className={cn(
-                'group relative flex min-h-[72px] flex-col items-stretch gap-1 border-b border-r border-border px-1.5 py-1.5 text-left transition-colors sm:min-h-[92px] sm:px-2 sm:py-2',
+                'native-calendar-cell group relative flex min-h-[72px] flex-col items-stretch gap-1 border-b border-r border-border px-1.5 py-1.5 text-left transition-colors sm:min-h-[92px] sm:px-2 sm:py-2',
                 (i + 1) % 7 === 0 && 'border-r-0',
                 i >= 35 && 'border-b-0',
                 !c.inMonth && 'bg-bg-overlay/30 text-text-faint',
@@ -159,14 +166,14 @@ export default function Calendar({
               <div className="flex items-start justify-between">
                 <span
                   className={cn(
-                    'font-display text-[13px] font-semibold',
+                    'native-calendar-date font-display text-[13px] font-semibold',
                     isToday ? 'text-accent' : c.inMonth ? 'text-text' : 'text-text-faint'
                   )}
                 >
                   {c.d}
                 </span>
                 {hasPlan && summary && summary.totalMin > 0 && (
-                  <span className="u-num rounded-full bg-accent/12 px-1.5 py-0.5 text-[9.5px] font-semibold text-accent">
+                  <span className="native-calendar-duration u-num rounded-full bg-accent/12 px-1.5 py-0.5 text-[9.5px] font-semibold text-accent">
                     {formatMin(summary.totalMin)}
                   </span>
                 )}
@@ -174,8 +181,14 @@ export default function Calendar({
                   <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
                 )}
               </div>
+              {native && hasPlan && (
+                <span
+                  className="mx-auto mt-auto h-1.5 w-1.5 rounded-full bg-accent sm:hidden"
+                  aria-hidden
+                />
+              )}
               {hasPlan && summary && summary.subjects.length > 0 && (
-                <div className="flex flex-wrap gap-1">
+                <div className="native-calendar-details flex flex-wrap gap-1">
                   {summary.subjects.slice(0, 3).map((s) => {
                     const ink = subjectChipInk(s);
                     return (

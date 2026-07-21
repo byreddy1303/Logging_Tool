@@ -122,4 +122,23 @@ describe('sync engine (F1.3)', () => {
     expect(overwritten.subject).toBe('REMOTE');
     expect(overwritten.sync_status).toBe('synced');
   });
+
+  it('starts table pulls in parallel and deduplicates an overlapping refresh', async () => {
+    const release: Array<() => void> = [];
+    mocks.selectEq.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release.push(() => resolve({ data: [], error: null }));
+        })
+    );
+
+    const first = pullAll(USER);
+    const overlapping = pullAll(USER);
+
+    expect(overlapping).toBe(first);
+    await vi.waitFor(() => expect(mocks.selectEq).toHaveBeenCalledTimes(SYNCED_TABLES.length));
+
+    for (const resolve of release) resolve();
+    await first;
+  });
 });

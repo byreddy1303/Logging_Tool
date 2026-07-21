@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
+  CalendarCheck,
   CalendarDays,
+  Compass,
   Gauge,
+  Grid3x3,
   Menu,
   NotebookText,
   PenLine,
   Play,
+  RotateCcw,
   Settings,
   Shapes,
   Sigma,
+  Target,
   Users,
   X,
   Zap
@@ -19,6 +25,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/db';
 import { useSessionStore } from '@/stores/session';
+import { haptic } from '@/lib/native';
 
 interface Tab {
   to: string;
@@ -42,7 +49,7 @@ const TABS: Tab[] = [
   },
   {
     to: '/session/new',
-    label: 'Session',
+    label: 'Sessions',
     icon: Play,
     match: ['/session'],
     active: 'text-ink-teal',
@@ -57,18 +64,32 @@ const TABS: Tab[] = [
     bar: 'bg-ink-cobalt'
   },
   {
-    to: '/patterns',
-    label: 'Analysis',
-    icon: Shapes,
-    match: ['/patterns', '/reattempts', '/weekly-review', '/heatmap', '/readiness', '/calibration'],
-    active: 'text-ink-violet',
-    bar: 'bg-ink-violet'
+    to: '/planner',
+    label: 'Planner',
+    icon: CalendarDays,
+    match: ['/planner'],
+    active: 'text-ink-marigold',
+    bar: 'bg-ink-marigold'
   }
+];
+
+const MORE_ITEMS = [
+  { to: '/patterns', label: 'Patterns', icon: Shapes },
+  { to: '/reattempts', label: 'Re-attempts', icon: RotateCcw },
+  { to: '/weekly-review', label: 'Weekly review', icon: CalendarCheck },
+  { to: '/heatmap', label: 'Heatmap', icon: Grid3x3 },
+  { to: '/calibration', label: 'Calibration', icon: Target },
+  { to: '/readiness', label: 'Readiness', icon: Compass },
+  { to: '/buddy', label: 'Buddy', icon: Users },
+  { to: '/trigger-drill', label: 'Trigger drill', icon: Zap },
+  { to: '/formulas', label: 'Formulas', icon: Sigma },
+  { to: '/settings', label: 'Settings', icon: Settings }
 ];
 
 export default function MobileTabs() {
   const { pathname } = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const reduceMotion = useReducedMotion();
   const storedSessionId = useSessionStore((s) => s.sessionId);
   const liveSessionId = useLiveQuery(async () => {
     if (!storedSessionId) return null;
@@ -76,76 +97,101 @@ export default function MobileTabs() {
     return row && row.actual_duration_min === null ? storedSessionId : null;
   }, [storedSessionId]);
   const tabs = TABS.map((t) =>
-    t.label === 'Session' && liveSessionId
+    t.match.includes('/session') && liveSessionId
       ? { ...t, to: `/session/${liveSessionId}/solve`, label: 'Resume' }
       : t
   );
-  const moreRoutes = ['/planner', '/buddy', '/trigger-drill', '/formulas', '/settings'];
-  const moreActive = moreRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  const moreActive = MORE_ITEMS.some(
+    ({ to }) => pathname === to || pathname.startsWith(`${to}/`)
+  );
+  const moreHighlighted = moreOpen || moreActive;
 
   useEffect(() => {
     setMoreOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (!moreOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [moreOpen]);
+
   return (
     <>
-      {moreOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <button
-            type="button"
-            className="absolute inset-0 bg-text/20 backdrop-blur-[1px]"
-            aria-label="Close more navigation"
-            onClick={() => setMoreOpen(false)}
-          />
-          <section
-            className="absolute inset-x-3 bottom-[calc(4rem+env(safe-area-inset-bottom))] rounded-lg border border-border bg-bg-raised p-3 shadow-xl"
-            aria-label="More destinations"
+      <AnimatePresence>
+        {moreOpen && (
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
+            className="native-nav-overlay fixed inset-0 z-40 md:hidden"
           >
-            <div className="mb-2 flex items-center justify-between px-1">
-              <p className="u-label">More</p>
-              <button
-                type="button"
-                onClick={() => setMoreOpen(false)}
-                className="rounded p-1.5 text-text-faint hover:bg-bg-overlay hover:text-text"
-                aria-label="Close"
-              >
-                <X size={17} />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { to: '/planner', label: 'Planner', icon: CalendarDays },
-                { to: '/buddy', label: 'Buddy', icon: Users },
-                { to: '/trigger-drill', label: 'Trigger drill', icon: Zap },
-                { to: '/formulas', label: 'Formulas', icon: Sigma },
-                { to: '/settings', label: 'Settings', icon: Settings }
-              ].map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex min-h-12 items-center gap-2.5 rounded border px-3 text-[13px] font-semibold',
-                        isActive
-                          ? 'border-accent/30 bg-accent-faint text-accent'
-                          : 'border-border/70 bg-bg text-text-muted'
-                      )
-                    }
-                  >
-                    <Icon size={17} strokeWidth={1.75} />
-                    {item.label}
-                  </NavLink>
-                );
-              })}
-            </div>
-          </section>
-        </div>
-      )}
+            <motion.button
+              type="button"
+              className="absolute inset-0 bg-text/20 backdrop-blur-[1px]"
+              aria-label="Close navigation directory"
+              onClick={() => setMoreOpen(false)}
+            />
+            <motion.section
+              initial={reduceMotion ? false : { opacity: 0, y: 14, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.99 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className="native-more-sheet absolute inset-x-3 bottom-[calc(4rem+var(--safe-bottom))] rounded-lg border border-border bg-bg-raised p-3 shadow-xl"
+              aria-label="More destinations"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="mb-2 flex items-center justify-between px-1">
+                <div>
+                  <p className="u-label">All sections</p>
+                  <p className="mt-1 text-[12px] text-text-faint">
+                    Analysis, learning tools, buddy, and settings.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen(false)}
+                  className="rounded p-1.5 text-text-faint hover:bg-bg-overlay hover:text-text"
+                  aria-label="Close"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {MORE_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => haptic('selection')}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex min-h-12 items-center gap-2.5 rounded border px-3 text-[13px] font-semibold',
+                          isActive
+                            ? 'border-accent/30 bg-accent-faint text-accent'
+                            : 'border-border/70 bg-bg text-text-muted'
+                        )
+                      }
+                    >
+                      <Icon size={17} strokeWidth={1.75} />
+                      {item.label}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-6 border-t border-border bg-bg-raised/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_12px_rgba(36,30,53,0.06)] backdrop-blur md:hidden"
+        className="native-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-6 border-t border-border bg-bg-raised/95 pb-[var(--safe-bottom)] shadow-[0_-2px_12px_rgba(36,30,53,0.06)] backdrop-blur md:hidden"
         aria-label="Primary"
       >
         {tabs.map((tab) => {
@@ -158,12 +204,19 @@ export default function MobileTabs() {
             <NavLink
               key={tab.to}
               to={tab.to}
+              onClick={() => haptic('selection')}
               className={cn(
-                'relative flex h-14 flex-col items-center justify-center gap-1 transition-colors active:scale-95',
+                'native-bottom-tab relative flex h-14 flex-col items-center justify-center gap-1 transition-colors active:scale-95',
                 active ? tab.active : 'text-text-faint'
               )}
             >
-              {active && <span className={cn('absolute inset-x-4 top-0 h-[3px] rounded-b-full', tab.bar)} />}
+              {active && !moreOpen && (
+                <motion.span
+                  layoutId="mobile-primary-indicator"
+                  transition={{ type: 'spring', stiffness: 520, damping: 38 }}
+                  className={cn('absolute inset-x-4 top-0 h-[3px] rounded-b-full', tab.bar)}
+                />
+              )}
               <Icon size={19} strokeWidth={1.75} />
               <span className="text-[9px] font-semibold">{tab.label}</span>
             </NavLink>
@@ -171,15 +224,22 @@ export default function MobileTabs() {
         })}
         <button
           type="button"
-          onClick={() => setMoreOpen((open) => !open)}
+          onClick={() => {
+            haptic('selection');
+            setMoreOpen((open) => !open);
+          }}
           aria-expanded={moreOpen}
           className={cn(
-            'relative flex h-14 flex-col items-center justify-center gap-1 transition-colors active:scale-95',
-            moreOpen || moreActive ? 'text-ink-rose' : 'text-text-faint'
+            'native-bottom-tab relative flex h-14 flex-col items-center justify-center gap-1 transition-colors active:scale-95',
+            moreHighlighted ? 'text-ink-rose' : 'text-text-faint'
           )}
         >
-          {(moreOpen || moreActive) && (
-            <span className="absolute inset-x-4 top-0 h-[3px] rounded-b-full bg-ink-rose" />
+          {moreHighlighted && (
+            <motion.span
+              layoutId="mobile-primary-indicator"
+              transition={{ type: 'spring', stiffness: 520, damping: 38 }}
+              className="absolute inset-x-4 top-0 h-[3px] rounded-b-full bg-ink-rose"
+            />
           )}
           <Menu size={19} strokeWidth={1.75} />
           <span className="text-[9px] font-semibold">More</span>

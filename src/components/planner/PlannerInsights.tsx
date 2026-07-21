@@ -2,7 +2,7 @@
 // server round-trip. Refreshes whenever `revision` (a number driven by
 // upstream saves) changes.
 import { useMemo } from 'react';
-import { Sparkles } from 'lucide-react';
+import { ChevronDown, Sparkles } from 'lucide-react';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { PLANNER_SUBJECTS } from '@/lib/planner-constants';
 import {
@@ -17,6 +17,7 @@ import {
   type Share
 } from '@/lib/planner-insights';
 import { cn } from '@/lib/utils';
+import { isNativeApp } from '@/lib/native';
 
 interface Props {
   /** Bumped by the caller after saves/deletes so the memo recomputes. */
@@ -58,6 +59,88 @@ export default function PlannerInsights({ revision }: Props) {
 
   if (plans.length === 0) {
     return null;
+  }
+
+  if (isNativeApp) {
+    return (
+      <Card>
+        <CardHeader
+          title="30-day overview"
+          aside={<span className="u-label">on-device</span>}
+        />
+        <CardBody className="flex flex-col gap-6">
+          {plans30.length === 0 ? (
+            <p className="text-[13px] leading-relaxed text-text-muted">
+              No plans in the last 30 days. Pick a date above to begin.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <Kpi label="Days planned" value={String(r30.daysPlanned)} />
+                <Kpi label="Total planned" value={formatHours(r30.totalMinPlanned)} />
+                <Kpi
+                  label="Sessions / day"
+                  value={String(r30.avgSessionsPerDay)}
+                  hint={`Average ${r30.avgSessionDurationMin}m`}
+                />
+                <Kpi
+                  label="Completion"
+                  value={review30.reviewedDays > 0 ? `${review30.avgCompletionPct}%` : '—'}
+                  hint={`${review30.reviewedDays} days reviewed`}
+                />
+              </div>
+
+              <details className="group overflow-hidden rounded-[16px] border border-border bg-bg-raised">
+                <summary className="flex min-h-[56px] cursor-pointer list-none items-center justify-between px-4 text-[13px] font-semibold text-text">
+                  Study balance
+                  <ChevronDown
+                    size={17}
+                    strokeWidth={1.75}
+                    className="text-text-faint transition-transform group-open:rotate-180"
+                    aria-hidden
+                  />
+                </summary>
+                <div className="flex flex-col gap-6 border-t border-border p-4">
+                  <ShareBlock title="Subject share" shares={subj30.slice(0, 8)} />
+                  <ShareBlock title="Study modes" shares={mode30} />
+                  <ShareBlock title="Priority mix" shares={prio30} />
+
+                  {review30.reviewedDays > 0 && (
+                    <div className="rounded-[14px] bg-bg-overlay/55 p-4">
+                      <p className="u-label mb-3">Would you repeat the plan?</p>
+                      <div className="grid grid-cols-3 gap-3 text-center text-[12px]">
+                        <Kpi label="Yes" value={String(review30.replicateYes)} />
+                        <Kpi label="Partly" value={String(review30.replicatePartial)} />
+                        <Kpi label="No" value={String(review30.replicateNo)} />
+                      </div>
+                    </div>
+                  )}
+
+                  {neglect30.length > 0 && (
+                    <div className="rounded-[14px] border border-warn/35 bg-warn/5 p-4">
+                      <p className="u-label text-warn">Needs room next month</p>
+                      <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
+                        Subjects with less than 60 planned minutes.
+                      </p>
+                      <ul className="mt-3 flex flex-wrap gap-2">
+                        {neglect30.slice(0, 8).map((s) => (
+                          <li
+                            key={s.label}
+                            className="rounded-full border border-border bg-bg-raised px-3 py-1.5 text-[11.5px] text-text"
+                          >
+                            {s.label} <span className="u-num text-text-faint">{s.min}m</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </details>
+            </>
+          )}
+        </CardBody>
+      </Card>
+    );
   }
 
   return (
@@ -177,7 +260,7 @@ function Kpi({
   hint?: string;
 }) {
   return (
-    <div className="rounded border border-border bg-bg-overlay/40 px-3 py-2">
+    <div className="planner-kpi rounded border border-border bg-bg-overlay/40 px-3 py-2">
       <p className="u-label">{label}</p>
       <p className="u-num mt-0.5 text-[20px] font-semibold text-text">{value}</p>
       {hint && <p className="text-[10.5px] text-text-faint">{hint}</p>}

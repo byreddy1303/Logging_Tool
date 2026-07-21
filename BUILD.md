@@ -6,6 +6,10 @@
 
 The user removed all AI-backed product features. This amendment supersedes every AI/LLM feature, provider, route, secret, deployment, and Definition-of-Done item below. Doubt Chat, Triangulate, generated variations, formula extraction, reflex scoring, weekly synthesis, and weekly insight are not part of the active product. Formulas and Trigger Drill remain as local/manual tools. Historical additive database migrations may remain for deployed-schema compatibility, but the client does not expose or sync those legacy tables. Buddy now sits immediately below Planner and the dashboard provides deterministic learning tips derived from the learner's own data.
 
+## Android production amendment — 2026-07-21
+
+At the user's direction, AIR Journal also ships as an Android application from the same React codebase. Capacitor is the native runtime; the PWA and browser deployment remain first-class and must keep identical study data semantics. The Android shell must preserve Dexie-first offline behavior, invite-only authentication, RLS, and every hard ban below. Native feedback is restrained: haptics acknowledge selection, successful work, and errors only, are user-disableable, and never create engagement loops. Android system bars, safe areas, keyboard resize, back navigation, app resume, and release signing are part of production readiness. Node 22+ is the new build-tool baseline required by the maintained Capacitor runtime; this supersedes the older Node 20 build-tool entry.
+
 ## Daily digest exception — 2026-07-21
 
 At the user's direction, an optional Telegram bot may send one deterministic daily study digest containing only the learner's open planner items, due re-attempts, and Monday weekly fix. Each user must explicitly connect and may pause or disconnect at any time. Browser/device push remains banned. The Telegram message must not contain streaks, shame, engagement bait, or autoplaying follow-ups. Email remains an optional secondary delivery channel; WhatsApp is not active.

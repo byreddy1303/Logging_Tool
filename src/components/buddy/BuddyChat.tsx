@@ -86,6 +86,17 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
   const lastSentTypingAt = useRef(0);
   const peerTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    if (!menuOpen && !confirmUnfriend) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (confirmUnfriend) setConfirmUnfriend(false);
+      else setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirmUnfriend, menuOpen]);
+
   // Initial fetch + realtime subscribe.
   useEffect(() => {
     let cancelled = false;
@@ -303,8 +314,8 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
   const nameToShow = displayName(peer);
 
   return (
-    <div className="flex h-full min-h-[420px] flex-col overflow-hidden rounded-lg border border-border bg-bg-raised">
-      <header className="relative flex items-center gap-3 border-b border-border px-4 py-3">
+    <div className="native-buddy-chat flex h-full min-h-[420px] flex-col overflow-hidden rounded-lg border border-border bg-bg-raised">
+      <header className="native-chat-header relative flex items-center gap-3 border-b border-border px-4 py-3">
         <div className="relative">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-cobalt/15 font-display text-[13px] font-bold text-ink-cobalt">
             {(nameToShow.replace(/^@/, '') || '?')[0].toUpperCase()}
@@ -353,7 +364,12 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
                   onClick={() => setMenuOpen(false)}
                   className="fixed inset-0 z-10 cursor-default"
                 />
-                <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-border bg-bg-raised shadow-lift">
+                <div
+                  className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-border bg-bg-raised shadow-lift"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Chat options"
+                >
                   <button
                     type="button"
                     onClick={() => {
@@ -373,7 +389,12 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
       </header>
 
       {confirmUnfriend && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-border/60 bg-danger-faint/60 px-4 py-3 text-[12.5px] text-text">
+        <div
+          className="flex flex-wrap items-center gap-3 border-b border-border/60 bg-danger-faint/60 px-4 py-3 text-[12.5px] text-text"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm unfriend"
+        >
           <span className="flex-1">
             Unfriend <span className="font-semibold">{nameToShow}</span>? This
             deletes the pair and all messages on both sides. No cooldown — you
@@ -416,7 +437,7 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
 
       <div
         ref={listRef}
-        className="relative flex-1 overflow-y-auto bg-bg px-3 py-4 sm:px-4"
+        className="native-chat-messages relative flex-1 overflow-y-auto bg-bg px-3 py-4 sm:px-4"
       >
         {loading ? (
           <p className="mt-6 text-center text-[12px] text-text-faint">Loading…</p>
@@ -460,8 +481,8 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
         )}
       </div>
 
-      <div className="border-t border-border px-3 py-3">
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-text-muted">
+      <div className="native-chat-composer border-t border-border px-3 py-3">
+        <div className="native-chat-share-note mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-text-muted">
           <button
             type="button"
             onClick={() => setPicker(true)}
@@ -497,10 +518,10 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
               }}
               placeholder={`Message ${firstName(peer)}…`}
               rows={1}
-              className="block max-h-32 min-h-[40px] w-full resize-none rounded border border-border bg-bg-raised px-3 py-2 text-[13.5px] leading-snug text-text placeholder:text-text-faint focus:border-accent focus:shadow-[0_0_0_3px_theme(colors.accent.faint)] focus:outline-none"
+              className="native-chat-input block max-h-32 min-h-[40px] w-full resize-none rounded border border-border bg-bg-raised px-3 py-2 text-[13.5px] leading-snug text-text placeholder:text-text-faint focus:border-accent focus:shadow-[0_0_0_3px_theme(colors.accent.faint)] focus:outline-none"
             />
-            <div className="mt-1 flex items-center justify-between text-[10.5px] text-text-faint">
-              <span>Enter to send · Shift+Enter for newline</span>
+            <div className="native-chat-meta mt-1 flex items-center justify-between text-[10.5px] text-text-faint">
+              <span className="native-keyboard-hint">Enter to send · Shift+Enter for newline</span>
               <span className="u-num">
                 {draft.length}/{TEXT_LIMIT}
               </span>
@@ -675,6 +696,14 @@ function QuestionPicker({
     };
   }, [meId]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (!needle) return rows;
@@ -691,7 +720,7 @@ function QuestionPicker({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.18 }}
-      className="absolute inset-0 z-30 flex items-center justify-center bg-black/25 backdrop-blur-sm"
+      className="native-question-picker-overlay absolute inset-0 z-30 flex items-center justify-center bg-black/25 backdrop-blur-sm"
       onClick={onClose}
     >
       <motion.div
@@ -700,9 +729,12 @@ function QuestionPicker({
         exit={{ opacity: 0, y: 6, scale: 0.98 }}
         transition={{ duration: 0.22 }}
         onClick={(e) => e.stopPropagation()}
-        className="mx-3 flex max-h-[70vh] w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-border bg-bg-raised shadow-card"
+        className="native-question-picker-panel mx-3 flex max-h-[70vh] w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-border bg-bg-raised shadow-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Share a question"
       >
-        <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <header className="native-question-picker-header flex items-center gap-2 border-b border-border px-4 py-3">
           <p className="font-display text-[14px] font-semibold text-text">
             Share a question
           </p>
@@ -715,21 +747,21 @@ function QuestionPicker({
             <X size={14} strokeWidth={1.75} />
           </button>
         </header>
-        <div className="border-b border-border px-4 py-2">
+        <div className="native-question-picker-search border-b border-border px-4 py-2">
           <input
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Filter by subject, topic, source, text…"
             autoFocus
-            className="block w-full rounded border border-border bg-bg px-3 py-1.5 text-[13px] text-text placeholder:text-text-faint focus:border-accent focus:shadow-[0_0_0_3px_theme(colors.accent.faint)] focus:outline-none"
+            className="native-question-picker-input block w-full rounded border border-border bg-bg px-3 py-1.5 text-[13px] text-text placeholder:text-text-faint focus:border-accent focus:shadow-[0_0_0_3px_theme(colors.accent.faint)] focus:outline-none"
           />
           <p className="mt-1 text-[10.5px] text-text-faint">
             Only the question is shared. Your outcome, pattern, and root cause
             never leave your journal.
           </p>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="native-question-picker-list flex-1 overflow-y-auto">
           {loading ? (
             <p className="p-4 text-[12px] text-text-faint">Loading…</p>
           ) : filtered.length === 0 ? (

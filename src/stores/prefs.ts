@@ -23,6 +23,7 @@ export interface Preferences {
   compactRows: boolean;
   showCountdown: boolean;
   fontScale: FontScale;
+  hapticsEnabled: boolean;
 
   // Backup nudge
   backupReminderDays: 0 | 7 | 30;
@@ -39,6 +40,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   compactRows: false,
   showCountdown: true,
   fontScale: 'normal',
+  hapticsEnabled: true,
   backupReminderDays: 30,
   lastBackupAt: null
 };
