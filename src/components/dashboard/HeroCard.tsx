@@ -61,9 +61,14 @@ export default function HeroCard({ name, userId, showCountdown, daysLeft, action
 
         <div className="flex items-start gap-3">
           <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
-          <p className="font-display text-[15px] leading-relaxed text-text sm:text-[16px]">
-            <span className="u-highlight">{line.text}</span>
-          </p>
+          <div>
+            <p className="font-display text-[15px] leading-relaxed text-text sm:text-[16px]">
+              <span className="u-highlight">{line.text}</span>
+            </p>
+            <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.12em] text-text-faint">
+              — {line.attribution}
+            </p>
+          </div>
         </div>
       </div>
     </motion.div>

@@ -12,6 +12,7 @@ import {
   weekIsoDatesForTimezone
 } from '../../supabase/functions/_shared/telegram';
 import { QUOTES, pickQuoteForDay } from '../../supabase/functions/_shared/quotes';
+import { pickOneLinerFor } from '@/lib/one_liners';
 
 describe('Telegram daily digest', () => {
   it('parses supported bot commands without accepting arbitrary text', () => {
@@ -192,6 +193,9 @@ describe('Telegram daily digest', () => {
     expect(QUOTES.filter((quote) => quote.text.includes('IIT Bombay'))).toHaveLength(2);
     expect(QUOTES.filter((quote) => quote.text.includes('IIT Madras'))).toHaveLength(2);
     expect(pickQuoteForDay('2026-07-21', 'user-1')).toEqual(
+      pickQuoteForDay('2026-07-21', 'user-1')
+    );
+    expect(pickOneLinerFor('2026-07-21', 'user-1')).toEqual(
       pickQuoteForDay('2026-07-21', 'user-1')
     );
   });
