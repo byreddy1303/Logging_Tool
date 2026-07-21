@@ -188,6 +188,9 @@ describe('Telegram daily digest', () => {
     expect(QUOTES).toHaveLength(60);
     expect(new Set(QUOTES.map((quote) => quote.text)).size).toBe(60);
     expect(QUOTES.every((quote) => quote.attribution.length > 0)).toBe(true);
+    expect(QUOTES.filter((quote) => quote.text.includes('IISc'))).toHaveLength(2);
+    expect(QUOTES.filter((quote) => quote.text.includes('IIT Bombay'))).toHaveLength(2);
+    expect(QUOTES.filter((quote) => quote.text.includes('IIT Madras'))).toHaveLength(2);
     expect(pickQuoteForDay('2026-07-21', 'user-1')).toEqual(
       pickQuoteForDay('2026-07-21', 'user-1')
     );

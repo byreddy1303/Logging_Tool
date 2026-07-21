@@ -63,12 +63,12 @@ export const QUOTES: readonly QuotePreset[] = [
   original('Be bored. Be tired. Be consistent. Then be ranked.'),
   original('Nobody can compete with your corrected mistakes.'),
   original("You're not chasing AIR. You're engineering it."),
-  original('The next session is where the gap starts showing.'),
-  original("Finish today's plan before tomorrow starts making demands."),
-  original('Study like the result has your signature on it.'),
-  original("Don't announce the comeback. Put it in the score."),
-  original('The target is clear. Make hesitation irrelevant.'),
-  original('Confidence is the memory of promises kept to yourself.'),
+  original('IISc is not a dream campus. It is what happens when your rank becomes undeniable.'),
+  original('Make Bengaluru the destination and AIR < 100 the ticket. IISc is earned here.'),
+  original('Powai looks better from inside IIT Bombay. Earn the view.'),
+  original('IIT Bombay does not admit potential. It admits the score your discipline built.'),
+  original('IIT Madras is waiting at the end of the questions you keep avoiding.'),
+  original('Turn this hour into the rank that walks through IIT Madras without asking permission.'),
   {
     text: "I don't have dreams. I have goals.",
     attribution: 'Harvey Specter · Suits'
