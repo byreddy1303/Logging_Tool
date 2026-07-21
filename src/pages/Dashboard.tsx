@@ -1,7 +1,7 @@
 // Dashboard proper (F3.4): due today, weekly fix, mistake-surface trend,
 // last-session outcome distribution. All numbers are derived from Dexie and
 // mirror the SQL semantics of analysis.ts.
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
@@ -21,6 +21,7 @@ import { cn, formatDate, plural, todayISO } from '@/lib/utils';
 import { EXAM_DATE_DEFAULT, OUTCOMES, OUTCOME_BY_CODE } from '@/lib/constants';
 import { subjectInk } from '@/lib/subjectInk';
 import { buildLearningTips } from '@/lib/learning-tips';
+import { allSessions, pruneEmptyFinishedSessions } from '@/lib/sessions';
 import {
   dueTodayCount,
   latestSession,
@@ -217,10 +218,17 @@ export default function Dashboard() {
   );
 
   const sessions = useLiveQuery(
-    async () => (userId ? db.sessions.where('user_id').equals(userId).toArray() : []),
+    async () => (userId ? allSessions(userId) : []),
     [userId],
     []
   );
+
+  // Remove legacy empty completions while the filtered query above prevents
+  // them from ever flashing as the Last session or affecting counts.
+  useEffect(() => {
+    if (!userId) return;
+    void pruneEmptyFinishedSessions(userId);
+  }, [userId]);
 
   const weeklyFix = useLiveQuery(async () => {
     if (!userId) return undefined;

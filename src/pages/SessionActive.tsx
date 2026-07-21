@@ -91,10 +91,11 @@ export default function SessionActive() {
 
   async function finish() {
     if (!session) return;
+    const savedQuestionCount = await db.questions.where('session_id').equals(id).count();
     // Zero-question sessions are noise. Drop the row instead of writing an
     // "empty session logged" — it will never show up in the journal, the
     // heatmap, or the weekly review.
-    if (taggedCount === 0) {
+    if (savedQuestionCount === 0) {
       await deleteLocal('sessions', id);
       store.end();
       navigate('/');

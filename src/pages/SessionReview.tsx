@@ -85,6 +85,11 @@ export default function SessionReview() {
       await deleteLocal('questions', editRow.id);
       setEditRow(null);
       setEditDraft(null);
+      const remaining = await db.questions.where('session_id').equals(id).count();
+      if (remaining === 0 && session) {
+        await deleteLocal('sessions', session.id);
+        navigate('/');
+      }
     } finally {
       setDeleting(false);
     }
