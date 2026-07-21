@@ -37,6 +37,7 @@ import {
   PLANNER_MIN_MONTH_INDEX,
   PLANNER_MIN_YEAR
 } from '@/lib/planner-constants';
+import { loadAllDayPlans } from '@/lib/planner-insights';
 
 function todayLocalISO(d: Date): string {
   const y = d.getFullYear();
@@ -52,6 +53,7 @@ async function persistCloudPlan(userId: string, plan: CloudDayPlan): Promise<str
 
 export default function Planner() {
   const today = useMemo(() => new Date(), []);
+  const todayISO = todayLocalISO(today);
   const pushToast = useUiStore((s) => s.pushToast);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const sandbox = useAuthStore((s) => s.sandbox);
@@ -81,6 +83,43 @@ export default function Planner() {
       if (pending && userId && !sandbox) void persistCloudPlan(userId, pending);
     };
   }, [sandbox, userId]);
+
+  useEffect(() => {
+    if (!userId || sandbox) return;
+    let active = true;
+    const upcoming = loadAllDayPlans()
+      .filter((plan) => plan.date >= todayISO && plan.sessions.length > 0)
+      .slice(0, 45);
+
+    void Promise.all(
+      upcoming.map(async (local) => {
+        const { plan: remote, error } = await loadCloudDayPlan(userId, local.date);
+        if (error) return false;
+        const localUpdated = Date.parse(local.updatedAt);
+        const remoteUpdated = remote ? Date.parse(remote.updatedAt) : 0;
+        if (!remote || localUpdated >= remoteUpdated) {
+          await saveCloudDayPlan(userId, {
+            date: local.date,
+            sessions: local.sessions,
+            updatedAt: local.updatedAt
+          });
+          return false;
+        }
+        cacheDayPlan({
+          ...local,
+          sessions: remote.sessions,
+          updatedAt: remote.updatedAt
+        });
+        return true;
+      })
+    ).then((changed) => {
+      if (active && changed.some(Boolean)) setRevision((value) => value + 1);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [sandbox, todayISO, userId]);
 
   const { planIndex, summaries } = useMemo(() => {
     void revision;
@@ -204,8 +243,6 @@ export default function Planner() {
     closeModal();
     pushToast('Day plan cleared.', 'neutral');
   }
-
-  const todayISO = todayLocalISO(today);
 
   return (
     <div className="flex flex-col gap-4">
