@@ -6,7 +6,9 @@ import {
   renderTelegramConnectionTest,
   renderTelegramDigest,
   renderTelegramTimetable,
+  renderTelegramTomorrowPlan,
   sendTelegramMessage,
+  tomorrowIsoDateForTimezone,
   weekIsoDatesForTimezone
 } from '../../supabase/functions/_shared/telegram';
 import { QUOTES, pickQuoteForDay } from '../../supabase/functions/_shared/quotes';
@@ -25,6 +27,10 @@ describe('Telegram daily digest', () => {
       name: 'timetable',
       argument: null
     });
+    expect(parseTelegramCommand('/tomorrow@Gate_prep_reminder_bot')).toEqual({
+      name: 'tomorrow',
+      argument: null
+    });
     expect(parseTelegramCommand('send me a digest')).toBeNull();
   });
 
@@ -32,6 +38,7 @@ describe('Telegram daily digest', () => {
     const instant = new Date('2026-07-19T20:00:00.000Z');
 
     expect(isoDateForTimezone(instant, 'Asia/Kolkata')).toBe('2026-07-20');
+    expect(tomorrowIsoDateForTimezone(instant, 'Asia/Kolkata')).toBe('2026-07-21');
     expect(weekIsoDatesForTimezone(instant, 'Asia/Kolkata')).toEqual([
       '2026-07-20',
       '2026-07-21',
@@ -135,6 +142,46 @@ describe('Telegram daily digest', () => {
     expect(message).toContain('<b>SUN · 26 JUL · OPEN</b>');
     expect(message).toContain('The week is visible. Now execute it.');
     expect(message.length).toBeLessThan(4096);
+  });
+
+  it("renders tomorrow's plan with session targets and escaped planner text", () => {
+    const message = renderTelegramTomorrowPlan({
+      isoDate: '2026-07-22',
+      sessions: [
+        {
+          subject: 'Operating Systems',
+          durationMin: 90,
+          mode: 'PYQ Practice',
+          target: 'Deadlocks & synchronization'
+        },
+        {
+          subject: 'Custom...',
+          customSubject: 'Compiler < Design',
+          durationMin: 60,
+          mode: 'Revision',
+          target: 'FIRST & FOLLOW sets'
+        }
+      ]
+    });
+
+    expect(message).toContain('<b>AIR JOURNAL · TOMORROW</b>');
+    expect(message).toContain('<b>WEDNESDAY · 22 JULY</b>');
+    expect(message).toContain('<b>2 SESSIONS · 2h 30m</b>');
+    expect(message).toContain('Deadlocks &amp; synchronization');
+    expect(message).toContain('Compiler &lt; Design');
+    expect(message).toContain('FIRST &amp; FOLLOW sets');
+    expect(message).toContain('Tomorrow is already decided. Show up and collect it.');
+    expect(message.length).toBeLessThan(4096);
+  });
+
+  it("renders a quiet empty state when tomorrow has no plan", () => {
+    const message = renderTelegramTomorrowPlan({
+      isoDate: '2026-07-22',
+      sessions: []
+    });
+
+    expect(message).toContain('No study sessions planned yet.');
+    expect(message).toContain('Tomorrow is open. Plan it when you mean it.');
   });
 
   it('ships 60 unique, attributed quotes with stable daily selection', () => {

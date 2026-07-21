@@ -1,5 +1,5 @@
 export interface TelegramCommand {
-  name: 'start' | 'stop' | 'status' | 'timetable' | 'help';
+  name: 'start' | 'stop' | 'status' | 'timetable' | 'tomorrow' | 'help';
   argument: string | null;
 }
 export interface TelegramStudySession {
@@ -29,6 +29,11 @@ export interface TelegramTimetableInput {
   days: TelegramTimetableDay[];
 }
 
+export interface TelegramTomorrowInput {
+  isoDate: string;
+  sessions: TelegramStudySession[];
+}
+
 export interface TelegramSendResult {
   ok: boolean;
   id?: number;
@@ -37,7 +42,7 @@ export interface TelegramSendResult {
 
 export function parseTelegramCommand(text: string | undefined): TelegramCommand | null {
   if (!text) return null;
-  const match = text.trim().match(/^\/(start|stop|status|timetable|help)(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?\s*$/i);
+  const match = text.trim().match(/^\/(start|stop|status|timetable|tomorrow|help)(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?\s*$/i);
   if (!match) return null;
   return {
     name: match[1].toLowerCase() as TelegramCommand['name'],
@@ -99,6 +104,10 @@ export function weekIsoDatesForTimezone(now: Date, timeZone: string): string[] {
   return Array.from({ length: 7 }, (_, index) => addUtcDays(monday, index));
 }
 
+export function tomorrowIsoDateForTimezone(now: Date, timeZone: string): string {
+  return addUtcDays(isoDateForTimezone(now, timeZone), 1);
+}
+
 export function escapeTelegramHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -154,6 +163,18 @@ function timetableWeekLabel(isoDate: string): string {
     month: 'long',
     year: 'numeric'
   }).format(date).toUpperCase();
+}
+
+function fullDateLabel(isoDate: string): string {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long'
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((value) => value.type === type)?.value ?? '';
+  return `${part('weekday')} · ${part('day')} ${part('month')}`.toUpperCase();
 }
 
 export function renderTelegramDigest(input: TelegramDigestInput): string {
@@ -271,6 +292,56 @@ export function renderTelegramTimetable(input: TelegramTimetableInput): string {
   }
 
   lines.push('<b>The week is visible. Now execute it.</b>');
+  return lines.join('\n');
+}
+
+export function renderTelegramTomorrowPlan(input: TelegramTomorrowInput): string {
+  const totalMinutes = input.sessions.reduce(
+    (sum, session) => sum + Math.max(0, session.durationMin || 0),
+    0
+  );
+  const lines: string[] = [
+    '<b>AIR JOURNAL · TOMORROW</b>',
+    `<b>${fullDateLabel(input.isoDate)}</b>`,
+    ''
+  ];
+
+  if (input.sessions.length === 0) {
+    lines.push(
+      '<i>No study sessions planned yet.</i>',
+      '',
+      '<b>Tomorrow is open. Plan it when you mean it.</b>'
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
+    `<b>${input.sessions.length} ${input.sessions.length === 1 ? 'SESSION' : 'SESSIONS'} · ${formatDuration(totalMinutes)}</b>`,
+    ''
+  );
+
+  const visibleSessions = input.sessions.slice(0, 8);
+  visibleSessions.forEach((session, index) => {
+    const rawSubject =
+      session.subject === 'Custom...' && session.customSubject
+        ? session.customSubject
+        : session.subject;
+    const subject = escapeCompactTelegramHtml(rawSubject, 60, 72);
+    const mode = escapeCompactTelegramHtml(session.mode || 'Study', 40, 48);
+    const target = escapeCompactTelegramHtml(session.target, 110, 140);
+    lines.push(
+      `<b>${String(index + 1).padStart(2, '0')} · ${subject}</b>`,
+      `${formatDuration(session.durationMin)} · <i>${mode}</i>`
+    );
+    if (target) lines.push(target);
+    lines.push('');
+  });
+
+  if (input.sessions.length > visibleSessions.length) {
+    lines.push(`+${input.sessions.length - visibleSessions.length} more sessions in Planner`, '');
+  }
+
+  lines.push('<b>Tomorrow is already decided. Show up and collect it.</b>');
   return lines.join('\n');
 }
 
