@@ -6,6 +6,10 @@
 
 The user removed all AI-backed product features. This amendment supersedes every AI/LLM feature, provider, route, secret, deployment, and Definition-of-Done item below. Doubt Chat, Triangulate, generated variations, formula extraction, reflex scoring, weekly synthesis, and weekly insight are not part of the active product. Formulas and Trigger Drill remain as local/manual tools. Historical additive database migrations may remain for deployed-schema compatibility, but the client does not expose or sync those legacy tables. Buddy now sits immediately below Planner and the dashboard provides deterministic learning tips derived from the learner's own data.
 
+## Daily digest exception — 2026-07-21
+
+At the user's direction, an optional Telegram bot may send one deterministic daily study digest containing only the learner's open planner items, due re-attempts, and Monday weekly fix. Each user must explicitly connect and may pause or disconnect at any time. Browser/device push remains banned. The Telegram message must not contain streaks, shame, engagement bait, or autoplaying follow-ups. Email remains an optional secondary delivery channel; WhatsApp is not active.
+
 ---
 
 ## 0. Autonomy directives (for Claude executing this doc)
@@ -43,7 +47,7 @@ These are enforced in code, tests, or CI — not left to willpower.
 
 1. **Tag flow must complete in ≤ 30 seconds median.** Vitest performance test in `src/__tests__/tag-flow.perf.test.ts` fails CI if median > 30s over 20 simulated runs.
 2. **LLM calls are rate-limited server-side to 100/user/day.** Enforced in edge function; client cannot override.
-3. **No push notifications, ever.** ESLint rule bans `Notification`, `PushManager`, `navigator.serviceWorker.register` for `push` scope, and `.showNotification(`. See `.eslintrc.cjs`.
+3. **No browser/device push notifications.** ESLint bans `Notification`, `PushManager`, manual push registration, and `.showNotification(`. The sole proactive-message exception is the user-directed, opt-in daily Telegram study digest defined in the 2026-07-21 scope amendment.
 4. **No streak-based dopamine.** No consecutive-day counters, no "streak broken" screens, no fire emojis, no ✅ celebrations. Skipping is silent and forgiven.
 5. **No LLM auto-tagging.** LLM never sets `outcome`, `root_cause`, `pattern_name`, `insight`, or `this_weeks_fix`. Attempting to do so at DB level triggers a check constraint failure. See migration `20260717000004_ai_boundaries.sql`.
 6. **Feature freeze on 2026-10-31.** After this date, `git hooks/pre-commit` blocks commits touching `src/pages/` or `src/components/` unless the commit message starts with `fix:`. Only bug fixes allowed post-freeze.
@@ -1247,7 +1251,7 @@ Ship v1.0.0 when ALL of these hold:
 
 ## 17. Hard bans (never do this)
 
-- Do not add push notifications.
+- Do not add browser/device push notifications. The opt-in daily Telegram study digest is the only exception.
 - Do not add streaks / consecutive-day counters / "streak broken" screens.
 - Do not add LLM auto-tagging of outcome / root cause / pattern / insight.
 - Do not add real-time chat between buddies.
@@ -1256,7 +1260,7 @@ Ship v1.0.0 when ALL of these hold:
 - Do not add gamified reward loops (badges, XP, levels, leaderboards).
 - Do not add third-party analytics (Google Analytics, Mixpanel, etc.).
 - Do not add ads.
-- Do not add anything that pings the user for engagement.
+- Do not add anything that pings the user for engagement. The Telegram digest may carry only the user's scheduled study work and due reviews.
 - Do not increase LLM rate limit above 100/day.
 - Do not weaken RLS.
 - Do not commit `.env.local`, secrets, or API keys.

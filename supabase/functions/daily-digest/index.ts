@@ -13,14 +13,14 @@
 //   planner_items   — today's plan_items_due_on, minus completed today
 //   weekly_fix      — Mondays only, latest 'this_weeks_fix' if present
 //
-// Delivery: email via Gmail SMTP (proven), WhatsApp via Meta template.
-// Failures are logged per-user; the loop keeps going.
+// Delivery: optional email and opt-in Telegram bot message. Delivery markers
+// are per channel so one channel failing never duplicates the other.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, json } from '../_shared/cors.ts';
 import { sendEmail } from '../_shared/email.ts';
-import { sendWhatsAppTemplate, waConfigured } from '../_shared/wa.ts';
 import { greetingForHour, pickQuoteForDay } from '../_shared/quotes.ts';
+import { renderTelegramDigest, sendTelegramMessage } from '../_shared/telegram.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const Deno: any;
@@ -28,6 +28,7 @@ declare const Deno: any;
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const APP_URL = Deno.env.get('VITE_APP_URL') ?? '';
+const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
 
 const admin = createClient(SUPABASE_URL, SERVICE, {
   auth: { persistSession: false, autoRefreshToken: false }
@@ -38,11 +39,15 @@ interface UserForDigest {
   name: string;
   email: string;
   timezone: string;
-  phone_e164: string | null;
   digest_email_enabled: boolean;
-  digest_whatsapp_enabled: boolean;
   digest_hour_local: number;
-  wa_opted_in_at: string | null;
+  last_digest_sent_on: string | null;
+}
+
+interface TelegramSubscription {
+  user_id: string;
+  chat_id: string | number | null;
+  enabled: boolean;
   last_digest_sent_on: string | null;
 }
 
@@ -73,52 +78,81 @@ function localHourAndDate(now: Date, tz: string): { hour: number; isoDate: strin
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ ok: false, error: 'method not allowed' }, 405);
 
   let body: { user_id?: string; dry_run?: boolean; force?: boolean } = {};
-  if (req.method === 'POST') {
-    try {
-      body = (await req.json()) as typeof body;
-    } catch {
-      // no body is fine — cron path.
+  try {
+    body = (await req.json()) as typeof body;
+  } catch {
+    // no body is fine — cron path.
+  }
+
+  const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
+  const isServiceCall = Boolean(token && token === SERVICE);
+  if (body.user_id) {
+    if (!isServiceCall) {
+      const { data, error } = await admin.auth.getUser(token);
+      if (error || data.user?.id !== body.user_id) {
+        return json({ ok: false, error: 'forbidden' }, 403);
+      }
     }
+  } else if (!isServiceCall) {
+    return json({ ok: false, error: 'cron authorization required' }, 403);
   }
 
   const dryRun = body.dry_run === true;
   const force = body.force === true;
   const now = new Date();
 
-  // Load candidates
-  let users: UserForDigest[] = [];
+  let userQuery = admin
+    .from('users')
+    .select('id, name, email, timezone, digest_email_enabled, digest_hour_local, last_digest_sent_on')
+    .limit(1000);
+  let telegramQuery = admin
+    .from('telegram_subscriptions')
+    .select('user_id, chat_id, enabled, last_digest_sent_on')
+    .limit(1000);
   if (body.user_id) {
-    const { data } = await admin
-      .from('users')
-      .select('id, name, email, timezone, phone_e164, digest_email_enabled, digest_whatsapp_enabled, digest_hour_local, wa_opted_in_at, last_digest_sent_on')
-      .eq('id', body.user_id)
-      .limit(1);
-    users = (data as UserForDigest[]) ?? [];
-  } else {
-    const { data } = await admin
-      .from('users')
-      .select('id, name, email, timezone, phone_e164, digest_email_enabled, digest_whatsapp_enabled, digest_hour_local, wa_opted_in_at, last_digest_sent_on')
-      .or('digest_email_enabled.eq.true,digest_whatsapp_enabled.eq.true')
-      .limit(1000);
-    users = (data as UserForDigest[]) ?? [];
+    userQuery = userQuery.eq('id', body.user_id);
+    telegramQuery = telegramQuery.eq('user_id', body.user_id);
   }
+
+  const [{ data: userData, error: userError }, { data: telegramData, error: telegramError }] =
+    await Promise.all([userQuery, telegramQuery]);
+  if (userError || telegramError) {
+    console.error('Daily digest candidate load failed:', userError?.message, telegramError?.message);
+    return json({ ok: false, error: 'could not load digest recipients' }, 500);
+  }
+
+  const subscriptions = (telegramData as TelegramSubscription[]) ?? [];
+  const telegramByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
+  const users = ((userData as UserForDigest[]) ?? []).filter((user) => {
+    const telegram = telegramByUser.get(user.id);
+    return Boolean(body.user_id || user.digest_email_enabled || telegram?.enabled);
+  });
 
   const report: Array<Record<string, unknown>> = [];
   for (const u of users) {
+    const telegram = telegramByUser.get(u.id);
     const tz = u.timezone || 'Asia/Kolkata';
     const { hour, isoDate, weekday } = localHourAndDate(now, tz);
 
-    if (!force) {
-      if (hour !== u.digest_hour_local) {
-        report.push({ user: u.id, skipped: 'wrong_hour', hour, want: u.digest_hour_local });
-        continue;
-      }
-      if (u.last_digest_sent_on === isoDate) {
-        report.push({ user: u.id, skipped: 'already_sent' });
-        continue;
-      }
+    if (!force && hour !== u.digest_hour_local) {
+      report.push({ user: u.id, skipped: 'wrong_hour', hour, want: u.digest_hour_local });
+      continue;
+    }
+
+    const emailDue = Boolean(
+      u.digest_email_enabled && (force || u.last_digest_sent_on !== isoDate)
+    );
+    const telegramDue = Boolean(
+      telegram?.enabled &&
+      telegram.chat_id !== null &&
+      (force || telegram.last_digest_sent_on !== isoDate)
+    );
+    if (!emailDue && !telegramDue) {
+      report.push({ user: u.id, skipped: 'already_sent_or_disabled' });
+      continue;
     }
 
     const digest = await buildDigest(u, isoDate, hour, weekday);
@@ -127,11 +161,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       continue;
     }
     let email_ok = false;
-    let wa_ok = false;
+    let telegram_ok = false;
     let email_err: string | undefined;
-    let wa_err: string | undefined;
+    let telegram_err: string | undefined;
 
-    if (u.digest_email_enabled && u.email) {
+    if (emailDue && u.email) {
       const res = await sendEmail({
         to: u.email,
         subject: `Your AIR Journal · ${isoDate}`,
@@ -141,19 +175,33 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (!res.ok) email_err = res.error;
     }
 
-    if (u.digest_whatsapp_enabled && u.phone_e164 && waConfigured()) {
-      const res = await sendWhatsAppTemplate({
-        to: u.phone_e164,
-        parameters: digest.wa_params
+    if (telegramDue && telegram?.chat_id !== null) {
+      const res = await sendTelegramMessage({
+        token: TELEGRAM_BOT_TOKEN,
+        chatId: telegram.chat_id,
+        text: digest.telegram_text,
+        appUrl: APP_URL || 'https://air-journal-omega.vercel.app'
       });
-      wa_ok = res.ok;
-      if (!res.ok) wa_err = res.error;
+      telegram_ok = res.ok;
+      if (!res.ok) telegram_err = res.error;
     }
 
-    if (email_ok || wa_ok) {
+    if (email_ok) {
       await admin.from('users').update({ last_digest_sent_on: isoDate }).eq('id', u.id);
     }
-    report.push({ user: u.id, email_ok, wa_ok, email_err, wa_err });
+    if (telegram_ok) {
+      await admin
+        .from('telegram_subscriptions')
+        .update({ last_digest_sent_on: isoDate, updated_at: new Date().toISOString() })
+        .eq('user_id', u.id);
+    }
+    report.push({
+      user: u.id,
+      email_ok,
+      telegram_ok,
+      email_err,
+      telegram_err
+    });
   }
 
   return json({ ok: true, count: users.length, report });
@@ -161,7 +209,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
 interface Digest {
   html: string;
-  wa_params: string[];
+  telegram_text: string;
   summary: string;
 }
 
@@ -245,16 +293,16 @@ async function buildDigest(u: UserForDigest, isoDate: string, hour: number, week
     appUrl: APP_URL || 'https://air-journal-omega.vercel.app'
   });
 
-  // WhatsApp: 4 params matching template placeholders. Kalyan will name
-  // the Meta-approved template's variables in this order.
-  const wa_params = [
-    firstName || 'friend',
-    String(reAttemptRows.length),
-    String(openItems.length),
-    (weeklyFix ?? quote).slice(0, 200)
-  ];
+  const telegram_text = renderTelegramDigest({
+    greeting,
+    isoDate,
+    reAttemptTotal: reAttemptRows.length,
+    subjectCounts,
+    openItems,
+    weeklyFix
+  });
 
-  return { html, wa_params, summary: summaryLine };
+  return { html, telegram_text, summary: summaryLine };
 }
 
 function esc(s: string): string {

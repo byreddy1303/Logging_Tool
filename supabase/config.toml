@@ -39,3 +39,9 @@ verify_jwt = false
 
 [functions.compute-readiness]
 verify_jwt = false
+
+[functions.daily-digest]
+verify_jwt = true
+
+[functions.telegram-webhook]
+verify_jwt = false

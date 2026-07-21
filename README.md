@@ -1,6 +1,6 @@
 # AIR Journal
 
-Local-first, multi-user GATE PYQ analysis app. Captures every solved question as structured data (outcome / pattern / trigger / root cause), schedules spaced re-attempts, supports focused one-to-one buddy study, and surfaces one weekly upstream weakness.
+Local-first, multi-user GATE PYQ analysis app. Captures every solved question as structured data (outcome / pattern / trigger / root cause), schedules spaced re-attempts, supports focused one-to-one buddy study, and surfaces one weekly upstream weakness. An optional Telegram bot can deliver one daily study-only digest.
 
 Built for GATE 2027 CS, targeting AIR <100.
 
@@ -74,11 +74,11 @@ The tool compresses your mistake surface. It does not replace your reasoning.
 - Wrong / slow / guessed answers auto-enter a spaced re-attempt ladder (3 → 10 → 30 days).
 - Buddy chat lets you discuss and share a stripped question snapshot without exposing outcomes, patterns, or root causes.
 - Weekly, you write ONE upstream weakness to fix that week; the dashboard turns your own tags into small, actionable learning notes.
-- No streaks, no push notifications, no gamified reward loops, no third-party analytics.
+- No streaks, browser push, gamified reward loops, or third-party analytics. Telegram is an explicit opt-in and carries only scheduled work and due reviews.
 
 ## Stack
 
-React 18 + Vite + TypeScript · Tailwind · Zustand · Dexie · React Query · Supabase (Postgres 15 + Auth + Edge Functions) · Resend (transactional mail, free tier).
+React 18 + Vite + TypeScript · Tailwind · Zustand · Dexie · React Query · Supabase (Postgres 15 + Auth + Edge Functions) · Telegram Bot API · Resend (transactional mail, free tier).
 
 Total monthly cost at low volumes: ₹0. See `DEPLOY.md` for the scaling thresholds where paid tiers kick in.
 
@@ -111,6 +111,7 @@ npx vercel link
 npx vercel env add VITE_SUPABASE_URL production
 npx vercel env add VITE_SUPABASE_ANON_KEY production
 npx vercel env add VITE_APP_URL production
+npx vercel env add VITE_TELEGRAM_BOT_USERNAME production
 npx vercel --prod
 ```
 

@@ -30,6 +30,18 @@ export interface UserRow {
   last_digest_sent_on: string | null;
 }
 
+export interface TelegramSubscriptionRow {
+  user_id: string;
+  chat_id: number | string | null;
+  chat_username: string | null;
+  enabled: boolean;
+  connect_token: string | null;
+  connect_token_expires_at: string | null;
+  connected_at: string | null;
+  last_digest_sent_on: string | null;
+  updated_at: string;
+}
+
 export type PlanRRuleKind = 'none' | 'daily' | 'weekdays' | 'weekly';
 
 export interface PlanItemRow {

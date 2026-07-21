@@ -1,37 +1,84 @@
-// Daily digest preferences: email + WhatsApp toggles, phone number,
-// preferred local hour. "Send now" button re-fires the digest edge fn for
-// this user (useful for validating a template change).
-import { useMemo, useState } from 'react';
-import { Bell, Send } from 'lucide-react';
+// Optional daily study digest. Email remains available; Telegram is the only
+// proactive messaging integration. Telegram chat ids are bound by the bot
+// webhook after a short-lived, user-generated connection link is opened.
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Bell, Link2, RefreshCcw, Send, Unlink } from 'lucide-react';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
-import type { UserRow } from '@/types';
+import type { TelegramSubscriptionRow, UserRow } from '@/types';
 
 interface Props {
   profile: UserRow | null;
   sandbox: boolean;
 }
 
-const E164_RE = /^\+[1-9]\d{7,14}$/;
+const botUsername = String(import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? '')
+  .trim()
+  .replace(/^@/, '');
 
 export default function NotificationsCard({ profile, sandbox }: Props) {
   const refreshProfile = useAuthStore((s) => s.refreshProfile);
   const pushToast = useUiStore((s) => s.pushToast);
-  const [phone, setPhone] = useState(profile?.phone_e164 ?? '');
+  const [telegram, setTelegram] = useState<TelegramSubscriptionRow | null>(null);
+  const [loadingTelegram, setLoadingTelegram] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectUrl, setConnectUrl] = useState<string | null>(null);
+  const [awaitingConnection, setAwaitingConnection] = useState(false);
   const [sending, setSending] = useState(false);
   const hourOptions = useMemo(
-    () => Array.from({ length: 24 }, (_, h) => ({ value: h, label: `${String(h).padStart(2, '0')}:00` })),
+    () =>
+      Array.from({ length: 24 }, (_, hour) => ({
+        value: hour,
+        label: `${String(hour).padStart(2, '0')}:00`
+      })),
     []
   );
 
+  const loadTelegram = useCallback(async () => {
+    if (!profile || sandbox || !supabaseConfigured) return;
+    setLoadingTelegram(true);
+    const { data, error } = await supabase
+      .from('telegram_subscriptions')
+      .select('*')
+      .eq('user_id', profile.id)
+      .maybeSingle();
+    setLoadingTelegram(false);
+    if (error) {
+      pushToast(`Could not read Telegram status: ${error.message}`, 'neutral');
+      return;
+    }
+    const next = (data as TelegramSubscriptionRow | null) ?? null;
+    setTelegram(next);
+    if (next?.connected_at) {
+      setAwaitingConnection(false);
+      setConnectUrl(null);
+    }
+  }, [profile, pushToast, sandbox]);
+
+  useEffect(() => {
+    void loadTelegram();
+    const onFocus = () => void loadTelegram();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadTelegram]);
+
+  useEffect(() => {
+    if (!awaitingConnection) return;
+    const poll = window.setInterval(() => void loadTelegram(), 3000);
+    const stop = window.setTimeout(() => setAwaitingConnection(false), 120_000);
+    return () => {
+      window.clearInterval(poll);
+      window.clearTimeout(stop);
+    };
+  }, [awaitingConnection, loadTelegram]);
+
   if (sandbox || !supabaseConfigured || !profile) return null;
 
-  async function patch(patch: Partial<UserRow>) {
-    if (!profile) return;
+  async function patchProfile(patch: Partial<UserRow>) {
+    if (!profile) return false;
     const { error } = await supabase.from('users').update(patch).eq('id', profile.id);
     if (error) {
       pushToast(error.message, 'neutral');
@@ -41,36 +88,60 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
     return true;
   }
 
-  async function saveEmailToggle(v: boolean) {
-    if (await patch({ digest_email_enabled: v })) {
-      pushToast(v ? 'Email digest on.' : 'Email digest off.', 'success');
+  async function saveEmailToggle(value: boolean) {
+    if (await patchProfile({ digest_email_enabled: value })) {
+      pushToast(value ? 'Email digest on.' : 'Email digest off.', 'success');
     }
   }
 
-  async function saveWaToggle(v: boolean) {
-    if (v && !profile?.phone_e164) {
-      pushToast('Add your phone number in E.164 format first (e.g. +919xxxxxxxxx).', 'neutral');
+  async function saveTelegramToggle(value: boolean) {
+    const { error } = await supabase.rpc('set_telegram_digest_enabled', {
+      wants_enabled: value
+    });
+    if (error) {
+      pushToast(error.message, 'neutral');
       return;
     }
-    if (await patch({ digest_whatsapp_enabled: v })) {
-      pushToast(v ? 'WhatsApp digest on.' : 'WhatsApp digest off.', 'success');
-    }
+    await loadTelegram();
+    pushToast(value ? 'Telegram digest on.' : 'Telegram digest paused.', 'success');
   }
 
-  async function savePhone() {
-    const cleaned = phone.trim();
-    if (cleaned && !E164_RE.test(cleaned)) {
-      pushToast('Phone must be E.164, e.g. +919000000000.', 'neutral');
+  async function beginConnection() {
+    if (!botUsername) {
+      pushToast('Telegram bot setup is not finished yet.', 'neutral');
       return;
     }
-    if (await patch({ phone_e164: cleaned || null })) {
-      pushToast('Phone saved.', 'success');
+    setConnecting(true);
+    const { data, error } = await supabase.rpc('begin_telegram_connection');
+    setConnecting(false);
+    if (error) {
+      pushToast(error.message, 'neutral');
+      return;
     }
+    const row = ((data as Array<{ token: string; expires_at: string }> | null) ?? [])[0];
+    if (!row?.token) {
+      pushToast('Could not create a Telegram connection link.', 'neutral');
+      return;
+    }
+    setConnectUrl(`https://t.me/${botUsername}?start=${encodeURIComponent(row.token)}`);
+    setAwaitingConnection(true);
   }
 
-  async function saveHour(h: number) {
-    if (await patch({ digest_hour_local: h })) {
-      pushToast(`Digest hour set to ${String(h).padStart(2, '0')}:00.`, 'success');
+  async function disconnectTelegram() {
+    const { error } = await supabase.rpc('disconnect_telegram');
+    if (error) {
+      pushToast(error.message, 'neutral');
+      return;
+    }
+    setTelegram(null);
+    setConnectUrl(null);
+    setAwaitingConnection(false);
+    pushToast('Telegram disconnected.', 'success');
+  }
+
+  async function saveHour(hour: number) {
+    if (await patchProfile({ digest_hour_local: hour })) {
+      pushToast(`Digest hour set to ${String(hour).padStart(2, '0')}:00.`, 'success');
     }
   }
 
@@ -85,24 +156,42 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
       pushToast(error.message, 'neutral');
       return;
     }
-    const report = ((data as { report?: { email_ok?: boolean; wa_ok?: boolean; email_err?: string; wa_err?: string }[] })?.report ?? [])[0];
-    if (report?.email_ok || report?.wa_ok) {
+    const report =
+      ((data as {
+        report?: Array<{
+          email_ok?: boolean;
+          telegram_ok?: boolean;
+          email_err?: string;
+          telegram_err?: string;
+        }>;
+      })?.report ?? [])[0];
+    if (report?.email_ok || report?.telegram_ok) {
       pushToast(
-        `Sent · email: ${report?.email_ok ? 'ok' : 'off'}, whatsapp: ${report?.wa_ok ? 'ok' : 'off'}`,
+        `Sent · email: ${report.email_ok ? 'ok' : 'off'}, Telegram: ${report.telegram_ok ? 'ok' : 'off'}`,
         'success'
       );
-    } else {
-      pushToast(
-        `Digest fired but nothing delivered. email: ${report?.email_err ?? 'off'} · wa: ${report?.wa_err ?? 'off'}`,
-        'neutral'
-      );
+      await loadTelegram();
+      return;
     }
+    pushToast(
+      `Nothing delivered. Email: ${report?.email_err ?? 'off'} · Telegram: ${report?.telegram_err ?? 'off'}`,
+      'neutral'
+    );
   }
+
+  const connected = Boolean(telegram?.chat_id && telegram.connected_at);
+  const telegramHint = connected
+    ? telegram?.chat_username
+      ? `Connected as @${telegram.chat_username}`
+      : 'Private chat connected'
+    : botUsername
+      ? 'Connect your private Telegram chat'
+      : 'Bot configuration pending';
 
   return (
     <Card id="digest">
       <CardHeader
-        title="Daily digest"
+        title="Daily study digest"
         aside={
           <Button variant="ghost" size="sm" onClick={() => void sendNow()} disabled={sending}>
             <Send size={11} strokeWidth={1.75} className="mr-1" />
@@ -114,9 +203,9 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
         <div className="flex items-start gap-3">
           <Bell size={14} strokeWidth={1.75} className="mt-0.5 shrink-0 text-accent" />
           <p className="text-[12.5px] leading-relaxed text-text-muted">
-            One message per day at your chosen local hour: today's re-attempts, planner items,
-            weekly fix on Mondays, one dynamic quote. No streaks, no shame. Toggle either channel
-            off at any time.
+            One optional message at your chosen local hour with today&apos;s open planner items,
+            due re-attempts, and Monday&apos;s weekly fix. It contains no streaks or engagement
+            prompts, and either channel can be paused at any time.
           </p>
         </div>
 
@@ -125,42 +214,78 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
             label="Email digest"
             hint={`Sent to ${profile.email}`}
             checked={profile.digest_email_enabled}
-            onChange={(v) => void saveEmailToggle(v)}
+            onChange={(value) => void saveEmailToggle(value)}
           />
           <ToggleRow
-            label="WhatsApp digest"
-            hint={
-              profile.phone_e164
-                ? `To ${profile.phone_e164}`
-                : 'Add a phone number below'
-            }
-            checked={profile.digest_whatsapp_enabled}
-            onChange={(v) => void saveWaToggle(v)}
+            label="Telegram digest"
+            hint={telegramHint}
+            checked={Boolean(telegram?.enabled)}
+            disabled={!connected}
+            onChange={(value) => void saveTelegramToggle(value)}
           />
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label htmlFor="phone" className="u-label mb-1 block">
-              Phone (E.164)
-            </label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="phone"
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+919000000000"
-                autoComplete="tel"
-              />
-              <Button size="sm" variant="secondary" onClick={() => void savePhone()}>
-                Save
+          <div className="rounded border border-border/70 bg-bg-overlay/30 px-3 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[13px] font-medium text-text">Telegram connection</p>
+                <p className="mt-0.5 text-[11px] text-text-faint">
+                  {loadingTelegram ? 'Checking connection…' : telegramHint}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadTelegram()}
+                disabled={loadingTelegram}
+                aria-label="Refresh Telegram connection"
+              >
+                <RefreshCcw size={12} strokeWidth={1.75} />
               </Button>
             </div>
-            <p className="mt-1 text-[11px] text-text-faint">
-              Country code first, no spaces. Used only for WhatsApp digest.
-            </p>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {!connected && !connectUrl && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void beginConnection()}
+                  disabled={connecting || !botUsername}
+                >
+                  <Link2 size={12} strokeWidth={1.75} className="mr-1" />
+                  {connecting ? 'Preparing…' : 'Connect Telegram'}
+                </Button>
+              )}
+              {!connected && connectUrl && (
+                <Button
+                  size="sm"
+                  onClick={() => window.open(connectUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  <Send size={12} strokeWidth={1.75} className="mr-1" />
+                  Open Telegram
+                </Button>
+              )}
+              {connected && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void disconnectTelegram()}
+                >
+                  <Unlink size={12} strokeWidth={1.75} className="mr-1" />
+                  Disconnect
+                </Button>
+              )}
+            </div>
+
+            {awaitingConnection && (
+              <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                In Telegram, tap Start. This page will detect the connection automatically. The
+                private link expires after 15 minutes.
+              </p>
+            )}
           </div>
+
           <div>
             <label htmlFor="hour" className="u-label mb-1 block">
               Preferred local hour
@@ -168,48 +293,28 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
             <select
               id="hour"
               value={profile.digest_hour_local}
-              onChange={(e) => void saveHour(Number(e.target.value))}
+              onChange={(event) => void saveHour(Number(event.target.value))}
               className="block h-10 w-full rounded border border-border bg-bg-raised px-3 text-[13px] text-text focus:border-accent focus:shadow-[0_0_0_3px_theme(colors.accent.faint)] focus:outline-none"
             >
-              {hourOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
+              {hourOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
             <p className="mt-1 text-[11px] text-text-faint">
-              Timezone: <span className="u-num">{profile.timezone}</span>. Cron fires every 30 minutes
-              past the hour; users at the matching local hour get the day's digest.
+              Timezone: <span className="u-num">{profile.timezone}</span>. Delivery runs once when
+              this local hour begins.
             </p>
           </div>
         </div>
 
-        <details className="rounded border border-border/70 bg-bg-overlay/40 px-3 py-2 text-[12px] text-text-muted">
-          <summary className="cursor-pointer font-medium text-text-muted">
-            WhatsApp setup notes
-          </summary>
-          <ol className="mt-2 list-decimal space-y-1 pl-5 leading-relaxed">
-            <li>
-              Create a Meta Business account and add a WhatsApp Business API app.
-            </li>
-            <li>
-              Add + verify a phone number as the sender.
-            </li>
-            <li>
-              Create a message template named <span className="u-num">daily_digest</span> with 4 body
-              variables ({'{{1}}'} = greeting name, {'{{2}}'} = re-attempts count, {'{{3}}'} = planner
-              count, {'{{4}}'} = fix or quote). Wait for Meta approval.
-            </li>
-            <li>
-              Provide <span className="u-num">META_ACCESS_TOKEN</span> and{' '}
-              <span className="u-num">META_PHONE_NUMBER_ID</span> to your Supabase project secrets.
-            </li>
-            <li>
-              Every recipient must WhatsApp your business number at least once so the 24h window is
-              open; templates are used to push after that.
-            </li>
-          </ol>
-        </details>
+        {!botUsername && (
+          <p className="rounded border border-warn/30 bg-warn/5 px-3 py-2 text-[11.5px] text-text-muted">
+            The Telegram bot owner still needs to add its username and token to the deployment.
+            Email delivery is unaffected.
+          </p>
+        )}
       </CardBody>
     </Card>
   );
@@ -219,20 +324,23 @@ function ToggleRow({
   label,
   hint,
   checked,
+  disabled = false,
   onChange
 }: {
   label: string;
   hint: string;
   checked: boolean;
-  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  onChange: (value: boolean) => void;
 }) {
   return (
     <label className="flex items-center gap-3 rounded border border-border/70 bg-bg-overlay/30 px-3 py-2.5">
       <input
         type="checkbox"
         checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-accent"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 accent-accent disabled:cursor-not-allowed disabled:opacity-40"
       />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-text">{label}</p>

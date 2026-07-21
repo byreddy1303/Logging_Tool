@@ -83,6 +83,7 @@ functions=(
   request-pin-reset
   buddy-request
   daily-digest
+  telegram-webhook
 )
 for fn in "${functions[@]}"; do
   info "→ $fn"
@@ -103,11 +104,27 @@ add_secret RESEND_API_KEY
 add_secret MAIL_FROM
 add_secret OWNER_EMAIL
 add_secret VITE_APP_URL
+add_secret TELEGRAM_BOT_TOKEN
+add_secret TELEGRAM_WEBHOOK_SECRET
 if [[ ${#secret_args[@]} -gt 0 ]]; then
   supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" "${secret_args[@]}"
   ok "Set ${#secret_args[@]} secrets"
 else
   info "Nothing to set."
+fi
+
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+  [[ -n "${TELEGRAM_BOT_USERNAME:-}" ]] || fail "TELEGRAM_BOT_USERNAME is required when TELEGRAM_BOT_TOKEN is set"
+  [[ -n "${TELEGRAM_WEBHOOK_SECRET:-}" ]] || fail "TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_BOT_TOKEN is set"
+  step "Configure Telegram webhook"
+  telegram_webhook_url="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/telegram-webhook"
+  telegram_response=$(curl --silent --show-error --request POST \
+    "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+    --data-urlencode "url=${telegram_webhook_url}" \
+    --data-urlencode "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
+    --data-urlencode 'allowed_updates=["message"]')
+  [[ "$telegram_response" == *'"ok":true'* ]] || fail "Telegram rejected the webhook configuration"
+  ok "Telegram webhook configured"
 fi
 
 step "Print production URLs"
@@ -127,6 +144,7 @@ browser login. To deploy the frontend:
        npx vercel env add VITE_SUPABASE_URL production
        npx vercel env add VITE_SUPABASE_ANON_KEY production
        npx vercel env add VITE_APP_URL production
+       npx vercel env add VITE_TELEGRAM_BOT_USERNAME production
   4. Ship it:              npx vercel --prod
 
 After the first Vercel deploy, come back and update .deploy.env with the

@@ -96,3 +96,11 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 **Chose**: remove the two table truncations from the still-unapplied `20260719000001` migration while retaining its case-insensitive duplicate guards and invite validation.
 
 **Reason**: a normal production release must not erase existing Buddy pairs or messages. The remote migration ledger confirms this version has never run, so correcting the migration before its first production application is the safest additive path.
+
+## 2026-07-21 — Opt-in Telegram daily study digest
+
+**Chose**: replace the inactive WhatsApp path with a Telegram bot connected through a 15-minute one-time link. Deliver at most one study-only digest per local day, with separate idempotency from email and `/stop` support in Telegram.
+
+**Rejected**: unofficial WhatsApp Web automation, user-pasted Telegram chat IDs, browser push, and motivational engagement messages.
+
+**Reason**: Telegram is free at this two-user volume, while webhook-bound chat IDs, explicit opt-in, and narrow digest content keep delivery reliable and consistent with the product's low-distraction purpose.

@@ -10,6 +10,7 @@ Follow this document top-to-bottom to take AIR Journal from a fresh clone to a w
 - A Vercel account (Hobby plan is fine).
 - A Resend account (free tier: 3000 mails/month) with your sending domain verified for DKIM + SPF.
 - A domain you control for the `From:` address on outgoing mail.
+- Optional Telegram bot created with `@BotFather` if daily Telegram delivery is enabled.
 
 ## 1. Provision Supabase
 
@@ -49,6 +50,7 @@ npx supabase functions deploy login
 npx supabase functions deploy request-pin-reset
 npx supabase functions deploy buddy-request
 npx supabase functions deploy daily-digest
+npx supabase functions deploy telegram-webhook
 ```
 
 ## 4. Configure secrets
@@ -66,6 +68,22 @@ npx supabase secrets set \
 - `MAIL_FROM` must be a verified sender in Resend, or the API will reject.
 - `OWNER_EMAIL` is where new access-request notifications land. It's independent of the DB "owner" (first-signed-up user) — you can point it wherever routing is convenient.
 - `VITE_APP_URL` is used inside invite emails so the link resolves to your production host, not the edge function origin.
+
+For Telegram delivery, create a bot with `@BotFather`, then add the server-only secrets:
+
+```bash
+npx supabase secrets set \
+  TELEGRAM_BOT_TOKEN='123456:replace-me' \
+  TELEGRAM_WEBHOOK_SECRET='replace-with-openssl-rand-hex-32'
+
+curl --request POST \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  --data-urlencode 'url=https://your-project-ref.supabase.co/functions/v1/telegram-webhook' \
+  --data-urlencode "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
+  --data-urlencode 'allowed_updates=["message"]'
+```
+
+The webhook rejects requests without Telegram's secret header. Users connect from Settings through a 15-minute link; the browser never accepts or writes a chat ID.
 
 Free-tier key: **Resend** — [resend.com](https://resend.com) — for transactional mail. Verify your domain (DKIM + SPF) before going live.
 
@@ -89,6 +107,7 @@ vercel link                          # link to a new or existing project
 vercel env add VITE_SUPABASE_URL production
 vercel env add VITE_SUPABASE_ANON_KEY production
 vercel env add VITE_APP_URL production          # same as edge fn secret
+vercel env add VITE_TELEGRAM_BOT_USERNAME production # public name, no @
 vercel env add VITE_SENTRY_DSN production       # optional
 vercel --prod
 ```
@@ -105,6 +124,8 @@ After the first deploy:
 4. Settings → Access requests → click **Approve + send invite** on the row you created.
 5. Confirm the requester email got the invite mail. Open the link, sign in.
 6. Confirm the buddy pairing landed (Buddy page for both users should show the other).
+7. Settings → Daily study digest → Connect Telegram → tap Start in Telegram.
+8. Return to Settings, confirm the connection, and use **Send now** once.
 
 ## 9. Schedule cron jobs
 
@@ -118,6 +139,7 @@ Supabase Dashboard → Database → Cron. Add:
 - Access requests: 1 pending per email per calendar day (DB unique index).
 - Buddy requests: server-enforced daily limit and 24-hour cooldown after a decline.
 - Resend free tier: 3000 mails/month. At the volumes AIR Journal operates, this is comfortable.
+- Telegram Bot API delivery is free. Two daily recipients produce about 730 messages per year.
 
 ## 11. Ongoing ops
 
