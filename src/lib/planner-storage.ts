@@ -3,12 +3,8 @@
 //
 // Storage keys:
 //   planner_YYYY-MM-DD                 → DayPlan for that date
-//   planner_settings_wa                → WhatsAppSettings JSON blob
-//   planner_last_notified              → ISO date we last fired the daily notif
 
 const DAY_KEY_PREFIX = 'planner_';
-const SETTINGS_KEY = 'planner_settings_wa';
-const LAST_NOTIFIED_KEY = 'planner_last_notified';
 
 /* ------------------------------ types ------------------------------ */
 
@@ -97,13 +93,6 @@ export interface DayPlan {
   updatedAt: string;
 }
 
-export interface WhatsAppSettings {
-  enabled: boolean;
-  phoneE164: string;
-  apiKey: string;
-  time: string; // HH:MM local
-}
-
 /* ------------------------------ defaults ------------------------------ */
 
 export function emptyDayPlan(date: string): DayPlan {
@@ -136,15 +125,6 @@ export function emptyDayPlan(date: string): DayPlan {
       replicate: ''
     },
     updatedAt: new Date().toISOString()
-  };
-}
-
-export function emptyWhatsAppSettings(): WhatsAppSettings {
-  return {
-    enabled: false,
-    phoneE164: '',
-    apiKey: '',
-    time: '06:00'
   };
 }
 
@@ -188,30 +168,6 @@ export function deleteDayPlan(date: string): void {
   }
 }
 
-export function loadWhatsAppSettings(): WhatsAppSettings {
-  return safeGet<WhatsAppSettings>(SETTINGS_KEY) ?? emptyWhatsAppSettings();
-}
-
-export function saveWhatsAppSettings(settings: WhatsAppSettings): void {
-  safeSet(SETTINGS_KEY, settings);
-}
-
-export function markNotifiedToday(dateISO: string): void {
-  try {
-    localStorage.setItem(LAST_NOTIFIED_KEY, dateISO);
-  } catch {
-    // ignore
-  }
-}
-
-export function lastNotifiedOn(): string | null {
-  try {
-    return localStorage.getItem(LAST_NOTIFIED_KEY);
-  } catch {
-    return null;
-  }
-}
-
 /* ----------------------- calendar bulk queries ----------------------- */
 
 /** Return a Set of YYYY-MM-DD keys that have a plan stored. */
@@ -234,11 +190,10 @@ export function loadPlanIndexForMonth(year: number, monthIndex: number): Set<str
 export interface DayCellSummary {
   subjects: string[];
   totalMin: number;
-  dayType: DayType | null;
 }
 
 export function summarize(plan: DayPlan | null): DayCellSummary {
-  if (!plan) return { subjects: [], totalMin: 0, dayType: null };
+  if (!plan) return { subjects: [], totalMin: 0 };
   const subjects: string[] = [];
   let totalMin = 0;
   for (const s of plan.sessions) {
@@ -247,5 +202,5 @@ export function summarize(plan: DayPlan | null): DayCellSummary {
     if (label && !subjects.includes(label)) subjects.push(label);
     totalMin += s.durationMin || 0;
   }
-  return { subjects, totalMin, dayType: plan.structure.dayType };
+  return { subjects, totalMin };
 }

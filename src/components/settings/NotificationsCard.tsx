@@ -1,11 +1,22 @@
-// Optional daily study digest. Email remains available; Telegram is the only
-// proactive messaging integration. Telegram chat ids are bound by the bot
-// webhook after a short-lived, user-generated connection link is opened.
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bell, Link2, RefreshCcw, Send, Unlink } from 'lucide-react';
+// Settings is the single control surface for the optional Telegram digest.
+// The bot token is server-only; users connect a private chat through a
+// short-lived link, then control delivery time, timezone, and daily on/off.
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Bell,
+  Bot,
+  CheckCircle2,
+  Clock3,
+  Link2,
+  RefreshCcw,
+  Send,
+  Unlink
+} from 'lucide-react';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { TIMEZONES } from '@/lib/constants';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import type { TelegramSubscriptionRow, UserRow } from '@/types';
@@ -19,23 +30,20 @@ const botUsername = String(import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? '')
   .trim()
   .replace(/^@/, '');
 
+const hourOptions = Array.from({ length: 24 }, (_, hour) => ({
+  value: hour,
+  label: `${String(hour).padStart(2, '0')}:00`
+}));
+
 export default function NotificationsCard({ profile, sandbox }: Props) {
-  const refreshProfile = useAuthStore((s) => s.refreshProfile);
-  const pushToast = useUiStore((s) => s.pushToast);
+  const refreshProfile = useAuthStore((state) => state.refreshProfile);
+  const pushToast = useUiStore((state) => state.pushToast);
   const [telegram, setTelegram] = useState<TelegramSubscriptionRow | null>(null);
   const [loadingTelegram, setLoadingTelegram] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectUrl, setConnectUrl] = useState<string | null>(null);
   const [awaitingConnection, setAwaitingConnection] = useState(false);
   const [sending, setSending] = useState(false);
-  const hourOptions = useMemo(
-    () =>
-      Array.from({ length: 24 }, (_, hour) => ({
-        value: hour,
-        label: `${String(hour).padStart(2, '0')}:00`
-      })),
-    []
-  );
 
   const loadTelegram = useCallback(async () => {
     if (!profile || sandbox || !supabaseConfigured) return;
@@ -77,7 +85,15 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
 
   if (sandbox || !supabaseConfigured || !profile) return null;
 
-  async function patchProfile(patch: Partial<UserRow>) {
+  const connected = Boolean(telegram?.chat_id && telegram.connected_at);
+  const enabled = connected && Boolean(telegram?.enabled);
+  const connectedAccount = telegram?.chat_username
+    ? `@${telegram.chat_username}`
+    : connected
+      ? 'Private Telegram chat'
+      : 'Not connected';
+
+  async function patchProfile(patch: Partial<UserRow>): Promise<boolean> {
     if (!profile) return false;
     const { error } = await supabase.from('users').update(patch).eq('id', profile.id);
     if (error) {
@@ -88,13 +104,11 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
     return true;
   }
 
-  async function saveEmailToggle(value: boolean) {
-    if (await patchProfile({ digest_email_enabled: value })) {
-      pushToast(value ? 'Email digest on.' : 'Email digest off.', 'success');
+  async function setTelegramEnabled(value: boolean) {
+    if (!connected) {
+      pushToast('Connect Telegram before turning on daily delivery.', 'neutral');
+      return;
     }
-  }
-
-  async function saveTelegramToggle(value: boolean) {
     const { error } = await supabase.rpc('set_telegram_digest_enabled', {
       wants_enabled: value
     });
@@ -103,7 +117,7 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
       return;
     }
     await loadTelegram();
-    pushToast(value ? 'Telegram digest on.' : 'Telegram digest paused.', 'success');
+    pushToast(value ? 'Daily Telegram notification on.' : 'Daily Telegram notification off.', 'success');
   }
 
   async function beginConnection() {
@@ -141,15 +155,27 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
 
   async function saveHour(hour: number) {
     if (await patchProfile({ digest_hour_local: hour })) {
-      pushToast(`Digest hour set to ${String(hour).padStart(2, '0')}:00.`, 'success');
+      pushToast(`Delivery time saved as ${String(hour).padStart(2, '0')}:00.`, 'success');
     }
   }
 
-  async function sendNow() {
-    if (!profile) return;
+  async function saveTimezone(timezone: string) {
+    if (await patchProfile({ timezone })) {
+      pushToast('Notification timezone saved.', 'success');
+    }
+  }
+
+  async function saveEmailBackup(value: boolean) {
+    if (await patchProfile({ digest_email_enabled: value })) {
+      pushToast(value ? 'Email backup on.' : 'Email backup off.', 'success');
+    }
+  }
+
+  async function sendTest() {
+    if (!profile || !connected || !telegram?.enabled) return;
     setSending(true);
     const { data, error } = await supabase.functions.invoke('daily-digest', {
-      body: { user_id: profile.id, force: true }
+      body: { user_id: profile.id, force: true, test: true, channel: 'telegram' }
     });
     setSending(false);
     if (error) {
@@ -158,94 +184,87 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
     }
     const report =
       ((data as {
-        report?: Array<{
-          email_ok?: boolean;
-          telegram_ok?: boolean;
-          email_err?: string;
-          telegram_err?: string;
-        }>;
+        report?: Array<{ telegram_ok?: boolean; telegram_err?: string }>;
       })?.report ?? [])[0];
-    if (report?.email_ok || report?.telegram_ok) {
-      pushToast(
-        `Sent · email: ${report.email_ok ? 'ok' : 'off'}, Telegram: ${report.telegram_ok ? 'ok' : 'off'}`,
-        'success'
-      );
+    if (report?.telegram_ok) {
+      pushToast('Telegram test delivered.', 'success');
       await loadTelegram();
       return;
     }
-    pushToast(
-      `Nothing delivered. Email: ${report?.email_err ?? 'off'} · Telegram: ${report?.telegram_err ?? 'off'}`,
-      'neutral'
-    );
+    pushToast(report?.telegram_err ?? 'Telegram test was not delivered.', 'neutral');
   }
-
-  const connected = Boolean(telegram?.chat_id && telegram.connected_at);
-  const telegramHint = connected
-    ? telegram?.chat_username
-      ? `Connected as @${telegram.chat_username}`
-      : 'Private chat connected'
-    : botUsername
-      ? 'Connect your private Telegram chat'
-      : 'Bot configuration pending';
 
   return (
     <Card id="digest">
       <CardHeader
-        title="Daily study digest"
+        title="Telegram notifications"
         aside={
-          <Button variant="ghost" size="sm" onClick={() => void sendNow()} disabled={sending}>
-            <Send size={11} strokeWidth={1.75} className="mr-1" />
-            {sending ? 'Sending…' : 'Send now'}
-          </Button>
+          <span
+            className={cn(
+              'rounded-full px-2.5 py-1 text-[11px] font-semibold',
+              enabled
+                ? 'bg-success/10 text-success'
+                : 'bg-bg-overlay text-text-faint'
+            )}
+          >
+            {enabled ? 'Daily delivery on' : 'Daily delivery off'}
+          </span>
         }
       />
       <CardBody className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
-          <Bell size={14} strokeWidth={1.75} className="mt-0.5 shrink-0 text-accent" />
+          <Bell size={15} strokeWidth={1.75} className="mt-0.5 shrink-0 text-accent" />
           <p className="text-[12.5px] leading-relaxed text-text-muted">
-            One optional message at your chosen local hour with today&apos;s open planner items,
-            due re-attempts, and Monday&apos;s weekly fix. It contains no streaks or engagement
-            prompts, and either channel can be paused at any time.
+            Configure everything here. AIR Journal sends one private Telegram message each day at
+            your chosen local time. The bot token stays on the server and is never entered in the
+            website.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ToggleRow
-            label="Email digest"
-            hint={`Sent to ${profile.email}`}
-            checked={profile.digest_email_enabled}
-            onChange={(value) => void saveEmailToggle(value)}
-          />
-          <ToggleRow
-            label="Telegram digest"
-            hint={telegramHint}
-            checked={Boolean(telegram?.enabled)}
+        <section className="flex items-center justify-between gap-4 rounded border border-accent/25 bg-accent-faint/45 px-4 py-3">
+          <div className="min-w-0">
+            <p className="font-display text-[14px] font-semibold text-text">
+              Daily Telegram notification
+            </p>
+            <p className="mt-0.5 text-[11.5px] text-text-muted">
+              {connected ? connectedAccount : 'Connect your Telegram account first.'}
+            </p>
+          </div>
+          <MasterToggle
+            checked={enabled}
             disabled={!connected}
-            onChange={(value) => void saveTelegramToggle(value)}
+            onChange={(value) => void setTelegramEnabled(value)}
           />
-        </div>
+        </section>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="rounded border border-border/70 bg-bg-overlay/30 px-3 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[13px] font-medium text-text">Telegram connection</p>
-                <p className="mt-0.5 text-[11px] text-text-faint">
-                  {loadingTelegram ? 'Checking connection…' : telegramHint}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void loadTelegram()}
-                disabled={loadingTelegram}
-                aria-label="Refresh Telegram connection"
+          <DetailField label="Telegram bot" icon={<Bot size={13} strokeWidth={1.75} />}>
+            {botUsername ? (
+              <a
+                href={`https://t.me/${botUsername}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[13px] font-medium text-accent hover:underline"
               >
-                <RefreshCcw size={12} strokeWidth={1.75} />
-              </Button>
-            </div>
+                @{botUsername}
+              </a>
+            ) : (
+              <span className="text-[13px] text-text-muted">Bot configuration pending</span>
+            )}
+          </DetailField>
 
-            <div className="mt-3 flex flex-wrap gap-2">
+          <DetailField
+            label="Connected account"
+            icon={
+              connected ? (
+                <CheckCircle2 size={13} strokeWidth={1.75} className="text-success" />
+              ) : (
+                <Link2 size={13} strokeWidth={1.75} />
+              )
+            }
+          >
+            <p className="text-[13px] font-medium text-text">{connectedAccount}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
               {!connected && !connectUrl && (
                 <Button
                   size="sm"
@@ -266,32 +285,35 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
                   Open Telegram
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadTelegram()}
+                disabled={loadingTelegram}
+                aria-label="Refresh Telegram connection"
+              >
+                <RefreshCcw size={12} strokeWidth={1.75} className="mr-1" />
+                Refresh
+              </Button>
               {connected && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void disconnectTelegram()}
-                >
+                <Button variant="ghost" size="sm" onClick={() => void disconnectTelegram()}>
                   <Unlink size={12} strokeWidth={1.75} className="mr-1" />
                   Disconnect
                 </Button>
               )}
             </div>
-
             {awaitingConnection && (
               <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
-                In Telegram, tap Start. This page will detect the connection automatically. The
-                private link expires after 15 minutes.
+                Tap Start in Telegram. This page checks the connection automatically for two
+                minutes.
               </p>
             )}
-          </div>
+          </DetailField>
 
-          <div>
-            <label htmlFor="hour" className="u-label mb-1 block">
-              Preferred local hour
-            </label>
+          <DetailField label="Daily delivery time" icon={<Clock3 size={13} strokeWidth={1.75} />}>
             <select
-              id="hour"
+              id="telegram-hour"
+              aria-label="Daily Telegram delivery time"
               value={profile.digest_hour_local}
               onChange={(event) => void saveHour(Number(event.target.value))}
               className="block h-10 w-full rounded border border-border bg-bg-raised px-3 text-[13px] text-text focus:border-accent focus:shadow-[0_0_0_3px_theme(colors.accent.faint)] focus:outline-none"
@@ -302,50 +324,105 @@ export default function NotificationsCard({ profile, sandbox }: Props) {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-[11px] text-text-faint">
-              Timezone: <span className="u-num">{profile.timezone}</span>. Delivery runs once when
-              this local hour begins.
-            </p>
-          </div>
+          </DetailField>
+
+          <DetailField label="Notification timezone" icon={<Clock3 size={13} strokeWidth={1.75} />}>
+            <select
+              id="telegram-timezone"
+              aria-label="Telegram notification timezone"
+              value={profile.timezone}
+              onChange={(event) => void saveTimezone(event.target.value)}
+              className="block h-10 w-full rounded border border-border bg-bg-raised px-3 text-[13px] text-text focus:border-accent focus:shadow-[0_0_0_3px_theme(colors.accent.faint)] focus:outline-none"
+            >
+              {TIMEZONES.map((timezone) => (
+                <option key={timezone.value} value={timezone.value}>
+                  {timezone.label}
+                </option>
+              ))}
+            </select>
+          </DetailField>
         </div>
 
-        {!botUsername && (
-          <p className="rounded border border-warn/30 bg-warn/5 px-3 py-2 text-[11.5px] text-text-muted">
-            The Telegram bot owner still needs to add its username and token to the deployment.
-            Email delivery is unaffected.
+        <div className="rounded border border-border/70 bg-bg-overlay/35 px-3 py-2.5">
+          <p className="u-label">Daily message contains</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
+            Today&apos;s available planner items, due re-attempts grouped by subject, and your weekly
+            fix on Monday. No streaks or engagement prompts.
           </p>
-        )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+          <label className="flex items-center gap-2 text-[12px] text-text-muted">
+            <input
+              type="checkbox"
+              checked={profile.digest_email_enabled}
+              onChange={(event) => void saveEmailBackup(event.target.checked)}
+              className="h-4 w-4 accent-accent"
+            />
+            Also send an email backup
+          </label>
+          <Button
+            size="sm"
+            onClick={() => void sendTest()}
+            disabled={!enabled || sending}
+          >
+            <Send size={12} strokeWidth={1.75} className="mr-1" />
+            {sending ? 'Sending…' : 'Send Telegram test'}
+          </Button>
+        </div>
       </CardBody>
     </Card>
   );
 }
 
-function ToggleRow({
+function DetailField({
   label,
-  hint,
-  checked,
-  disabled = false,
-  onChange
+  icon,
+  children
 }: {
   label: string;
-  hint: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded border border-border/70 bg-bg-overlay/25 px-3 py-3">
+      <div className="mb-2 flex items-center gap-1.5 text-text-faint">
+        {icon}
+        <p className="u-label">{label}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function MasterToggle({
+  checked,
+  disabled,
+  onChange
+}: {
   checked: boolean;
-  disabled?: boolean;
+  disabled: boolean;
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-3 rounded border border-border/70 bg-bg-overlay/30 px-3 py-2.5">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        className="h-4 w-4 accent-accent disabled:cursor-not-allowed disabled:opacity-40"
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label="Daily Telegram notification"
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-40',
+        checked ? 'bg-success' : 'bg-text-faint/45'
+      )}
+    >
+      <span
+        className={cn(
+          'inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
+          checked ? 'translate-x-6' : 'translate-x-1'
+        )}
       />
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium text-text">{label}</p>
-        <p className="mt-0.5 truncate text-[11px] text-text-faint">{hint}</p>
-      </div>
-    </label>
+    </button>
   );
 }

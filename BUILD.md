@@ -10,6 +10,8 @@ The user removed all AI-backed product features. This amendment supersedes every
 
 At the user's direction, an optional Telegram bot may send one deterministic daily study digest containing only the learner's open planner items, due re-attempts, and Monday weekly fix. Each user must explicitly connect and may pause or disconnect at any time. Browser/device push remains banned. The Telegram message must not contain streaks, shame, engagement bait, or autoplaying follow-ups. Email remains an optional secondary delivery channel; WhatsApp is not active.
 
+Telegram connection, delivery time, timezone, test delivery, disconnect, and the daily on/off control live only in Settings. Planner remains planning-only. Its day modal contains Study sessions and Review; Day structure, Mindset & energy, and Non-study tasks are no longer shown. Legacy locally stored fields may remain readable for backward compatibility but are not part of new day planning.
+
 ---
 
 ## 0. Autonomy directives (for Claude executing this doc)

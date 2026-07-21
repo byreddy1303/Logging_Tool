@@ -104,3 +104,11 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 **Rejected**: unofficial WhatsApp Web automation, user-pasted Telegram chat IDs, browser push, and motivational engagement messages.
 
 **Reason**: Telegram is free at this two-user volume, while webhook-bound chat IDs, explicit opt-in, and narrow digest content keep delivery reliable and consistent with the product's low-distraction purpose.
+
+## 2026-07-21 — Centralize Telegram settings and simplify day planning
+
+**Chose**: keep Telegram connection, account status, delivery time, timezone, test delivery, disconnect, and the daily master switch in Settings only. Reduce the day modal to Study sessions and Review while retaining legacy local fields in storage for backward compatibility.
+
+**Rejected**: notification controls inside Planner and the Day structure, Mindset & energy, and Non-study task sections.
+
+**Reason**: direct user direction. Planner should carry only the study-planning workflow; delivery configuration belongs to a single, predictable control surface.

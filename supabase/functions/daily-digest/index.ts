@@ -1,5 +1,7 @@
 // POST /functions/v1/daily-digest
-// Body (optional): { user_id?: uuid, dry_run?: boolean, force?: boolean }
+// Body (optional):
+// { user_id?: uuid, dry_run?: boolean, force?: boolean, test?: boolean,
+//   channel?: 'email' | 'telegram' }
 //
 // When called by cron with no body, loops every user whose
 // digest_hour_local matches the "current local hour" AND hasn't received
@@ -51,6 +53,8 @@ interface TelegramSubscription {
   last_digest_sent_on: string | null;
 }
 
+type DigestChannel = 'email' | 'telegram';
+
 function localHourAndDate(now: Date, tz: string): { hour: number; isoDate: string; weekday: number } {
   // Best-effort local time; if tz is invalid, fall back to UTC.
   try {
@@ -80,7 +84,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return json({ ok: false, error: 'method not allowed' }, 405);
 
-  let body: { user_id?: string; dry_run?: boolean; force?: boolean } = {};
+  let body: {
+    user_id?: string;
+    dry_run?: boolean;
+    force?: boolean;
+    test?: boolean;
+    channel?: DigestChannel;
+  } = {};
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -102,6 +112,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const dryRun = body.dry_run === true;
   const force = body.force === true;
+  const test = body.test === true;
+  const allowEmail = body.channel !== 'telegram';
+  const allowTelegram = body.channel !== 'email';
   const now = new Date();
 
   let userQuery = admin
@@ -143,9 +156,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const emailDue = Boolean(
-      u.digest_email_enabled && (force || u.last_digest_sent_on !== isoDate)
+      allowEmail &&
+      u.digest_email_enabled &&
+      (force || u.last_digest_sent_on !== isoDate)
     );
     const telegramDue = Boolean(
+      allowTelegram &&
       telegram?.enabled &&
       telegram.chat_id !== null &&
       (force || telegram.last_digest_sent_on !== isoDate)
@@ -175,7 +191,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (!res.ok) email_err = res.error;
     }
 
-    if (telegramDue && telegram?.chat_id !== null) {
+    if (telegramDue && telegram && telegram.chat_id !== null) {
       const res = await sendTelegramMessage({
         token: TELEGRAM_BOT_TOKEN,
         chatId: telegram.chat_id,
@@ -186,10 +202,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (!res.ok) telegram_err = res.error;
     }
 
-    if (email_ok) {
+    if (email_ok && !test) {
       await admin.from('users').update({ last_digest_sent_on: isoDate }).eq('id', u.id);
     }
-    if (telegram_ok) {
+    if (telegram_ok && !test) {
       await admin
         .from('telegram_subscriptions')
         .update({ last_digest_sent_on: isoDate, updated_at: new Date().toISOString() })

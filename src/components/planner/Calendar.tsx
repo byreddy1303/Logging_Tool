@@ -198,11 +198,6 @@ export default function Calendar({
                   )}
                 </div>
               )}
-              {c.inMonth && summary?.dayType && summary.dayType !== 'Full Study Day' && (
-                <span className="mt-auto truncate text-[9px] uppercase tracking-wide text-text-faint">
-                  {summary.dayType}
-                </span>
-              )}
             </button>
           );
         })}

@@ -5,38 +5,30 @@
 // but is no longer surfaced here. See DECISIONS.md for the rationale.
 //
 // Structure:
-//   - top card: month + WhatsApp/digest settings
 //   - calendar grid (full-width) with click-to-open day modal
+//   - planner insights derived from saved study sessions
 //   - modal edits persist immediately on every field change
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import PageHeader from '@/components/layout/PageHeader';
 import Calendar from '@/components/planner/Calendar';
 import DayPlanModal from '@/components/planner/DayPlanModal';
 import PlannerInsights from '@/components/planner/PlannerInsights';
-import WhatsAppSetup from '@/components/planner/WhatsAppSetup';
 import { useUiStore } from '@/stores/ui';
 import {
   deleteDayPlan,
   emptyDayPlan,
   loadDayPlan,
   loadPlanIndexForMonth,
-  loadWhatsAppSettings,
   saveDayPlan,
   summarize,
   type DayCellSummary,
-  type DayPlan,
-  type WhatsAppSettings
+  type DayPlan
 } from '@/lib/planner-storage';
 import {
   PLANNER_MIN_MONTH_INDEX,
   PLANNER_MIN_YEAR
 } from '@/lib/planner-constants';
-import {
-  buildDigestMessage,
-  sendWhatsApp,
-  startDailyTicker
-} from '@/lib/planner-notify';
 
 function todayLocalISO(d: Date): string {
   const y = d.getFullYear();
@@ -59,9 +51,6 @@ export default function Planner() {
   const [monthIndex, setMonthIndex] = useState(initialM);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [openPlan, setOpenPlan] = useState<DayPlan | null>(null);
-  const [waSettings, setWaSettings] = useState<WhatsAppSettings>(() =>
-    loadWhatsAppSettings()
-  );
   // bumping `revision` after saves/deletes forces the summary memo to refetch
   // localStorage without diving into React refs.
   const [revision, setRevision] = useState(0);
@@ -76,12 +65,6 @@ export default function Planner() {
     });
     return { planIndex: idx, summaries: map };
   }, [year, monthIndex, revision]);
-
-  // Start the daily digest ticker while a Planner tab is mounted.
-  useEffect(() => {
-    const stop = startDailyTicker();
-    return stop;
-  }, []);
 
   const goPrev = useCallback(() => {
     setMonthIndex((m) => {
@@ -129,20 +112,6 @@ export default function Planner() {
     pushToast('Day plan cleared.', 'neutral');
   }
 
-  async function onSendWhatsApp() {
-    if (!selectedDate || !openPlan) return;
-    const text = buildDigestMessage(openPlan, selectedDate);
-    const res = await sendWhatsApp(waSettings, text);
-    if (res.ok) {
-      pushToast('Sent to WhatsApp.', 'success');
-    } else {
-      pushToast(
-        res.error ?? `WhatsApp send failed (${res.status})`,
-        'neutral'
-      );
-    }
-  }
-
   const todayISO = todayLocalISO(today);
 
   return (
@@ -165,8 +134,6 @@ export default function Planner() {
 
       <PlannerInsights revision={revision} />
 
-      <WhatsAppSetup settings={waSettings} onChange={setWaSettings} />
-
       <AnimatePresence>
         {selectedDate && openPlan && (
           <DayPlanModal
@@ -175,10 +142,6 @@ export default function Planner() {
             onChange={onChangePlan}
             onClose={closeModal}
             onDelete={onDeletePlan}
-            onSendWhatsApp={onSendWhatsApp}
-            canSendWhatsApp={
-              waSettings.phoneE164.length > 0 && waSettings.apiKey.length > 0
-            }
           />
         )}
       </AnimatePresence>

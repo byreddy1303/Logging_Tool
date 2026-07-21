@@ -6,7 +6,6 @@ import { Sparkles } from 'lucide-react';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { PLANNER_SUBJECTS } from '@/lib/planner-constants';
 import {
-  dayTypeShare,
   loadAllDayPlans,
   modeShare,
   neglectedSubjects,
@@ -39,7 +38,6 @@ export default function PlannerInsights({ revision }: Props) {
     subj30,
     mode30,
     prio30,
-    daytype30,
     review30,
     neglect30
   } = useMemo(() => {
@@ -53,7 +51,6 @@ export default function PlannerInsights({ revision }: Props) {
       subj30: subjectShare(plans30),
       mode30: modeShare(plans30),
       prio30: priorityShare(plans30),
-      daytype30: dayTypeShare(plans30),
       review30: reviewStats(plans30),
       neglect30: neglectedSubjects(plans30, PLANNER_SUBJECTS, 30, 60)
     };
@@ -62,11 +59,6 @@ export default function PlannerInsights({ revision }: Props) {
   if (plans.length === 0) {
     return null;
   }
-
-  const targetVsPlanned =
-    r30.totalHoursTargeted > 0
-      ? Math.round(((r30.totalMinPlanned / 60) / r30.totalHoursTargeted) * 100)
-      : null;
 
   return (
     <Card>
@@ -93,11 +85,6 @@ export default function PlannerInsights({ revision }: Props) {
               <Kpi
                 label="Total planned"
                 value={formatHours(r30.totalMinPlanned)}
-                hint={
-                  targetVsPlanned !== null
-                    ? `${targetVsPlanned}% of your ${r30.totalHoursTargeted}h target`
-                    : undefined
-                }
               />
               <Kpi
                 label="Avg sessions/day"
@@ -123,9 +110,6 @@ export default function PlannerInsights({ revision }: Props) {
 
             {/* Priority share */}
             <ShareBlock title="Priority mix" shares={prio30} />
-
-            {/* Day type mix */}
-            <ShareBlock title="Day type mix (by days)" shares={daytype30} unit="days" />
 
             {/* Replicate rate */}
             {review30.reviewedDays > 0 && (

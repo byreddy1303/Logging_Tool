@@ -1,13 +1,10 @@
-// Full day plan modal — five sections rendered as collapsible cards.
-//   1. Study sessions   (list of subject × mode × priority × duration × goal)
-//   2. Day structure    (wake, sleep, hours, breaks, day type)
-//   3. Mindset & energy (energy forecast, mood, one-thing note)
-//   4. Non-study tasks  (exercise + errands + social)
-//   5. Review           (fill after the day)
+// Focused day plan modal — two sections rendered as collapsible cards.
+//   1. Study sessions (subject × mode × priority × duration × goal)
+//   2. Review         (fill after the day)
 //
 // Persistence: writes on every field change to localStorage via
 // planner-storage; the modal itself carries no async state.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Check,
@@ -15,7 +12,6 @@ import {
   Clock,
   Pencil,
   Plus,
-  Send,
   Trash2,
   X
 } from 'lucide-react';
@@ -25,20 +21,14 @@ import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import { cn, formatDate, uuid } from '@/lib/utils';
 import {
-  BREAK_PATTERNS,
-  DAY_TYPES,
   DURATIONS,
   END_MOODS,
-  ENERGY_FORECASTS,
-  MOOD_INTENTS,
   PLANNER_SUBJECTS,
   PRIORITIES,
   STUDY_MODES
 } from '@/lib/planner-constants';
 import type {
   DayPlan,
-  DayType,
-  EnergyForecast,
   Priority,
   Replicate,
   StudyMode,
@@ -51,18 +41,12 @@ interface Props {
   onChange: (next: DayPlan) => void;
   onClose: () => void;
   onDelete: () => void;
-  onSendWhatsApp?: () => void;
-  canSendWhatsApp: boolean;
 }
 
 /** A plan is considered "filled" once any user-authored field has content.
  *  We use this to pick the initial modal mode (view vs. edit). */
 function planHasContent(plan: DayPlan): boolean {
   if (plan.sessions.length > 0) return true;
-  if (plan.mindset.motivationNote.trim().length > 0) return true;
-  if (plan.nonStudy.errands.trim().length > 0) return true;
-  if (plan.nonStudy.social.trim().length > 0) return true;
-  if (plan.nonStudy.exerciseDone) return true;
   if (plan.review.wentWell.trim().length > 0) return true;
   if (plan.review.missed.trim().length > 0) return true;
   if (plan.review.completionPct > 0) return true;
@@ -74,9 +58,7 @@ export default function DayPlanModal({
   plan,
   onChange,
   onClose,
-  onDelete,
-  onSendWhatsApp,
-  canSendWhatsApp
+  onDelete
 }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Empty plan → open straight into edit mode. Filled plan → view first,
@@ -124,22 +106,6 @@ export default function DayPlanModal({
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            {mode === 'edit' && onSendWhatsApp && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onSendWhatsApp}
-                disabled={!canSendWhatsApp}
-                title={
-                  canSendWhatsApp
-                    ? "Send today's plan to WhatsApp"
-                    : 'Configure WhatsApp in Settings first'
-                }
-              >
-                <Send size={11} strokeWidth={2} className="mr-1" />
-                Send to WA
-              </Button>
-            )}
             {mode === 'view' ? (
               <Button
                 variant="primary"
@@ -221,28 +187,7 @@ export default function DayPlanModal({
                 />
               </Section>
 
-              <Section title="2 · Day structure">
-                <StructureEditor
-                  structure={plan.structure}
-                  onChange={(structure) => update('structure', structure)}
-                />
-              </Section>
-
-              <Section title="3 · Mindset & energy check">
-                <MindsetEditor
-                  mindset={plan.mindset}
-                  onChange={(mindset) => update('mindset', mindset)}
-                />
-              </Section>
-
-              <Section title="4 · Non-study tasks (optional)">
-                <NonStudyEditor
-                  nonStudy={plan.nonStudy}
-                  onChange={(nonStudy) => update('nonStudy', nonStudy)}
-                />
-              </Section>
-
-              <Section title="5 · Review (fill after the day)">
+              <Section title="2 · Review (fill after the day)">
                 <ReviewEditor
                   review={plan.review}
                   onChange={(review) => update('review', review)}
@@ -260,9 +205,6 @@ export default function DayPlanModal({
 
 function ViewMode({ plan }: { plan: DayPlan }) {
   const totalMin = plan.sessions.reduce((s, x) => s + (x.durationMin || 0), 0);
-  const energyLabel =
-    ENERGY_FORECASTS.find((e) => e.value === plan.mindset.energyForecast)?.label ??
-    'Medium';
   const endMoodLabel =
     plan.review.endMood
       ? END_MOODS.find((m) => m.value === plan.review.endMood)?.label
@@ -323,80 +265,6 @@ function ViewMode({ plan }: { plan: DayPlan }) {
           </ul>
         )}
       </div>
-
-      {/* Day structure */}
-      <div className="rounded border border-border bg-bg">
-        <div className="border-b border-border/70 px-3 py-2">
-          <p className="font-display text-[13.5px] font-semibold text-text">
-            Day structure
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-3 p-3 text-[12.5px] sm:grid-cols-4">
-          <SummaryStat label="Wake" value={plan.structure.wakeAt || '—'} />
-          <SummaryStat label="Sleep" value={plan.structure.sleepAt || '—'} />
-          <SummaryStat
-            label="Target hrs"
-            value={`${plan.structure.totalHoursTarget}h`}
-          />
-          <SummaryStat label="Day type" value={plan.structure.dayType} />
-          <SummaryStat
-            label="Breaks"
-            value={
-              BREAK_PATTERNS.find((b) => b.value === plan.structure.breakPattern)
-                ?.label ?? '—'
-            }
-          />
-          {plan.structure.customBreak && (
-            <SummaryStat label="Custom cadence" value={plan.structure.customBreak} />
-          )}
-        </div>
-      </div>
-
-      {/* Mindset */}
-      <div className="rounded border border-border bg-bg">
-        <div className="border-b border-border/70 px-3 py-2">
-          <p className="font-display text-[13.5px] font-semibold text-text">
-            Mindset & energy
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-3 p-3 text-[12.5px] sm:grid-cols-3">
-          <SummaryStat label="Energy" value={energyLabel} />
-          <SummaryStat label="Mood" value={plan.mindset.moodIntent} />
-        </div>
-        {plan.mindset.motivationNote && (
-          <div className="border-t border-border/70 px-3 py-2 text-[13px] text-text">
-            <p className="u-label mb-1">One thing today</p>
-            <p className="whitespace-pre-wrap">{plan.mindset.motivationNote}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Non-study */}
-      {(plan.nonStudy.exerciseDone ||
-        plan.nonStudy.errands ||
-        plan.nonStudy.social) && (
-        <div className="rounded border border-border bg-bg">
-          <div className="border-b border-border/70 px-3 py-2">
-            <p className="font-display text-[13.5px] font-semibold text-text">
-              Non-study
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-3 p-3 text-[12.5px] sm:grid-cols-3">
-            {plan.nonStudy.exerciseDone && (
-              <SummaryStat
-                label="Exercise"
-                value={plan.nonStudy.exerciseTime || 'planned'}
-              />
-            )}
-            {plan.nonStudy.errands && (
-              <SummaryStat label="Errands" value={plan.nonStudy.errands} />
-            )}
-            {plan.nonStudy.social && (
-              <SummaryStat label="Social" value={plan.nonStudy.social} />
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Review — only shown if any field is filled */}
       {(plan.review.completionPct > 0 ||
@@ -687,204 +555,6 @@ function SessionRow({
   );
 }
 
-/* --------------------------- structure editor ---------------------------- */
-
-function StructureEditor({
-  structure,
-  onChange
-}: {
-  structure: DayPlan['structure'];
-  onChange: (next: DayPlan['structure']) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <Field label="Wake up">
-        <Input
-          type="time"
-          value={structure.wakeAt}
-          onChange={(e) => onChange({ ...structure, wakeAt: e.target.value })}
-        />
-      </Field>
-      <Field label="Sleep target">
-        <Input
-          type="time"
-          value={structure.sleepAt}
-          onChange={(e) => onChange({ ...structure, sleepAt: e.target.value })}
-        />
-      </Field>
-      <Field label="Total study hours target">
-        <Input
-          type="number"
-          min={0}
-          max={16}
-          step={0.5}
-          value={structure.totalHoursTarget}
-          onChange={(e) =>
-            onChange({
-              ...structure,
-              totalHoursTarget: Math.max(
-                0,
-                Math.min(16, Number(e.target.value) || 0)
-              )
-            })
-          }
-        />
-      </Field>
-      <Field label="Day type">
-        <Select
-          value={structure.dayType}
-          onChange={(e) =>
-            onChange({ ...structure, dayType: e.target.value as DayType })
-          }
-        >
-          {DAY_TYPES.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Field label="Breaks" className="sm:col-span-2">
-        <Select
-          value={structure.breakPattern}
-          onChange={(e) =>
-            onChange({
-              ...structure,
-              breakPattern: e.target.value as DayPlan['structure']['breakPattern']
-            })
-          }
-        >
-          {BREAK_PATTERNS.map((b) => (
-            <option key={b.value} value={b.value}>
-              {b.label}
-            </option>
-          ))}
-        </Select>
-        {structure.breakPattern === 'custom' && (
-          <Input
-            className="mt-1.5"
-            placeholder="Describe your custom cadence (e.g., 40/8)"
-            value={structure.customBreak ?? ''}
-            onChange={(e) =>
-              onChange({ ...structure, customBreak: e.target.value })
-            }
-            maxLength={80}
-          />
-        )}
-      </Field>
-    </div>
-  );
-}
-
-/* ---------------------------- mindset editor ----------------------------- */
-
-function MindsetEditor({
-  mindset,
-  onChange
-}: {
-  mindset: DayPlan['mindset'];
-  onChange: (next: DayPlan['mindset']) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <Field label="Energy forecast">
-        <Select
-          value={mindset.energyForecast}
-          onChange={(e) =>
-            onChange({
-              ...mindset,
-              energyForecast: e.target.value as EnergyForecast
-            })
-          }
-        >
-          {ENERGY_FORECASTS.map((e) => (
-            <option key={e.value} value={e.value}>
-              {e.label}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Field label="Mood intent">
-        <Select
-          value={mindset.moodIntent}
-          onChange={(e) => onChange({ ...mindset, moodIntent: e.target.value })}
-        >
-          {MOOD_INTENTS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Field label="The one thing I MUST accomplish today" className="sm:col-span-2">
-        <Textarea
-          rows={2}
-          value={mindset.motivationNote}
-          onChange={(e) =>
-            onChange({ ...mindset, motivationNote: e.target.value })
-          }
-          placeholder="Non-negotiable outcome for the day."
-          maxLength={280}
-        />
-      </Field>
-    </div>
-  );
-}
-
-/* --------------------------- non-study editor ---------------------------- */
-
-function NonStudyEditor({
-  nonStudy,
-  onChange
-}: {
-  nonStudy: DayPlan['nonStudy'];
-  onChange: (next: DayPlan['nonStudy']) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <Field label="Exercise / Yoga / Sadhana">
-        <label className="flex items-center gap-2 rounded border border-border bg-bg-raised px-3 py-2 text-[12.5px] text-text-muted">
-          <input
-            type="checkbox"
-            checked={nonStudy.exerciseDone}
-            onChange={(e) =>
-              onChange({ ...nonStudy, exerciseDone: e.target.checked })
-            }
-            className="h-4 w-4 accent-accent"
-          />
-          <span>Planned / done</span>
-        </label>
-        <Input
-          className="mt-1.5"
-          type="time"
-          value={nonStudy.exerciseTime}
-          onChange={(e) =>
-            onChange({ ...nonStudy, exerciseTime: e.target.value })
-          }
-        />
-      </Field>
-      <Field label="Personal errands / appointments">
-        <Textarea
-          rows={2}
-          value={nonStudy.errands}
-          onChange={(e) => onChange({ ...nonStudy, errands: e.target.value })}
-          placeholder="Doctor's visit at 5pm, groceries…"
-          maxLength={240}
-        />
-      </Field>
-      <Field label="Social commitments" className="sm:col-span-2">
-        <Textarea
-          rows={2}
-          value={nonStudy.social}
-          onChange={(e) => onChange({ ...nonStudy, social: e.target.value })}
-          placeholder="Cousin's call, family dinner…"
-          maxLength={240}
-        />
-      </Field>
-    </div>
-  );
-}
-
 /* ----------------------------- review editor ----------------------------- */
 
 function ReviewEditor({
@@ -1006,7 +676,3 @@ function formatHours(min: number): string {
   const m = min % 60;
   return m === 0 ? `${h}h` : `${h}h${m}m`;
 }
-
-/** Keep unused imports referenced so tsc --noEmit doesn't drop them if we
- *  refactor later. */
-void useMemo;
