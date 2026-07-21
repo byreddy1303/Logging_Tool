@@ -11,6 +11,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { json } from '../_shared/cors.ts';
 import {
+  airJournalUrl,
   isoDateForTimezone,
   parseTelegramCommand,
   parseTelegramStudySessions,
@@ -85,12 +86,12 @@ async function ensureTelegramCommandMenu(): Promise<void> {
   return commandMenuPromise;
 }
 
-async function reply(chatId: number, text: string, withAppButton = false): Promise<void> {
+async function reply(chatId: number, text: string, appRoute?: string): Promise<void> {
   const result = await sendTelegramMessage({
     token: BOT_TOKEN,
     chatId,
     text,
-    appUrl: withAppButton ? APP_URL : undefined
+    appUrl: appRoute ? airJournalUrl(APP_URL, appRoute) : undefined
   });
   if (!result.ok) console.error('Telegram reply failed:', result.error);
 }
@@ -124,7 +125,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const command = parseTelegramCommand(message.text);
 
   if (!command) {
-    await reply(chatId, 'Use /tomorrow for the next day, /timetable for this week, or /help for every command.');
+    await reply(
+      chatId,
+      'Use /tomorrow for the next day, /timetable for this week, or /help for every command.'
+    );
     return json({ ok: true });
   }
 
@@ -144,7 +148,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ? new Date(subscription.connect_token_expires_at)
       : null;
     if (lookupError || !subscription || !expiry || expiry.getTime() <= Date.now()) {
-      await reply(chatId, 'That connection link is invalid or expired. Generate a new one in AIR Journal Settings.');
+      await reply(
+        chatId,
+        'That connection link is invalid or expired. Generate a new one in AIR Journal Settings.'
+      );
       return json({ ok: true });
     }
 
@@ -164,7 +171,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (updateError) {
       console.error('Telegram connection failed:', updateError.message);
-      await reply(chatId, 'This Telegram account is already connected elsewhere, or the connection failed. Disconnect it there first.');
+      await reply(
+        chatId,
+        'This Telegram account is already connected elsewhere, or the connection failed. Disconnect it there first.'
+      );
       return json({ ok: true });
     }
 
@@ -183,7 +193,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   if (command.name === 'timetable' || command.name === 'tomorrow') {
     if (!subscription) {
-      await reply(chatId, `Connect this Telegram account from AIR Journal Settings before using /${command.name}.`);
+      await reply(
+        chatId,
+        `Connect this Telegram account from AIR Journal Settings before using /${command.name}.`
+      );
       return json({ ok: true });
     }
 
@@ -198,9 +211,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json({ ok: true });
     }
 
-    const timezone = typeof user.timezone === 'string' && user.timezone
-      ? user.timezone
-      : 'Asia/Kolkata';
+    const timezone =
+      typeof user.timezone === 'string' && user.timezone ? user.timezone : 'Asia/Kolkata';
     const now = new Date();
 
     if (command.name === 'tomorrow') {
@@ -212,7 +224,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .eq('plan_date', tomorrowDate)
         .maybeSingle();
       if (planError) {
-        console.error('Telegram tomorrow plan load failed:', subscription.user_id, planError.message);
+        console.error(
+          'Telegram tomorrow plan load failed:',
+          subscription.user_id,
+          planError.message
+        );
         await reply(chatId, "I could not load tomorrow's plan right now. Try again in a moment.");
         return json({ ok: true });
       }
@@ -221,7 +237,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         isoDate: tomorrowDate,
         sessions: parseTelegramStudySessions((storedPlan as StoredPlannerDay | null)?.sessions)
       });
-      await reply(chatId, tomorrowPlan, true);
+      await reply(chatId, tomorrowPlan, `/planner?date=${tomorrowDate}`);
       return json({ ok: true });
     }
 
@@ -252,7 +268,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         sessions: sessionsByDate.get(isoDate) ?? []
       }))
     });
-    await reply(chatId, timetable, true);
+    await reply(chatId, timetable, '/planner');
     return json({ ok: true });
   }
 
@@ -279,7 +295,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   await reply(
     chatId,
-    '<b>AIR Journal bot</b>\n/tomorrow — show tomorrow\'s study plan\n/timetable — show this week\'s study timetable\n/status — check delivery\n/stop — pause the daily digest\n/start — connect using the private Settings link'
+    "<b>AIR Journal bot</b>\n/tomorrow — show tomorrow's study plan\n/timetable — show this week's study timetable\n/status — check delivery\n/stop — pause the daily digest\n/start — connect using the private Settings link"
   );
   return json({ ok: true });
 });

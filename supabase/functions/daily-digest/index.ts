@@ -24,6 +24,7 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 import { sendEmail } from '../_shared/email.ts';
 import { greetingForHour, pickQuoteForDay } from '../_shared/quotes.ts';
 import {
+  airJournalUrl,
   renderTelegramConnectionTest,
   renderTelegramDigest,
   sendTelegramMessage,
@@ -61,20 +62,34 @@ interface TelegramSubscription {
 
 type DigestChannel = 'email' | 'telegram';
 
-function localHourAndDate(now: Date, tz: string): { hour: number; isoDate: string; weekday: number } {
+function localHourAndDate(
+  now: Date,
+  tz: string
+): { hour: number; isoDate: string; weekday: number } {
   // Best-effort local time; if tz is invalid, fall back to UTC.
   try {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: tz,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hour12: false,
       weekday: 'short'
     }).formatToParts(now);
     const map: Record<string, string> = {};
     for (const p of parts) map[p.type] = p.value;
     const isoDate = `${map.year}-${map.month}-${map.day}`;
     const hour = parseInt(map.hour === '24' ? '0' : map.hour, 10);
-    const wkMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const wkMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6
+    };
     const weekday = wkMap[map.weekday] ?? now.getUTCDay();
     return { hour, isoDate, weekday };
   } catch {
@@ -125,7 +140,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let userQuery = admin
     .from('users')
-    .select('id, name, email, timezone, digest_email_enabled, digest_hour_local, last_digest_sent_on')
+    .select(
+      'id, name, email, timezone, digest_email_enabled, digest_hour_local, last_digest_sent_on'
+    )
     .limit(1000);
   let telegramQuery = admin
     .from('telegram_subscriptions')
@@ -139,7 +156,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const [{ data: userData, error: userError }, { data: telegramData, error: telegramError }] =
     await Promise.all([userQuery, telegramQuery]);
   if (userError || telegramError) {
-    console.error('Daily digest candidate load failed:', userError?.message, telegramError?.message);
+    console.error(
+      'Daily digest candidate load failed:',
+      userError?.message,
+      telegramError?.message
+    );
     return json({ ok: false, error: 'could not load digest recipients' }, 500);
   }
 
@@ -162,9 +183,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const emailDue = Boolean(
-      allowEmail &&
-      u.digest_email_enabled &&
-      (force || u.last_digest_sent_on !== isoDate)
+      allowEmail && u.digest_email_enabled && (force || u.last_digest_sent_on !== isoDate)
     );
     const telegramEligible = Boolean(
       allowTelegram &&
@@ -216,7 +235,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         token: TELEGRAM_BOT_TOKEN,
         chatId: telegram.chat_id,
         text: test ? renderTelegramConnectionTest() : digest.telegram_text,
-        appUrl: APP_URL || 'https://air-journal-omega.vercel.app'
+        appUrl: airJournalUrl(APP_URL, test ? '/settings' : `/planner?date=${isoDate}`)
       });
       telegram_ok = res.ok;
       if (!res.ok) telegram_err = res.error;
@@ -286,7 +305,12 @@ function telegramDateLabel(isoDate: string): string {
   return `${value('weekday')} · ${value('day')} ${value('month')}`.toUpperCase();
 }
 
-async function buildDigest(u: UserForDigest, isoDate: string, hour: number, weekday: number): Promise<Digest> {
+async function buildDigest(
+  u: UserForDigest,
+  isoDate: string,
+  hour: number,
+  weekday: number
+): Promise<Digest> {
   const firstName = (u.name ?? '').split(/\s+/)[0] ?? '';
   const greeting = greetingForHour(hour, firstName);
   const quote = pickQuoteForDay(isoDate, u.id);
@@ -300,9 +324,7 @@ async function buildDigest(u: UserForDigest, isoDate: string, hour: number, week
   if (storedPlanError) {
     console.error('Planner day load failed:', u.id, storedPlanError.message);
   }
-  const studySessions = parseStudySessions(
-    (storedPlan as { sessions?: unknown } | null)?.sessions
-  );
+  const studySessions = parseStudySessions((storedPlan as { sessions?: unknown } | null)?.sessions);
 
   // Re-attempts due today (not yet done)
   const { data: reattempts } = await admin
@@ -339,7 +361,12 @@ async function buildDigest(u: UserForDigest, isoDate: string, hour: number, week
     on_date: isoDate
   });
   const planItems =
-    (plannerDue as { id: string; title: string; subject: string | null; target_min: number | null }[]) ?? [];
+    (plannerDue as {
+      id: string;
+      title: string;
+      subject: string | null;
+      target_min: number | null;
+    }[]) ?? [];
   const { data: completions } = await admin
     .from('plan_item_completions')
     .select('item_id')
@@ -436,15 +463,25 @@ function renderEmail(args: {
       : `
         <p style="margin:0 0 6px 0;font-size:13px;font-weight:600;color:#241E35;">${reAttemptTotal} question${reAttemptTotal === 1 ? '' : 's'} due for re-attempt.</p>
         <ul style="margin:0 0 10px 18px;padding:0;font-size:13px;color:#665D7E;line-height:1.7;">
-          ${subjectCounts.slice(0, 6).map((s) => `<li>${esc(s.subject)} — <span style="font-family:monospace;color:#241E35;">${s.count}</span></li>`).join('')}
+          ${subjectCounts
+            .slice(0, 6)
+            .map(
+              (s) =>
+                `<li>${esc(s.subject)} — <span style="font-family:monospace;color:#241E35;">${s.count}</span></li>`
+            )
+            .join('')}
         </ul>
-        ${sampleTitles.length > 0 ? `
+        ${
+          sampleTitles.length > 0
+            ? `
         <details style="margin:0 0 10px 0;">
           <summary style="cursor:pointer;font-size:11.5px;color:#9C94AF;">Sample questions</summary>
           <ul style="margin:8px 0 0 18px;padding:0;font-size:12px;color:#665D7E;line-height:1.65;">
             ${sampleTitles.map((t) => `<li>${esc(t)}</li>`).join('')}
           </ul>
-        </details>` : ''}
+        </details>`
+            : ''
+        }
       `;
 
   const planBlock =
@@ -452,7 +489,13 @@ function renderEmail(args: {
       ? `<p style="margin:0 0 8px 0;font-size:13px;color:#665D7E;">No planner items open for today. Add one from the planner if you want an anchor.</p>`
       : `
         <ul style="margin:0 0 10px 18px;padding:0;font-size:13px;color:#241E35;line-height:1.75;">
-          ${openItems.slice(0, 12).map((i) => `<li>${esc(i.title)}${i.subject ? ` <span style="color:#665D7E;font-size:11.5px;">· ${esc(i.subject)}</span>` : ''}${i.target_min ? ` <span style="font-family:monospace;color:#9C94AF;font-size:11.5px;">${i.target_min}m</span>` : ''}</li>`).join('')}
+          ${openItems
+            .slice(0, 12)
+            .map(
+              (i) =>
+                `<li>${esc(i.title)}${i.subject ? ` <span style="color:#665D7E;font-size:11.5px;">· ${esc(i.subject)}</span>` : ''}${i.target_min ? ` <span style="font-family:monospace;color:#9C94AF;font-size:11.5px;">${i.target_min}m</span>` : ''}</li>`
+            )
+            .join('')}
         </ul>
       `;
 

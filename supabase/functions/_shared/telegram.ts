@@ -42,7 +42,11 @@ export interface TelegramSendResult {
 
 export function parseTelegramCommand(text: string | undefined): TelegramCommand | null {
   if (!text) return null;
-  const match = text.trim().match(/^\/(start|stop|status|timetable|tomorrow|help)(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?\s*$/i);
+  const match = text
+    .trim()
+    .match(
+      /^\/(start|stop|status|timetable|tomorrow|help)(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?\s*$/i
+    );
   if (!match) return null;
   return {
     name: match[1].toLowerCase() as TelegramCommand['name'],
@@ -116,6 +120,12 @@ export function escapeTelegramHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+export function airJournalUrl(baseUrl: string, route: string): string {
+  const base = (baseUrl.trim() || 'https://air-journal-omega.vercel.app').replace(/\/+$/, '');
+  const normalizedRoute = route.startsWith('/') ? route : `/${route}`;
+  return new URL(normalizedRoute, `${base}/`).toString();
+}
+
 function formatDuration(totalMinutes: number): string {
   if (totalMinutes < 60) return `${totalMinutes}m`;
   const hours = Math.floor(totalMinutes / 60);
@@ -162,7 +172,9 @@ function timetableWeekLabel(isoDate: string): string {
     day: '2-digit',
     month: 'long',
     year: 'numeric'
-  }).format(date).toUpperCase();
+  })
+    .format(date)
+    .toUpperCase();
 }
 
 function fullDateLabel(isoDate: string): string {
@@ -243,10 +255,9 @@ export function renderTelegramConnectionTest(): string {
 export function renderTelegramTimetable(input: TelegramTimetableInput): string {
   const totalSessions = input.days.reduce((sum, day) => sum + day.sessions.length, 0);
   const totalMinutes = input.days.reduce(
-    (sum, day) => sum + day.sessions.reduce(
-      (daySum, session) => daySum + Math.max(0, session.durationMin || 0),
-      0
-    ),
+    (sum, day) =>
+      sum +
+      day.sessions.reduce((daySum, session) => daySum + Math.max(0, session.durationMin || 0), 0),
     0
   );
   const weekStart = input.days[0]?.isoDate ?? input.todayIsoDate;
@@ -272,8 +283,7 @@ export function renderTelegramTimetable(input: TelegramTimetableInput): string {
       continue;
     }
 
-    const visibleSessions = day.sessions.slice(0, 3);
-    visibleSessions.forEach((session, index) => {
+    day.sessions.forEach((session, index) => {
       const rawSubject =
         session.subject === 'Custom...' && session.customSubject
           ? session.customSubject
@@ -285,9 +295,6 @@ export function renderTelegramTimetable(input: TelegramTimetableInput): string {
       );
     });
 
-    if (day.sessions.length > visibleSessions.length) {
-      lines.push(`    +${day.sessions.length - visibleSessions.length} more in Planner`);
-    }
     lines.push('');
   }
 
@@ -368,14 +375,11 @@ export async function sendTelegramMessage(args: {
   }
 
   const request = args.fetcher ?? fetch;
-  const response = await request(
-    `https://api.telegram.org/bot${args.token}/sendMessage`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }
-  );
+  const response = await request(`https://api.telegram.org/bot${args.token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
 
   const payload = (await response.json().catch(() => ({}))) as {
     ok?: boolean;

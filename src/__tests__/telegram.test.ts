@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  airJournalUrl,
   isoDateForTimezone,
   parseTelegramCommand,
   parseTelegramStudySessions,
@@ -52,11 +53,13 @@ describe('Telegram daily digest', () => {
   });
 
   it('sanitizes stored planner sessions before Telegram rendering', () => {
-    expect(parseTelegramStudySessions([
-      { subject: 'OS', durationMin: 90, mode: 'PYQ', target: 'Deadlocks' },
-      { subject: '', durationMin: 60, mode: 'Study', target: '' },
-      { subject: 'DBMS', durationMin: Number.POSITIVE_INFINITY, mode: 'Study', target: '' }
-    ])).toEqual([
+    expect(
+      parseTelegramStudySessions([
+        { subject: 'OS', durationMin: 90, mode: 'PYQ', target: 'Deadlocks' },
+        { subject: '', durationMin: 60, mode: 'Study', target: '' },
+        { subject: 'DBMS', durationMin: Number.POSITIVE_INFINITY, mode: 'Study', target: '' }
+      ])
+    ).toEqual([
       { subject: 'OS', customSubject: undefined, durationMin: 90, mode: 'PYQ', target: 'Deadlocks' }
     ]);
   });
@@ -89,7 +92,7 @@ describe('Telegram daily digest', () => {
 
     expect(message).toContain('<b>TUESDAY · 21 JULY</b>');
     expect(message).toContain('— AIR Journal');
-    expect(message).toContain('<b>TODAY\'S PLAN · 2h 30m</b>');
+    expect(message).toContain("<b>TODAY'S PLAN · 2h 30m</b>");
     expect(message).toContain('<b>01 · Operating Systems</b>');
     expect(message).toContain('Revise paging &lt; traps');
     expect(message).toContain('<b>RE-ATTEMPTS · 3</b>');
@@ -124,7 +127,10 @@ describe('Telegram daily digest', () => {
               durationMin: 60,
               mode: 'Revision & Recall',
               target: ''
-            }
+            },
+            { subject: 'TOC', durationMin: 180, mode: 'Deep Study', target: '' },
+            { subject: 'Discrete Math', durationMin: 180, mode: 'Deep Study', target: '' },
+            { subject: 'PYQ', durationMin: 60, mode: 'PYQ Practice', target: '' }
           ]
         },
         ...['22', '23', '24', '25', '26'].map((day) => ({
@@ -136,10 +142,12 @@ describe('Telegram daily digest', () => {
 
     expect(message).toContain('<b>AIR JOURNAL · TIMETABLE</b>');
     expect(message).toContain('<b>WEEK OF 20 JULY 2026</b>');
-    expect(message).toContain('<b>2 SESSIONS · 2h 30m</b>');
-    expect(message).toContain('<b>TUE · 21 JUL · TODAY · 1h</b>');
+    expect(message).toContain('<b>5 SESSIONS · 9h 30m</b>');
+    expect(message).toContain('<b>TUE · 21 JUL · TODAY · 8h</b>');
     expect(message).toContain('Compiler &lt; Design');
     expect(message).toContain('Revision &amp; Recall');
+    expect(message).toContain('04  <b>PYQ</b> · 1h · <i>PYQ Practice</i>');
+    expect(message).not.toContain('+1 more in Planner');
     expect(message).toContain('<b>SUN · 26 JUL · OPEN</b>');
     expect(message).toContain('The week is visible. Now execute it.');
     expect(message.length).toBeLessThan(4096);
@@ -175,7 +183,7 @@ describe('Telegram daily digest', () => {
     expect(message.length).toBeLessThan(4096);
   });
 
-  it("renders a quiet empty state when tomorrow has no plan", () => {
+  it('renders a quiet empty state when tomorrow has no plan', () => {
     const message = renderTelegramTomorrowPlan({
       isoDate: '2026-07-22',
       sessions: []
@@ -201,18 +209,19 @@ describe('Telegram daily digest', () => {
   });
 
   it('sends HTML with a dashboard button through the Telegram Bot API', async () => {
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      })
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
     );
 
     const result = await sendTelegramMessage({
       token: 'test-token',
       chatId: 123456,
       text: '<b>AIR Journal</b>',
-      appUrl: 'https://air-journal-omega.vercel.app',
+      appUrl: 'https://air-journal-omega.vercel.app/planner?date=2026-07-22',
       fetcher
     });
 
@@ -223,7 +232,24 @@ describe('Telegram daily digest', () => {
     expect(body).toMatchObject({
       chat_id: '123456',
       parse_mode: 'HTML',
-      text: '<b>AIR Journal</b>'
+      text: '<b>AIR Journal</b>',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: 'Open AIR Journal',
+              url: 'https://air-journal-omega.vercel.app/planner?date=2026-07-22'
+            }
+          ]
+        ]
+      }
     });
+  });
+
+  it('builds one HTTPS deep link for Android App Links and desktop web', () => {
+    expect(airJournalUrl('https://air-journal-omega.vercel.app/', '/planner?date=2026-07-22')).toBe(
+      'https://air-journal-omega.vercel.app/planner?date=2026-07-22'
+    );
+    expect(airJournalUrl('', '/settings')).toBe('https://air-journal-omega.vercel.app/settings');
   });
 });
