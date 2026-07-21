@@ -287,7 +287,7 @@ export function computeReadinessBySubject(
 
 /* --------------------------------------------------------------------------
  * "Next moves" — rule-based recommendations from the per-subject matrix
- * plus the overall breakdown. No LLM.
+ * plus the overall breakdown. The calculation is deterministic.
  * ------------------------------------------------------------------------ */
 
 export type MoveKind = 'calibrate' | 'reattempts' | 'cover' | 'stabilise' | 'diagnose';

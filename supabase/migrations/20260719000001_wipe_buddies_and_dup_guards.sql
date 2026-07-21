@@ -1,9 +1,9 @@
--- Wipe all buddy pairs and buddy messages so users can start fresh, and
--- harden signup / access-request paths against duplicates.
+-- Harden signup / access-request paths against duplicates without changing
+-- existing Buddy pairs or message history.
 --
 -- Sections:
---   1. Wipe buddies + buddy_messages (cascade drops messages automatically,
---      but we truncate both for clarity + speed).
+--   1. Preserve existing Buddy data. An earlier local draft reset these
+--      tables, but that is not safe for a production migration.
 --   2. Case-insensitive uniqueness on public.users.email (belt to the base
 --      column's case-sensitive unique constraint).
 --   3. One pending access request per email — the same person can't spam
@@ -12,19 +12,15 @@
 --      already in public.users or auth.users (case-insensitive). Preserves
 --      the existing username + invite-token checks.
 --
--- Rollback: `truncate` is not reversible. The unique indexes and function
--- update can be dropped/restored from the previous migration if needed.
+-- Rollback: the unique indexes and function update can be dropped/restored
+-- from the previous migration if needed.
 
 set search_path = public, extensions;
 
 -- ---------------------------------------------------------------------------
--- 1. Wipe buddies + messages
+-- 1. Preserve buddies + messages
 -- ---------------------------------------------------------------------------
--- `cascade` drops the buddy_messages rows via the FK, but we also truncate
--- explicitly so the sequence + statistics reset cleanly.
-
-truncate table public.buddy_messages restart identity;
-truncate table public.buddies restart identity cascade;
+-- Production data is intentionally left untouched.
 
 -- ---------------------------------------------------------------------------
 -- 2. Case-insensitive uniqueness on users.email

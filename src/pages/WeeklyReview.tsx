@@ -1,11 +1,9 @@
-// F5.1 — Weekly review, five screens. The LLM synthesis pane on step 5 stays
-// locked until the user has committed steps 2–4 (root cause, weakest concept,
-// this week's fix). LLM assist itself is deferred (S18–S24) — until then step 5
-// explains what will land once the router is wired.
+// Weekly review: inspect the data, name the cause, isolate the weakest concept,
+// and commit to one concrete fix.
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { motion } from 'motion/react';
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, LockKeyhole, Sparkles } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
 import type { WeeklyReviewRow } from '@/types';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
@@ -19,23 +17,21 @@ import { useAuth } from '@/hooks/useAuth';
 import { writeLocal } from '@/lib/sync';
 import {
   summarizeWeek,
-  synthesisUnlocked,
   weeklyDraftFingerprint,
   type WeeklyDataSummary,
   type WeeklyDraft
 } from '@/lib/analysis';
-import { cn, formatDate, nowISO, plural, uuid, weekStartISO } from '@/lib/utils';
+import { cn, formatDate, nowISO, uuid, weekStartISO } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
 import { ROOT_CAUSES } from '@/lib/constants';
 
-export type WeeklyStep = 1 | 2 | 3 | 4 | 5;
+export type WeeklyStep = 1 | 2 | 3 | 4;
 
 const STEP_LABELS: { id: WeeklyStep; label: string }[] = [
   { id: 1, label: 'this week' },
   { id: 2, label: 'root cause' },
   { id: 3, label: 'weakest concept' },
-  { id: 4, label: 'the fix' },
-  { id: 5, label: 'synthesis' }
+  { id: 4, label: 'the fix' }
 ];
 
 type Draft = WeeklyDraft;
@@ -93,7 +89,6 @@ export default function WeeklyReview() {
     [questions, weekStart]
   );
 
-  const unlocked = synthesisUnlocked(draft, savedFingerprint);
   const currentDirty = weeklyDraftFingerprint(draft) !== savedFingerprint;
 
   function requireOnStep(): string | null {
@@ -108,15 +103,15 @@ export default function WeeklyReview() {
 
   function goNext() {
     setError(null);
-    if (step === 5) return;
-    if (step >= 2 && step <= 4) {
+    if (step === 4) return;
+    if (step >= 2 && step <= 3) {
       const problem = requireOnStep();
       if (problem) {
         setError(problem);
         return;
       }
     }
-    setStep((s) => (Math.min(5, s + 1) as WeeklyStep));
+    setStep((s) => (Math.min(4, s + 1) as WeeklyStep));
   }
 
   function goBack() {
@@ -153,12 +148,10 @@ export default function WeeklyReview() {
             root_cause_summary: draft.root_cause_summary.trim(),
             weakest_concept: draft.weakest_concept.trim(),
             this_weeks_fix: draft.this_weeks_fix.trim(),
-            llm_synthesis: null,
             created_at: now
           };
       await writeLocal('weekly_reviews', row);
       setSavedFingerprint(weeklyDraftFingerprint(draft));
-      setStep(5);
     } finally {
       setSaving(false);
     }
@@ -185,9 +178,8 @@ export default function WeeklyReview() {
         <CardBody className="flex flex-wrap items-center gap-3">
           <ol className="flex flex-wrap items-center gap-1.5">
             {STEP_LABELS.map((s, i) => {
-              const done = s.id < step || (s.id === 5 && unlocked);
+              const done = s.id < step;
               const active = s.id === step;
-              const locked = s.id === 5 && !unlocked;
               return (
                 <li key={s.id} className="flex items-center gap-1.5">
                   {i > 0 && (
@@ -198,23 +190,17 @@ export default function WeeklyReview() {
                   )}
                   <button
                     type="button"
-                    onClick={() => {
-                      if (locked) return;
-                      setStep(s.id);
-                    }}
-                    disabled={locked}
+                    onClick={() => setStep(s.id)}
                     className={cn(
                       'flex h-6 items-center gap-1.5 rounded-full px-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors',
                       active
                         ? 'bg-accent text-white'
                         : done
                           ? 'bg-accent-faint text-accent'
-                          : 'bg-bg-overlay text-text-faint',
-                      locked && 'cursor-not-allowed'
+                          : 'bg-bg-overlay text-text-faint'
                     )}
                   >
                     <span>{s.id}.</span> {s.label}
-                    {locked && <LockKeyhole size={10} strokeWidth={2} />}
                   </button>
                 </li>
               );
@@ -259,7 +245,6 @@ export default function WeeklyReview() {
             placeholder="e.g. Re-derive LRU vs. FIFO vs. optimal for the three GATE 2020 cache questions, timed."
           />
         )}
-        {step === 5 && <SynthesisStep unlocked={unlocked} summary={summary} draft={draft} />}
       </motion.div>
 
       <Card>
@@ -280,20 +265,15 @@ export default function WeeklyReview() {
                 <Button
                   variant="primary"
                   onClick={() => void save()}
-                  disabled={saving}
+                  disabled={saving || !currentDirty}
                 >
-                  {saving ? 'Saving…' : currentDirty ? 'Save & unlock synthesis' : 'Save'}
+                  {saving ? 'Saving…' : currentDirty ? 'Save review' : 'Saved'}
                 </Button>
               )}
-              {step !== 5 && step !== 4 && (
+              {step !== 4 && (
                 <Button variant="primary" onClick={goNext}>
                   Next
                   <ArrowRight size={14} strokeWidth={1.75} className="ml-1" />
-                </Button>
-              )}
-              {step === 5 && (
-                <Button variant="ghost" onClick={goBack}>
-                  Revise
                 </Button>
               )}
             </div>
@@ -483,85 +463,6 @@ function NarrativeStep({
             ))}
           </div>
         )}
-      </CardBody>
-    </Card>
-  );
-}
-
-function SynthesisStep({
-  unlocked,
-  summary,
-  draft
-}: {
-  unlocked: boolean;
-  summary: WeeklyDataSummary;
-  draft: Draft;
-}) {
-  if (!unlocked) {
-    return (
-      <Card>
-        <CardHeader title="LLM synthesis" />
-        <CardBody className="flex flex-col items-center gap-3 py-8 text-center">
-          <LockKeyhole size={20} strokeWidth={1.75} className="text-text-faint" />
-          <p className="text-[13px] text-text-muted">
-            Complete steps 2–4 and save. The second opinion opens once your own read is written.
-          </p>
-          <p className="text-[12px] text-text-faint">
-            This is by design — the model reacts to your conclusion; it does not write it for you.
-          </p>
-        </CardBody>
-      </Card>
-    );
-  }
-  return (
-    <Card>
-      <CardHeader
-        title="LLM synthesis — second opinion"
-        aside={
-          <span className="flex items-center gap-1 text-[11px] text-accent">
-            <Sparkles size={12} strokeWidth={1.75} />
-            unlocked
-          </span>
-        }
-      />
-      <CardBody className="flex flex-col gap-3">
-        <p className="flex items-start gap-2 rounded border border-warn/30 bg-warn-faint px-3 py-2 text-[12px] text-text">
-          <AlertCircle size={12} strokeWidth={2} className="mt-0.5 shrink-0 text-warn" />
-          Provider routing lands in S18–S24. For now, this pane echoes back the review payload
-          so nothing is lost — plug in a key and it goes live without touching this page.
-        </p>
-        <details className="rounded border border-border bg-bg-overlay/40 px-3 py-2 text-[12px]">
-          <summary className="cursor-pointer text-text-muted">
-            <CheckCircle2 size={12} strokeWidth={2} className="mr-1 inline text-success" />
-            Prompt payload (what will be sent to Gemini 2.5 Pro)
-          </summary>
-          <pre className="mt-2 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-text-muted">{JSON.stringify(
-            {
-              week_start: summary.weekStart,
-              root_cause_summary: draft.root_cause_summary,
-              weakest_concept: draft.weakest_concept,
-              this_weeks_fix: draft.this_weeks_fix,
-              data: {
-                total: summary.totalQ,
-                clean: summary.clean,
-                slow: summary.slow,
-                guess: summary.guess,
-                wrong: summary.wrong,
-                bySubject: summary.bySubject,
-                byRootCause: summary.byRootCause,
-                topPatterns: summary.topPatterns
-              }
-            },
-            null,
-            2
-          )}</pre>
-        </details>
-        <p className="text-[13px] text-text-muted">
-          Meanwhile — your own conclusion is what matters. Read it back after two days and see if
-          it still feels true. If it does, the fix is likely right. If it doesn't,{' '}
-          {plural(summary.totalQ, 'this week\'s question', 'this week\'s questions')} will tell
-          you a different story next Sunday.
-        </p>
       </CardBody>
     </Card>
   );

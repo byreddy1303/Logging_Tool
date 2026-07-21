@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "GATE PYQ analysis, tagging, spaced re-attempts, root-cause tree, LLM doubt-clearing. Built to compress mistake surface for AIR <100.",
+  "description": "GATE PYQ analysis, tagging, spaced re-attempts, root-cause review, and focused buddy study. Built to compress mistake surface for AIR <100.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

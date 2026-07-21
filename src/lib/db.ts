@@ -11,10 +11,7 @@ import type {
   FormulaRow,
   TriggerPhraseRow,
   WeeklyReviewRow,
-  InterruptionLogRow,
-  DoubtSessionRow,
-  VariationRow,
-  TriangulateLogRow
+  InterruptionLogRow
 } from '@/types';
 
 export type LocalSession = Local<SessionRow>;
@@ -25,9 +22,6 @@ export type LocalFormula = Local<FormulaRow>;
 export type LocalTriggerPhrase = Local<TriggerPhraseRow>;
 export type LocalWeeklyReview = Local<WeeklyReviewRow>;
 export type LocalInterruptionLog = Local<InterruptionLogRow>;
-export type LocalDoubtSession = Local<DoubtSessionRow>;
-export type LocalVariation = Local<VariationRow>;
-export type LocalTriangulateLog = Local<TriangulateLogRow>;
 
 interface MetaRow {
   key: string;
@@ -43,9 +37,6 @@ class AirDB extends Dexie {
   trigger_phrases!: Table<LocalTriggerPhrase, string>;
   weekly_reviews!: Table<LocalWeeklyReview, string>;
   interruption_logs!: Table<LocalInterruptionLog, string>;
-  doubt_sessions!: Table<LocalDoubtSession, string>;
-  variations!: Table<LocalVariation, string>;
-  triangulate_logs!: Table<LocalTriangulateLog, string>;
   meta!: Table<MetaRow, string>;
 
   constructor() {
@@ -78,10 +69,7 @@ export const SYNCED_TABLES = [
   'formulas',
   'trigger_phrases',
   'weekly_reviews',
-  'interruption_logs',
-  'doubt_sessions',
-  'variations',
-  'triangulate_logs'
+  'interruption_logs'
 ] as const;
 
 export type SyncedTableName = (typeof SYNCED_TABLES)[number];

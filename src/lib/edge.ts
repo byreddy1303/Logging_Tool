@@ -1,9 +1,8 @@
-// Thin, typed wrappers for the non-LLM edge functions:
+// Thin, typed wrappers for the edge functions:
 //   - request-access   (public: uses anon key as bearer since Supabase's
 //                       function gateway always requires an auth header)
 //   - approve-request  (owner auth)
 //   - decline-request  (owner auth)
-//   - weekly-insight   (any auth)
 // Keeps error handling consistent so pages don't reinvent status-code parsing.
 import { supabase } from '@/lib/supabase';
 
@@ -140,38 +139,6 @@ export async function declineRequest(
     ok: false,
     status: res.status,
     error: (body as { error?: string })?.error ?? `decline ${res.status}`
-  };
-}
-
-export interface WeeklyInsightResult {
-  sentence: string;
-  cached: boolean;
-  generated_at?: string;
-  empty?: boolean;
-  latency_ms?: number;
-}
-
-export async function fetchWeeklyInsight(
-  opts: { force?: boolean } = {}
-): Promise<WeeklyInsightResult | EdgeError> {
-  const jwt = await currentJwt();
-  if (!jwt) return { ok: false, status: 401, error: 'no session' };
-  const res = await fetch(`${functionsBase()}/weekly-insight`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${jwt}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ force: opts.force === true })
-  });
-  const body = (await readJson(res)) as WeeklyInsightResult | { error?: string } | null;
-  if (res.ok && body && typeof (body as WeeklyInsightResult).sentence === 'string') {
-    return body as WeeklyInsightResult;
-  }
-  return {
-    ok: false,
-    status: res.status,
-    error: (body as { error?: string })?.error ?? `weekly-insight ${res.status}`
   };
 }
 

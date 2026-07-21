@@ -2,6 +2,10 @@
 
 **Authoritative source of truth for autonomous build.** Anything not stated here is a delegated choice; when in doubt, pick the option that (a) minimizes distraction surface, (b) minimizes maintenance, (c) ships faster. Never invent new features not in this document.
 
+## Active scope amendment — 2026-07-21
+
+The user removed all AI-backed product features. This amendment supersedes every AI/LLM feature, provider, route, secret, deployment, and Definition-of-Done item below. Doubt Chat, Triangulate, generated variations, formula extraction, reflex scoring, weekly synthesis, and weekly insight are not part of the active product. Formulas and Trigger Drill remain as local/manual tools. Historical additive database migrations may remain for deployed-schema compatibility, but the client does not expose or sync those legacy tables. Buddy now sits immediately below Planner and the dashboard provides deterministic learning tips derived from the learner's own data.
+
 ---
 
 ## 0. Autonomy directives (for Claude executing this doc)

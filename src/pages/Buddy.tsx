@@ -20,7 +20,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState
 } from 'react';
 import { Link } from 'react-router-dom';
@@ -38,6 +37,8 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import PageHeader from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
+import { Textarea } from '@/components/ui/Textarea';
 import BuddyChat from '@/components/buddy/BuddyChat';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
 import { sendBuddyRequest } from '@/lib/edge';
@@ -59,6 +60,7 @@ interface BuddyView {
   row: BuddyRowExt;
   peer: PeerLite;
   last?: BuddyMessageRow | null;
+  unreadCount: number;
 }
 
 type BuddyTab = 'chats' | 'requests' | 'paused';
@@ -113,8 +115,10 @@ export default function Buddy() {
   const [sending, setSending] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [declineTarget, setDeclineTarget] = useState<BuddyView | null>(null);
+  const [declineReason, setDeclineReason] = useState('');
   const pushToast = useUiStore((s) => s.pushToast);
-  const initialSelect = useRef(true);
 
   const reload = useCallback(async () => {
     if (!userId) return;
@@ -151,7 +155,8 @@ export default function Buddy() {
       const peerId = r.user_a === userId ? r.user_b : r.user_a;
       return {
         row: r,
-        peer: normalizePeer(peerMap.get(peerId), peerId)
+        peer: normalizePeer(peerMap.get(peerId), peerId),
+        unreadCount: 0
       };
     });
 
@@ -159,23 +164,51 @@ export default function Buddy() {
     const activeRows = list.filter((v) => v.row.status === 'active').slice(0, 30);
     await Promise.all(
       activeRows.map(async (v) => {
-        const { data: msg } = await supabase
-          .from('buddy_messages')
-          .select('id, buddy_id, sender_id, kind, body, question_ref, created_at, read_at')
-          .eq('buddy_id', v.row.id)
-          .order('created_at', { ascending: false })
-          .limit(1);
+        const [{ data: msg }, { count }] = await Promise.all([
+          supabase
+            .from('buddy_messages')
+            .select('id, buddy_id, sender_id, kind, body, question_ref, created_at, read_at')
+            .eq('buddy_id', v.row.id)
+            .order('created_at', { ascending: false })
+            .limit(1),
+          supabase
+            .from('buddy_messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('buddy_id', v.row.id)
+            .neq('sender_id', userId)
+            .is('read_at', null)
+        ]);
         v.last = ((msg as BuddyMessageRow[]) ?? [])[0] ?? null;
+        v.unreadCount = count ?? 0;
       })
     );
 
     setBuddies(list);
-    if (initialSelect.current) {
-      const first = list.find((v) => v.row.status === 'active');
-      if (first) setActiveId(first.row.id);
-      initialSelect.current = false;
-    }
     setLoading(false);
+  }, [userId]);
+
+  const refreshPreview = useCallback(async (buddyId: string) => {
+    if (!userId) return;
+    const [{ data: message }, { count }] = await Promise.all([
+      supabase
+        .from('buddy_messages')
+        .select('id, buddy_id, sender_id, kind, body, question_ref, created_at, read_at')
+        .eq('buddy_id', buddyId)
+        .order('created_at', { ascending: false })
+        .limit(1),
+      supabase
+        .from('buddy_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('buddy_id', buddyId)
+        .neq('sender_id', userId)
+        .is('read_at', null)
+    ]);
+    const last = ((message as BuddyMessageRow[]) ?? [])[0] ?? null;
+    setBuddies((current) =>
+      current.map((view) =>
+        view.row.id === buddyId ? { ...view, last, unreadCount: count ?? 0 } : view
+      )
+    );
   }, [userId]);
 
   useEffect(() => {
@@ -185,6 +218,25 @@ export default function Buddy() {
     }
     void reload();
   }, [userId, sandbox, reload]);
+
+  // Live message previews and unread badges for every active thread.
+  useEffect(() => {
+    if (!userId || sandbox || !supabaseConfigured) return;
+    const channel = supabase
+      .channel(`buddy-previews:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'buddy_messages' },
+        (payload) => {
+          const row = (payload.new && Object.keys(payload.new).length > 0 ? payload.new : payload.old) as Partial<BuddyMessageRow>;
+          if (row.buddy_id) void refreshPreview(row.buddy_id);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, sandbox, refreshPreview]);
 
   // Live tab updates: any change on public.buddies that includes us triggers
   // a reload so incoming requests / accepts / declines land without refresh.
@@ -263,27 +315,68 @@ export default function Buddy() {
     void reload();
   }
 
-  async function onRespond(bId: string, action: 'accept' | 'decline') {
-    const reason =
-      action === 'decline' ? window.prompt('Optional reason (or leave blank):') ?? '' : '';
-    const { error } = await supabase.rpc('respond_buddy_request', {
-      b_id: bId,
-      action,
-      reason: reason || null
-    });
-    if (error) {
-      pushToast(error.message, 'neutral');
-      return;
+  async function onRespond(bId: string, action: 'accept' | 'decline', reason = '') {
+    setBusyId(bId);
+    try {
+      const { error } = await supabase.rpc('respond_buddy_request', {
+        b_id: bId,
+        action,
+        reason: reason.trim() || null
+      });
+      if (error) {
+        pushToast(error.message, 'neutral');
+        return;
+      }
+      if (action === 'accept') {
+        pushToast('Pair active. Say hi.', 'success');
+        setActiveId(bId);
+        setTab('chats');
+        setMobileView('chat');
+      } else {
+        pushToast('Request declined.', 'success');
+        setDeclineTarget(null);
+        setDeclineReason('');
+      }
+      await reload();
+    } finally {
+      setBusyId(null);
     }
-    if (action === 'accept') {
-      pushToast('Pair active. Say hi.', 'success');
-      setActiveId(bId);
-      setTab('chats');
-      setMobileView('chat');
-    } else {
-      pushToast('Request declined.', 'success');
+  }
+
+  async function onCancelRequest(bId: string) {
+    setBusyId(bId);
+    try {
+      const { error } = await supabase.rpc('cancel_buddy_request', { b_id: bId });
+      if (error) {
+        pushToast(error.message, 'neutral');
+        return;
+      }
+      pushToast('Request cancelled.', 'neutral');
+      await reload();
+    } finally {
+      setBusyId(null);
     }
-    void reload();
+  }
+
+  async function onRetry(buddy: BuddyView) {
+    setBusyId(buddy.row.id);
+    try {
+      const username = peerHandle(buddy.peer);
+      const response = await sendBuddyRequest(username);
+      if (!('ok' in response && response.ok)) {
+        pushToast(response.error, 'neutral');
+        return;
+      }
+      if (response.status === 'cooldown') {
+        pushToast(`@${username} can be requested again after the 24-hour cooldown.`, 'neutral');
+        return;
+      }
+      pushToast(`Request sent to @${username}.`, 'success');
+      setTab('requests');
+      await reload();
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function onUnfriend(bId: string) {
@@ -321,6 +414,16 @@ export default function Buddy() {
     [buddies]
   );
   const activeBuddy = active.find((b) => b.row.id === activeId) ?? null;
+
+  useEffect(() => {
+    if (active.length === 0) {
+      if (activeId !== null) setActiveId(null);
+      return;
+    }
+    if (!active.some((buddy) => buddy.row.id === activeId)) {
+      setActiveId(active[0].row.id);
+    }
+  }, [active, activeId]);
 
   const showLocalMsg = sandbox || !supabaseConfigured;
 
@@ -460,6 +563,11 @@ export default function Buddy() {
               userId={userId}
               onPick={(id) => {
                 setActiveId(id);
+                setBuddies((current) =>
+                  current.map((buddy) =>
+                    buddy.row.id === id ? { ...buddy, unreadCount: 0 } : buddy
+                  )
+                );
                 setMobileView('chat');
               }}
               onNew={() => setShowAddPanel(true)}
@@ -470,12 +578,24 @@ export default function Buddy() {
             <RequestsTab
               incoming={incoming}
               outgoing={outgoing}
-              onRespond={(id, action) => void onRespond(id, action)}
+              busyId={busyId}
+              onRespond={(id, action) => {
+                if (action === 'accept') {
+                  void onRespond(id, action);
+                } else {
+                  const target = incoming.find((request) => request.row.id === id) ?? null;
+                  setDeclineTarget(target);
+                  setDeclineReason('');
+                }
+              }}
+              onCancel={(id) => void onCancelRequest(id)}
               onNew={() => setShowAddPanel(true)}
             />
           )}
 
-          {tab === 'paused' && <PausedTab rows={paused} />}
+          {tab === 'paused' && (
+            <PausedTab rows={paused} busyId={busyId} onRetry={(buddy) => void onRetry(buddy)} />
+          )}
         </div>
 
         {/* Chat pane */}
@@ -530,6 +650,50 @@ export default function Buddy() {
           {error}
         </div>
       )}
+
+      <Dialog
+        open={declineTarget !== null}
+        onClose={() => {
+          if (busyId) return;
+          setDeclineTarget(null);
+          setDeclineReason('');
+        }}
+        title="Decline buddy request"
+      >
+        <p className="text-[13px] leading-relaxed text-text-muted">
+          Decline {declineTarget ? peerDisplay(declineTarget.peer) : 'this request'}? They can
+          request again after 24 hours. A reason is optional.
+        </p>
+        <Textarea
+          value={declineReason}
+          onChange={(event) => setDeclineReason(event.target.value.slice(0, 240))}
+          placeholder="Optional reason"
+          rows={3}
+          className="mt-3"
+          disabled={busyId !== null}
+          autoFocus
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busyId !== null}
+            onClick={() => setDeclineTarget(null)}
+          >
+            Keep request
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={!declineTarget || busyId !== null}
+            onClick={() => {
+              if (declineTarget) void onRespond(declineTarget.row.id, 'decline', declineReason);
+            }}
+          >
+            {busyId ? 'Declining…' : 'Decline'}
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -599,6 +763,11 @@ function ChatsTab({
                     : `@${peerHandle(b.peer)} · say hi`}
                 </p>
               </div>
+              {b.unreadCount > 0 && (
+                <span className="u-num flex min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  {b.unreadCount > 99 ? '99+' : b.unreadCount}
+                </span>
+              )}
             </button>
           </li>
         );
@@ -610,12 +779,16 @@ function ChatsTab({
 function RequestsTab({
   incoming,
   outgoing,
+  busyId,
   onRespond,
+  onCancel,
   onNew
 }: {
   incoming: BuddyView[];
   outgoing: BuddyView[];
+  busyId: string | null;
   onRespond: (id: string, action: 'accept' | 'decline') => void;
+  onCancel: (id: string) => void;
   onNew: () => void;
 }) {
   if (incoming.length === 0 && outgoing.length === 0) {
@@ -655,6 +828,7 @@ function RequestsTab({
                       size="sm"
                       variant="primary"
                       onClick={() => onRespond(b.row.id, 'accept')}
+                      disabled={busyId === b.row.id}
                     >
                       <Check size={11} strokeWidth={2} className="mr-1" /> Accept
                     </Button>
@@ -662,6 +836,7 @@ function RequestsTab({
                       size="sm"
                       variant="ghost"
                       onClick={() => onRespond(b.row.id, 'decline')}
+                      disabled={busyId === b.row.id}
                     >
                       <X size={11} strokeWidth={2} />
                     </Button>
@@ -687,9 +862,14 @@ function RequestsTab({
                     @{b.peer.username}
                   </p>
                 </div>
-                <span className="rounded-full border border-warn/40 bg-warn/5 px-2 py-0.5 text-[10.5px] text-warn">
-                  pending
-                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busyId === b.row.id}
+                  onClick={() => onCancel(b.row.id)}
+                >
+                  {busyId === b.row.id ? 'Cancelling…' : 'Cancel'}
+                </Button>
               </li>
             ))}
           </ul>
@@ -699,7 +879,15 @@ function RequestsTab({
   );
 }
 
-function PausedTab({ rows }: { rows: BuddyView[] }) {
+function PausedTab({
+  rows,
+  busyId,
+  onRetry
+}: {
+  rows: BuddyView[];
+  busyId: string | null;
+  onRetry: (buddy: BuddyView) => void;
+}) {
   if (rows.length === 0) {
     return (
       <p className="p-4 text-[12.5px] text-text-muted">Nothing paused.</p>
@@ -718,9 +906,14 @@ function PausedTab({ rows }: { rows: BuddyView[] }) {
               @{b.peer.username}
             </p>
           </div>
-          <span className="rounded-full border border-border bg-bg-overlay px-2 py-0.5 text-[10.5px] text-text-muted">
-            paused
-          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busyId === b.row.id}
+            onClick={() => onRetry(b)}
+          >
+            {busyId === b.row.id ? 'Sending…' : 'Request again'}
+          </Button>
         </li>
       ))}
     </ul>

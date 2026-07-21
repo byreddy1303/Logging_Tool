@@ -17,20 +17,6 @@ export function weeklyDraftFingerprint(d: WeeklyDraft): string {
   return `${d.root_cause_summary.trim()}::${d.weakest_concept.trim()}::${d.this_weeks_fix.trim()}`;
 }
 
-/**
- * F5.1 step 5 gate: LLM synthesis stays locked until all three narrative
- * fields are non-empty AND the persisted row (fingerprint) matches the
- * current draft. Editing after unlock re-locks the pane.
- */
-export function synthesisUnlocked(draft: WeeklyDraft, savedFingerprint: string | null): boolean {
-  const filled =
-    draft.root_cause_summary.trim() !== '' &&
-    draft.weakest_concept.trim() !== '' &&
-    draft.this_weeks_fix.trim() !== '';
-  if (!filled) return false;
-  return savedFingerprint === weeklyDraftFingerprint(draft);
-}
-
 export interface WeeklyDataSummary {
   weekStart: string;
   weekEnd: string;
@@ -92,7 +78,7 @@ export function dueTodayCount(reattempts: ReattemptRow[], today = todayISO()): n
 
 /**
  * Aggregate a week's tagged questions into the summary used by F5.1 step 1
- * ("this week's data") and the LLM synthesis prompt in step 5.
+ * ("this week's data") and the learner's weekly review.
  */
 export function summarizeWeek(
   allQuestions: QuestionRow[],

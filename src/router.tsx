@@ -21,8 +21,6 @@ import WeeklyReview from '@/pages/WeeklyReview';
 import Heatmap from '@/pages/Heatmap';
 import Calibration from '@/pages/Calibration';
 import Log from '@/pages/Log';
-import DoubtChat from '@/pages/DoubtChat';
-import Triangulate from '@/pages/Triangulate';
 import Formulas from '@/pages/Formulas';
 import TriggerDrill from '@/pages/TriggerDrill';
 import Settings from '@/pages/Settings';
@@ -73,8 +71,6 @@ export const router = createBrowserRouter([
       { path: 'heatmap', element: <Heatmap /> },
       { path: 'calibration', element: <Calibration /> },
       { path: 'readiness', element: <Readiness /> },
-      { path: 'doubt', element: <DoubtChat /> },
-      { path: 'triangulate', element: <Triangulate /> },
       { path: 'trigger-drill', element: <TriggerDrill /> },
       { path: 'formulas', element: <Formulas /> },
       { path: 'buddy', element: <Buddy /> },

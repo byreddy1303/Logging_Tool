@@ -237,7 +237,6 @@ export const DEFAULT_TARGET_TIME_SEC = 120;
 /** First re-attempt is always scheduled +3 days (ladder D3 → D10 → D30). */
 export const REATTEMPT_FIRST_DELAY_DAYS = 3;
 
-export const LLM_DAILY_LIMIT = 100;
 
 export const EXAM_DATE_DEFAULT = '2027-02-06';
 

@@ -31,7 +31,6 @@ export const PLANNER_SUBJECTS: readonly string[] = [
   'Full Mock Test',
   'Topic-wise Mini Test',
   'Revision',
-  'GenAI / LLM Study',
   'Personal Project Work',
   'Custom...'
 ] as const;

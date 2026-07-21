@@ -8,16 +8,6 @@ export type ReattemptStage = 'D3' | 'D10' | 'D30' | 'MASTERED';
 export type ReattemptResult = 'clean' | 'fail';
 export type BuddyStatus = 'pending' | 'active' | 'paused';
 export type ShareStatus = 'sent' | 'solved' | 'discussed';
-export type LlmProvider = 'groq' | 'gemini' | 'openrouter' | 'cerebras';
-export type LlmUse =
-  | 'quick_explain'
-  | 'deep_doubt'
-  | 'triangulate'
-  | 'long_context'
-  | 'reflex_score'
-  | 'variation'
-  | 'formula_extract'
-  | 'weekly_synthesis';
 export type InterruptionKind = 'tab_switch' | 'idle' | 'exit';
 export type SyncStatus = 'synced' | 'pending' | 'error';
 
@@ -154,7 +144,6 @@ export interface WeeklyReviewRow {
   root_cause_summary: string | null;
   weakest_concept: string | null;
   this_weeks_fix: string | null;
-  llm_synthesis: string | null;
   created_at: string;
 }
 
@@ -164,48 +153,6 @@ export interface InterruptionLogRow {
   session_id: string;
   ts: string;
   kind: InterruptionKind;
-}
-
-export interface DoubtSessionRow {
-  id: string;
-  user_id: string;
-  question_id: string | null;
-  use_case: LlmUse;
-  template_used: string | null;
-  user_input: string;
-  provider: LlmProvider;
-  model: string;
-  response: string;
-  latency_ms: number | null;
-  was_helpful: boolean | null;
-  created_at: string;
-}
-
-export interface VariationRow {
-  id: string;
-  user_id: string;
-  parent_question_id: string;
-  generated_text: string;
-  added_to_reattempt: boolean;
-  created_at: string;
-}
-
-export interface TriangulateLogRow {
-  id: string;
-  user_id: string;
-  prompt: string;
-  groq_resp: string | null;
-  gemini_resp: string | null;
-  openrouter_resp: string | null;
-  user_conclusion: string | null;
-  disagreement_noted: string | null;
-  created_at: string;
-}
-
-export interface LlmUsageDailyRow {
-  user_id: string;
-  day: string;
-  count: number;
 }
 
 export interface BuddyRow {
@@ -304,16 +251,6 @@ export interface AccountRequestRow {
   created_at: string;
   ip_hash: string | null;
   user_agent: string | null;
-}
-
-export interface InsightDailyRow {
-  id: string;
-  user_id: string;
-  day: string;
-  sentence: string;
-  data_hash: string;
-  provider: LlmProvider;
-  generated_at: string;
 }
 
 /** Local (Dexie) shape: server row + sync bookkeeping. */

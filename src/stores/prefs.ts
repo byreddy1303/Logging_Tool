@@ -5,7 +5,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-export type DoubtMode = 'quick' | 'deep';
 export type FontScale = 'small' | 'normal' | 'large';
 export type DurationMin = 30 | 60 | 90 | 120;
 
@@ -19,11 +18,6 @@ export interface Preferences {
   defaultSubject: string | null;
   defaultDurationMin: DurationMin;
   defaultQuestionCount: number;
-
-  // AI defaults
-  defaultDoubtMode: DoubtMode;
-  triangulateConfirm: boolean;
-  autoAttachDoubt: boolean;
 
   // Focus & density
   compactRows: boolean;
@@ -42,9 +36,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
   defaultSubject: null, // "pick each time" until user picks a default
   defaultDurationMin: 60,
   defaultQuestionCount: 10,
-  defaultDoubtMode: 'quick',
-  triangulateConfirm: true,
-  autoAttachDoubt: true,
   compactRows: false,
   showCountdown: true,
   fontScale: 'normal',

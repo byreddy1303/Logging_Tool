@@ -264,7 +264,7 @@ export default function Readiness() {
       {!anyData ? (
         <Empty
           title="Nothing to score yet"
-          hint="Log a session or a couple of questions and the number will pop. The math is deterministic — no ambient LLM opinions."
+          hint="Log a session or a couple of questions and the number will appear. The score is deterministic and traceable to your own data."
         />
       ) : (
         <>
@@ -317,7 +317,7 @@ export default function Readiness() {
                 title="Next 3 moves"
                 aside={
                   <span className="text-[11px] text-text-faint">
-                    rule-based — no LLM
+                    rule-based and inspectable
                   </span>
                 }
               />

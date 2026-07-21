@@ -39,7 +39,7 @@ const SLIDES: Slide[] = [
   {
     eyebrow: 'weekly',
     title: 'One fix per week.',
-    body: 'On Sundays, you look at seven days of tags and write your own one-line root cause. Only after that does the AI offer a second opinion. Your read comes first — always.',
+    body: 'On Sundays, look at seven days of tags, name the upstream root cause, and commit to one concrete fix. Your own evidence sets the next move.',
     hint: 'Skipping a Sunday is silent. There are no streaks to break.'
   },
   {
@@ -125,7 +125,7 @@ export default function WelcomeOverlay() {
             type="button"
             onClick={() => void dismiss()}
             aria-label="Skip walkthrough"
-            className="absolute right-3 top-3 rounded p-1.5 text-text-faint hover:bg-bg-overlay hover:text-text"
+            className="absolute right-3 top-3 z-10 rounded p-1.5 text-text-faint hover:bg-bg-overlay hover:text-text"
           >
             <X size={14} strokeWidth={1.75} />
           </button>

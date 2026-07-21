@@ -15,7 +15,7 @@ const KNOWN_LOCALSTORAGE_KEYS = ['air.prefs', 'air.session', 'air.log'];
  *   • all Dexie tables (including meta)
  *   • zustand stores that persist to localStorage (prefs / session / log)
  *   • any residual `air.*` keys in localStorage
- *   • cached weekly-insight rows in memory
+ *   • any remaining in-memory user data
  *
  * Each step is wrapped in try/catch so a partial failure never blocks the
  * others — the invariant is "after this returns, the account is unknown."

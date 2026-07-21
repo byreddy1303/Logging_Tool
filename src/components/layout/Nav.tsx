@@ -12,8 +12,6 @@ import {
   Grid3x3,
   Target,
   Compass,
-  MessageSquare,
-  Columns3,
   Zap,
   Sigma,
   Users,
@@ -59,6 +57,13 @@ const PLANNER_ITEM: Item = {
   active: 'bg-ink-marigold/10 text-ink-marigold'
 };
 
+const BUDDY_ITEM: Item = {
+  to: '/buddy',
+  label: 'Buddy',
+  icon: Users,
+  active: 'bg-ink-rose/10 text-ink-rose'
+};
+
 const ANALYSIS: Item[] = [
   { to: '/patterns', label: 'Patterns', icon: Shapes, active: 'bg-ink-violet/10 text-ink-violet' },
   { to: '/reattempts', label: 'Re-attempts', icon: RotateCcw, active: 'bg-ink-rose/10 text-ink-rose' },
@@ -74,16 +79,16 @@ const ANALYSIS: Item[] = [
 ];
 
 const LEARN: Item[] = [
-  { to: '/doubt', label: 'Doubt', icon: MessageSquare, active: 'bg-ink-cobalt/10 text-ink-cobalt' },
-  { to: '/triangulate', label: 'Triangulate', icon: Columns3, active: 'bg-ink-violet/10 text-ink-violet' },
   { to: '/trigger-drill', label: 'Trigger drill', icon: Zap, active: 'bg-ink-marigold/10 text-ink-marigold' },
   { to: '/formulas', label: 'Formulas', icon: Sigma, active: 'bg-ink-teal/10 text-ink-teal' }
 ];
 
-const SOCIAL: Item[] = [
-  { to: '/buddy', label: 'Buddy', icon: Users, active: 'bg-ink-rose/10 text-ink-rose' },
-  { to: '/settings', label: 'Settings', icon: Settings, active: 'bg-ink-slate/10 text-ink-slate' }
-];
+const SETTINGS_ITEM: Item = {
+  to: '/settings',
+  label: 'Settings',
+  icon: Settings,
+  active: 'bg-ink-slate/10 text-ink-slate'
+};
 
 function NavItem({ item }: { item: Item }) {
   const Icon = item.icon;
@@ -149,9 +154,10 @@ export default function Nav() {
           label: 'Session',
           icon: Play,
           active: 'bg-ink-teal/10 text-ink-teal'
-        },
+    },
     JOURNAL_ITEM,
-    PLANNER_ITEM
+    PLANNER_ITEM,
+    BUDDY_ITEM
   ];
 
   return (
@@ -174,7 +180,7 @@ export default function Nav() {
         <Group items={main} />
         <Group label="Analysis" items={ANALYSIS} />
         <Group label="Learn" items={LEARN} />
-        <Group label="" items={SOCIAL} />
+        <Group items={[SETTINGS_ITEM]} />
       </nav>
 
       <div className="border-t border-border px-4 py-3">

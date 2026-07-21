@@ -85,3 +85,14 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 **Chose**: Resend (esm.sh import in Deno edge functions) for owner-notify + invite-send + decline-send. Owner email lives in `OWNER_EMAIL` edge secret; owner identity in-DB is "first signed-up user" via `public.is_owner()` SQL helper.
 **Rejected**: Supabase Auth's built-in SMTP (limited, and unrelated to transactional mail), Gmail SMTP via edge fn (deliverability worst, app-password fragile), SendGrid (older SDK, 100/day cap).
 **Reason**: Resend has the best Deno DX, 3k free/mo covers the growth curve for a niche personal tool, and DKIM/SPF setup is a one-time onboarding. `is_owner()` avoids adding an `is_owner` column while keeping RLS enforceable server-side.
+## 2026-07-21 — Remove provider-backed AI and strengthen Buddy
+
+**Chose**: remove all AI-facing routes, calls, settings, secrets, generated variations, and synthesis surfaces. Keep Formulas and Trigger Drill as local/manual workflows. Move Buddy directly below Planner, add unread/live previews, strict request controls, latest-message loading, connection recovery, safer question payloads, and recipient-only read receipts. Add deterministic dashboard learning notes based on due work and observed outcomes/root causes.
+
+**Reason**: direct user scope change. The resulting product has less maintenance and distraction while preserving the study loop and improving the one human collaboration surface.
+
+## 2026-07-21 — Preserve Buddy history during production migration
+
+**Chose**: remove the two table truncations from the still-unapplied `20260719000001` migration while retaining its case-insensitive duplicate guards and invite validation.
+
+**Reason**: a normal production release must not erase existing Buddy pairs or messages. The remote migration ledger confirms this version has never run, so correcting the migration before its first production application is the safest additive path.

@@ -1,6 +1,6 @@
 # AIR Journal
 
-Local-first, multi-user GATE PYQ analysis app. Captures every solved question as structured data (outcome / pattern / trigger / root cause), schedules spaced re-attempts, integrates free LLMs for doubt-clearing and variation generation, surfaces one weekly upstream weakness.
+Local-first, multi-user GATE PYQ analysis app. Captures every solved question as structured data (outcome / pattern / trigger / root cause), schedules spaced re-attempts, supports focused one-to-one buddy study, and surfaces one weekly upstream weakness.
 
 Built for GATE 2027 CS, targeting AIR <100.
 
@@ -72,13 +72,13 @@ The tool compresses your mistake surface. It does not replace your reasoning.
 
 - Every question you solve produces 4 tags (30 sec): outcome, pattern, trigger, root cause.
 - Wrong / slow / guessed answers auto-enter a spaced re-attempt ladder (3 → 10 → 30 days).
-- LLMs assist with doubt-clearing and variation generation. **LLMs never tag your data.**
-- Weekly, you write ONE upstream weakness to fix that week. The tool shows its own guess only after you write yours.
+- Buddy chat lets you discuss and share a stripped question snapshot without exposing outcomes, patterns, or root causes.
+- Weekly, you write ONE upstream weakness to fix that week; the dashboard turns your own tags into small, actionable learning notes.
 - No streaks, no push notifications, no gamified reward loops, no third-party analytics.
 
 ## Stack
 
-React 18 + Vite + TypeScript · Tailwind · Zustand · Dexie · React Query · Supabase (Postgres 15 + Auth + Edge Functions) · Groq + Gemini + OpenRouter + Cerebras (all free tiers) · Resend (transactional mail, free tier).
+React 18 + Vite + TypeScript · Tailwind · Zustand · Dexie · React Query · Supabase (Postgres 15 + Auth + Edge Functions) · Resend (transactional mail, free tier).
 
 Total monthly cost at low volumes: ₹0. See `DEPLOY.md` for the scaling thresholds where paid tiers kick in.
 
@@ -87,7 +87,7 @@ Total monthly cost at low volumes: ₹0. See `DEPLOY.md` for the scaling thresho
 ```bash
 npm run typecheck        # strict TypeScript
 npm run lint             # ESLint (0 warnings tolerated)
-npm run test             # Vitest — unit + isolation + LLM router + reattempt ladder
+npm run test             # Vitest — analysis, isolation, Buddy, tips, sync, reattempt ladder
 npm run test:e2e         # Playwright — auth, tag flow, offline sync, buddy invite
 ```
 
@@ -98,10 +98,10 @@ CI runs all five on every push to `main`.
 Full walkthrough is in [`DEPLOY.md`](./DEPLOY.md). Short version — every backend CLI call is wrapped in one script:
 
 ```bash
-# One-time: sign up on Supabase, Resend, and the four LLM providers.
+# One-time: sign up on Supabase and Resend.
 cp .deploy.env.example .deploy.env       # fill every value; .deploy.env is gitignored
 supabase login                           # interactive; opens a browser
-bash scripts/deploy.sh                   # links, pushes migrations, deploys 7 edge fns, sets secrets
+bash scripts/deploy.sh                   # links, pushes migrations, deploys edge functions, sets secrets
 ```
 
 For the frontend, deploy the built app to Vercel:

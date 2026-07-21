@@ -17,8 +17,10 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   CheckCheck,
+  CloudOff,
   Image as ImageIcon,
   MoreVertical,
+  RefreshCcw,
   Send,
   ArrowUp,
   UserX,
@@ -34,6 +36,7 @@ import type {
 } from '@/types';
 import { formatDate } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
+import { isSharedQuestionRef, mergeBuddyMessages, safeQuestionRef } from '@/lib/buddy';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 
@@ -48,20 +51,6 @@ const TEXT_LIMIT = 4000;
 const MSG_PAGE_SIZE = 200;
 const TYPING_INTERVAL_MS = 1500;
 const TYPING_TIMEOUT_MS = 3500;
-
-/** Strip a QuestionRow down to what's safe to send to a buddy. */
-function safeQuestionRef(q: QuestionRow): SharedQuestionRef {
-  return {
-    subject: q.subject,
-    subtopic: q.subtopic,
-    question_text: q.question_text,
-    image_url: q.image_url,
-    source_ref: q.source_ref,
-    source_year: q.source_year,
-    target_time_sec: q.target_time_sec,
-    origin_question_id: q.id
-  };
-}
 
 function displayName(peer: Props['peer']): string {
   const nm = (peer?.name || '').trim();
@@ -78,17 +67,6 @@ function firstName(peer: Props['peer']): string {
   return un || 'buddy';
 }
 
-/** Merge a batch of rows into the messages array by id, preserving sort. */
-function mergeMessages(prev: BuddyMessageRow[], rows: BuddyMessageRow[]): BuddyMessageRow[] {
-  if (rows.length === 0) return prev;
-  const byId = new Map<string, BuddyMessageRow>();
-  for (const m of prev) byId.set(m.id, m);
-  for (const m of rows) byId.set(m.id, m);
-  return Array.from(byId.values()).sort((a, b) =>
-    a.created_at.localeCompare(b.created_at)
-  );
-}
-
 export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
   const [messages, setMessages] = useState<BuddyMessageRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,6 +78,8 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
   const [peerTyping, setPeerTyping] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmUnfriend, setConfirmUnfriend] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const [connection, setConnection] = useState<'connecting' | 'live' | 'retrying' | 'offline'>('connecting');
   const listRef = useRef<HTMLDivElement>(null);
   const initialLoad = useRef(true);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -109,14 +89,22 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
   // Initial fetch + realtime subscribe.
   useEffect(() => {
     let cancelled = false;
+    setMessages([]);
+    setLoading(true);
+    setError(null);
+    setPeerOnline(false);
+    setPeerTyping(false);
+    setConnection('connecting');
+    setMenuOpen(false);
+    setConfirmUnfriend(false);
+    initialLoad.current = true;
 
     async function load() {
-      setLoading(true);
       const { data, error } = await supabase
         .from('buddy_messages')
         .select('*')
         .eq('buddy_id', buddyId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(MSG_PAGE_SIZE);
       if (cancelled) return;
       if (error) {
@@ -125,7 +113,7 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
         return;
       }
       setError(null);
-      setMessages((data as BuddyMessageRow[]) ?? []);
+      setMessages([...((data as BuddyMessageRow[]) ?? [])].reverse());
       setLoading(false);
     }
     void load();
@@ -145,7 +133,7 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
         },
         (payload) => {
           const row = payload.new as BuddyMessageRow;
-          setMessages((prev) => mergeMessages(prev, [row]));
+          setMessages((prev) => mergeBuddyMessages(prev, [row]));
         }
       )
       .on(
@@ -179,7 +167,12 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
+          setConnection('live');
           void channel.track({ user_id: meId, online_at: new Date().toISOString() });
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setConnection('retrying');
+        } else if (status === 'CLOSED') {
+          setConnection('offline');
         }
       });
 
@@ -191,7 +184,7 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
       channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [buddyId, meId]);
+  }, [buddyId, meId, retryKey]);
 
   // Mark peer's unread messages as read whenever new ones arrive and we're
   // looking at the chat. Read receipts propagate via the UPDATE subscription.
@@ -207,6 +200,8 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
     const { error } = await supabase
       .from('buddy_messages')
       .update({ read_at: now })
+      .eq('buddy_id', buddyId)
+      .neq('sender_id', meId)
       .in('id', unreadIds);
     if (error) {
       // Roll back the optimistic read-flag so the next attempt tries again.
@@ -214,7 +209,7 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
         prev.map((m) => (unreadIds.includes(m.id) ? { ...m, read_at: null } : m))
       );
     }
-  }, [messages, meId]);
+  }, [messages, meId, buddyId]);
 
   useEffect(() => {
     if (!loading) void markRead();
@@ -254,7 +249,7 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
       created_at: new Date().toISOString(),
       read_at: null
     };
-    setMessages((m) => mergeMessages(m, [optimistic]));
+    setMessages((m) => mergeBuddyMessages(m, [optimistic]));
     setDraft('');
     const { error } = await supabase.from('buddy_messages').insert({
       id: optimistic.id,
@@ -287,7 +282,7 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
       created_at: new Date().toISOString(),
       read_at: null
     };
-    setMessages((m) => mergeMessages(m, [optimistic]));
+    setMessages((m) => mergeBuddyMessages(m, [optimistic]));
     const { error } = await supabase.from('buddy_messages').insert({
       id: optimistic.id,
       buddy_id: buddyId,
@@ -299,6 +294,8 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
     if (error) {
       setMessages((m) => m.filter((row) => row.id !== optimistic.id));
       setError(error.message);
+    } else {
+      setError(null);
     }
   }
 
@@ -324,7 +321,17 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-[14px] font-semibold text-text">{nameToShow}</p>
           <p className="u-num truncate text-[11px] text-text-faint">
-            {peerTyping ? 'typing…' : peer.username ? `@${peer.username}` : peer.email || ''}
+            {peerTyping
+              ? 'typing…'
+              : connection !== 'live'
+                ? connection === 'connecting'
+                  ? 'connecting…'
+                  : connection === 'retrying'
+                    ? 'reconnecting…'
+                    : 'offline'
+                : peer.username
+                  ? `@${peer.username}`
+                  : peer.email || ''}
           </p>
         </div>
         {onUnfriend && (
@@ -394,7 +401,17 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
       )}
 
       {error && (
-        <div className="border-b border-border/60 px-4 py-2 text-[12px] text-warn">{error}</div>
+        <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2 text-[12px] text-warn">
+          <CloudOff size={13} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{error}</span>
+          <button
+            type="button"
+            onClick={() => setRetryKey((key) => key + 1)}
+            className="inline-flex items-center gap-1 font-semibold hover:text-text"
+          >
+            <RefreshCcw size={11} /> Try again
+          </button>
+        </div>
       )}
 
       <div
@@ -415,6 +432,11 @@ export default function BuddyChat({ buddyId, meId, peer, onUnfriend }: Props) {
           </div>
         ) : (
           <ul className="flex flex-col gap-3">
+            {messages.length === MSG_PAGE_SIZE && (
+              <li className="mx-auto rounded-full border border-border bg-bg-raised px-3 py-0.5 text-[10.5px] text-text-faint">
+                Showing the latest {MSG_PAGE_SIZE} messages
+              </li>
+            )}
             {grouped.map((chunk) => (
               <li key={chunk.day} className="flex flex-col gap-2">
                 <div className="mx-auto rounded-full border border-border bg-bg-raised px-3 py-0.5 text-[10.5px] uppercase tracking-wider text-text-faint">
@@ -524,8 +546,12 @@ function MessageBubble({ msg, isMe }: { msg: BuddyMessageRow; isMe: boolean }) {
       className={cn('flex', isMe ? 'justify-end' : 'justify-start')}
     >
       <div className={cn('max-w-[80%]', isMe ? 'items-end' : 'items-start')}>
-        {msg.kind === 'question' ? (
-          <QuestionCard ref_={msg.question_ref!} isMe={isMe} />
+        {msg.kind === 'question' && isSharedQuestionRef(msg.question_ref) ? (
+          <QuestionCard ref_={msg.question_ref} isMe={isMe} />
+        ) : msg.kind === 'question' ? (
+          <div className="rounded-2xl border border-warn/30 bg-warn-faint px-3 py-2 text-[12px] text-text-muted">
+            Shared question unavailable.
+          </div>
         ) : (
           <div
             className={cn(

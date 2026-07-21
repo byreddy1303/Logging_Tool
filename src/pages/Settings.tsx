@@ -1,18 +1,18 @@
 // /settings — settings that actually change day-to-day behaviour. Preferences
 // live in a localStorage-backed zustand store; profile fields (name, exam,
 // timezone, rank) round-trip through Supabase (or Dexie meta in sandbox);
-// invites + LLM usage + local data operations are one click each.
+// invites + local data operations are one click each.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
 import {
   Check,
   Copy,
   Download,
+  Lightbulb,
   LogOut,
   Plus,
   RefreshCcw,
   RotateCcw,
-  Sparkles,
   Trash2,
   Upload,
   X
@@ -35,7 +35,6 @@ import {
   daysSinceBackup,
   needsBackupReminder,
   usePrefsStore,
-  type DoubtMode,
   type DurationMin,
   type FontScale,
   type Preferences
@@ -45,13 +44,12 @@ import { wipeLocalState } from '@/lib/isolation';
 import {
   EXAM_DATE_DEFAULT,
   INVITE_TTL_DAYS,
-  LLM_DAILY_LIMIT,
   QUESTION_COUNT_CHOICES,
   SUBJECTS,
   TARGET_DURATIONS_MIN,
   TIMEZONES
 } from '@/lib/constants';
-import { cn, formatDate, todayISO, uuid } from '@/lib/utils';
+import { cn, formatDate, uuid } from '@/lib/utils';
 import {
   BACKUP_VERSION,
   downloadEnvelope,
@@ -102,7 +100,7 @@ export default function Settings() {
 
       {backupNudge && prefs.backupReminderDays > 0 && (
         <div className="flex items-start gap-3 rounded border border-warn/40 bg-warn/5 px-3 py-2">
-          <Sparkles size={14} className="mt-0.5 shrink-0 text-warn" strokeWidth={1.75} />
+          <Lightbulb size={14} className="mt-0.5 shrink-0 text-warn" strokeWidth={1.75} />
           <div className="flex-1 text-[12.5px] text-text">
             <p className="font-medium">Backup nudge</p>
             <p className="text-text-muted">
@@ -179,37 +177,6 @@ export default function Settings() {
             }))}
             onChange={(v) => prefs.set('defaultQuestionCount', Number(v))}
           />
-        </CardBody>
-      </Card>
-
-      {/* --- AI defaults --------------------------------------------------- */}
-      <Card>
-        <CardHeader title="AI defaults" />
-        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <SegmentField
-            label="Default doubt mode"
-            hint="Which model /doubt opens on. Quick=Groq, Deep=Gemini."
-            value={prefs.defaultDoubtMode}
-            options={[
-              { value: 'quick', label: 'Quick (Groq)' },
-              { value: 'deep', label: 'Deep (Gemini)' }
-            ]}
-            onChange={(v) => prefs.set('defaultDoubtMode', v as DoubtMode)}
-          />
-          <div className="flex flex-col gap-3">
-            <ToggleRow
-              label="Confirm before Triangulate"
-              hint="Triangulate costs 3 credits — confirm before spending."
-              value={prefs.triangulateConfirm}
-              onChange={(v) => prefs.set('triangulateConfirm', v)}
-            />
-            <ToggleRow
-              label="Auto-attach doubt"
-              hint="When /doubt has a question in context, pre-select it in the attach picker."
-              value={prefs.autoAttachDoubt}
-              onChange={(v) => prefs.set('autoAttachDoubt', v)}
-            />
-          </div>
         </CardBody>
       </Card>
 
@@ -311,8 +278,6 @@ export default function Settings() {
       <InvitesCard userId={userId} sandbox={sandbox} />
 
       {/* --- Usage -------------------------------------------------------- */}
-      <UsageCard userId={userId} />
-
       {/* --- Data --------------------------------------------------------- */}
       <DataCard profile={profile} onBackup={() => prefs.markBackupNow()} />
 
@@ -825,54 +790,6 @@ function InvitesCard({ userId, sandbox }: { userId: string | null; sandbox: bool
           })}
         </ul>
       )}
-    </Card>
-  );
-}
-
-/* ---------------- usage card ---------------- */
-
-function UsageCard({ userId }: { userId: string | null }) {
-  const [today, setToday] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!supabaseConfigured || !userId) {
-      setToday(null);
-      return;
-    }
-    setLoading(true);
-    void supabase
-      .from('llm_usage_daily')
-      .select('count')
-      .eq('user_id', userId)
-      .eq('day', todayISO())
-      .maybeSingle()
-      .then(({ data }) => {
-        setToday(data?.count ?? 0);
-        setLoading(false);
-      });
-  }, [userId]);
-
-  const used = today ?? 0;
-  const pct = Math.min(1, used / LLM_DAILY_LIMIT);
-
-  return (
-    <Card>
-      <CardHeader title="LLM credits" />
-      <CardBody className="flex flex-col gap-2">
-        <div className="flex items-baseline justify-between text-[13px]">
-          <span className="text-text-muted">Today</span>
-          <span className="u-num text-text">
-            {loading ? '…' : `${used} / ${LLM_DAILY_LIMIT}`}
-          </span>
-        </div>
-        <div className="h-2 overflow-hidden rounded bg-bg-overlay">
-          <div className="h-2 bg-accent" style={{ width: `${Math.round(pct * 100)}%` }} />
-        </div>
-        <p className="text-[11px] text-text-faint">
-          Resets at UTC midnight. Triangulate costs 3, everything else 1.
-        </p>
-      </CardBody>
     </Card>
   );
 }

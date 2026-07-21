@@ -12,10 +12,7 @@ import {
   activeDaysBack,
   heatmapCells,
   heatmapRowTotals,
-  summarizeWeek,
-  synthesisUnlocked,
-  weeklyDraftFingerprint,
-  type WeeklyDraft
+  summarizeWeek
 } from '@/lib/analysis';
 
 const USER = '00000000-0000-4000-8000-000000000001';
@@ -186,33 +183,6 @@ describe('summarizeWeek', () => {
     expect(s.byRootCause.concept).toBe(2);
     expect(s.byRootCause.strategy).toBe(1);
     expect(s.topPatterns[0]).toEqual({ name: 'joins on nulls', count: 2 });
-  });
-});
-
-describe('synthesisUnlocked (F5.1 DoD)', () => {
-  const filled: WeeklyDraft = {
-    root_cause_summary: 'I overtrust reflex on identity questions.',
-    weakest_concept: 'Set-associative caches',
-    this_weeks_fix: 'Re-derive the three GATE 2020 cache Qs from scratch.'
-  };
-  it('stays locked while any of the three narratives is empty', () => {
-    const empty = { root_cause_summary: '', weakest_concept: '', this_weeks_fix: '' };
-    expect(synthesisUnlocked(empty, null)).toBe(false);
-    expect(
-      synthesisUnlocked({ ...filled, this_weeks_fix: '' }, weeklyDraftFingerprint(filled))
-    ).toBe(false);
-  });
-  it('stays locked when the draft has drifted since save', () => {
-    const saved = weeklyDraftFingerprint(filled);
-    const edited = { ...filled, this_weeks_fix: 'different plan' };
-    expect(synthesisUnlocked(edited, saved)).toBe(false);
-  });
-  it('unlocks when all three fields are filled AND the saved fingerprint matches', () => {
-    expect(synthesisUnlocked(filled, weeklyDraftFingerprint(filled))).toBe(true);
-  });
-  it('whitespace-only fields count as empty', () => {
-    const junk = { ...filled, weakest_concept: '   ' };
-    expect(synthesisUnlocked(junk, weeklyDraftFingerprint(junk))).toBe(false);
   });
 });
 

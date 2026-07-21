@@ -28,24 +28,27 @@ Note the **project URL** and **anon key** (Supabase Dashboard → Project Settin
 npx supabase db push
 ```
 
-This applies every migration in order, including `20260718000001_access_requests_and_insights.sql` (owner helpers + account_requests + insights_daily + approve/decline RPCs).
+This applies every migration in order, including access-request, Buddy, and Buddy-message hardening migrations.
 
 Verify in Supabase Dashboard → Table Editor:
 
 - `account_requests` table exists with RLS enabled.
-- `insights_daily` table exists with RLS enabled.
 - `public.is_owner`, `public.owner_email`, `public.approve_account_request`, `public.decline_account_request` all show under Database → Functions.
+- `public.cancel_buddy_request` exists and `buddy_messages` has RLS enabled.
 
 ## 3. Deploy edge functions
 
 ```bash
-npx supabase functions deploy llm-router
 npx supabase functions deploy schedule-reattempts
 npx supabase functions deploy compute-readiness
 npx supabase functions deploy request-access
 npx supabase functions deploy approve-request
 npx supabase functions deploy decline-request
-npx supabase functions deploy weekly-insight
+npx supabase functions deploy signup-via-invite
+npx supabase functions deploy login
+npx supabase functions deploy request-pin-reset
+npx supabase functions deploy buddy-request
+npx supabase functions deploy daily-digest
 ```
 
 ## 4. Configure secrets
@@ -54,10 +57,6 @@ Every secret below must be present before the app can function end-to-end.
 
 ```bash
 npx supabase secrets set \
-  GROQ_API_KEY='...'          \
-  GEMINI_API_KEY='...'        \
-  OPENROUTER_API_KEY='...'    \
-  CEREBRAS_API_KEY='...'      \
   RESEND_API_KEY='re_...'     \
   MAIL_FROM='AIR Journal <no-reply@yourdomain.com>' \
   OWNER_EMAIL='byreddy1303@gmail.com'               \
@@ -68,13 +67,7 @@ npx supabase secrets set \
 - `OWNER_EMAIL` is where new access-request notifications land. It's independent of the DB "owner" (first-signed-up user) — you can point it wherever routing is convenient.
 - `VITE_APP_URL` is used inside invite emails so the link resolves to your production host, not the edge function origin.
 
-Free-tier keys:
-
-- **Groq** — [console.groq.com](https://console.groq.com) — for `llm-router` + `weekly-insight`.
-- **Google AI Studio (Gemini)** — [aistudio.google.com](https://aistudio.google.com) — for `deep_doubt` + `weekly_synthesis`.
-- **OpenRouter** — [openrouter.ai](https://openrouter.ai) — for triangulate mode.
-- **Cerebras** — [inference.cerebras.ai](https://inference.cerebras.ai) — for reflex scoring.
-- **Resend** — [resend.com](https://resend.com) — for transactional mail. Verify your domain (DKIM + SPF) before going live.
+Free-tier key: **Resend** — [resend.com](https://resend.com) — for transactional mail. Verify your domain (DKIM + SPF) before going live.
 
 ## 5. Configure Supabase Auth
 
@@ -123,8 +116,7 @@ Supabase Dashboard → Database → Cron. Add:
 ## 10. Rate limits and quotas
 
 - Access requests: 1 pending per email per calendar day (DB unique index).
-- LLM router: 100 calls/user/day (Triangulate counts as 3). Enforced in `llm-router` handler.
-- Weekly insight: cached once per calendar day per user. Regenerate is manual and costs 1 credit.
+- Buddy requests: server-enforced daily limit and 24-hour cooldown after a decline.
 - Resend free tier: 3000 mails/month. At the volumes AIR Journal operates, this is comfortable.
 
 ## 11. Ongoing ops

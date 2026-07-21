@@ -8,6 +8,7 @@ import { differenceInCalendarDays, parseISO } from 'date-fns';
 import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
 import type { Outcome } from '@/types';
 import HeroCard from '@/components/dashboard/HeroCard';
+import LearningTips from '@/components/dashboard/LearningTips';
 import WelcomeOverlay from '@/components/dashboard/WelcomeOverlay';
 import OutcomeLegend from '@/components/dashboard/OutcomeLegend';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
@@ -19,6 +20,7 @@ import { usePrefsStore } from '@/stores/prefs';
 import { cn, formatDate, plural, todayISO } from '@/lib/utils';
 import { EXAM_DATE_DEFAULT, OUTCOMES, OUTCOME_BY_CODE } from '@/lib/constants';
 import { subjectInk } from '@/lib/subjectInk';
+import { buildLearningTips } from '@/lib/learning-tips';
 import {
   dueTodayCount,
   latestSession,
@@ -175,7 +177,7 @@ function OutcomeBar({
 }
 
 export default function Dashboard() {
-  const { userId, profile, sandbox } = useAuth();
+  const { userId, profile } = useAuth();
   const navigate = useNavigate();
   const today = todayISO();
   const dailyQuestionTarget = usePrefsStore((s) => s.dailyQuestionTarget);
@@ -236,6 +238,17 @@ export default function Dashboard() {
 
   const examDate = profile?.exam_date ?? EXAM_DATE_DEFAULT;
   const daysLeft = differenceInCalendarDays(parseISO(examDate), new Date());
+  const learningTips = useMemo(
+    () =>
+      buildLearningTips({
+        due,
+        weeklyFix,
+        lastSessionQuestions,
+        sessionsThisWeek,
+        questionsToday
+      }),
+    [due, weeklyFix, lastSessionQuestions, sessionsThisWeek, questionsToday]
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -243,7 +256,6 @@ export default function Dashboard() {
       <HeroCard
         name={profile?.name}
         userId={userId}
-        sandbox={sandbox}
         showCountdown={showCountdown}
         daysLeft={daysLeft}
         action={
@@ -252,6 +264,8 @@ export default function Dashboard() {
           </Button>
         }
       />
+
+      <LearningTips tips={learningTips} />
 
       <Card>
         <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">

@@ -10,7 +10,7 @@ if (!supabaseConfigured) {
   console.warn('[air] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY missing — running local-only.');
 }
 
-export const supabase = createClient(url ?? 'http://localhost:54321', anonKey ?? 'anon-key', {
+export const supabase = createClient(url || 'http://localhost:54321', anonKey || 'anon-key', {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

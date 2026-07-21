@@ -1,18 +1,13 @@
 // Re-attempt queue (F3.3): due ladders first, upcoming below. Clean advances
 // D3 → D10 → D30 → MASTERED; fail resets to D3. Solve on paper, then report.
-// Also surfaces F4.4 queued variations — user picks R/RBS/RBG/W to log an
-// outcome, which materialises a synthetic question row (linked to the parent)
-// and enters the ladder at D3 for anything not clean.
-import { forwardRef, useMemo, useState } from 'react';
+import { forwardRef, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AnimatePresence, motion } from 'motion/react';
-import { Sparkles } from 'lucide-react';
-import type { QuestionRow, ReattemptRow, ReattemptStage, VariationRow, Outcome } from '@/types';
+import type { QuestionRow, ReattemptRow, ReattemptStage } from '@/types';
 import { db } from '@/lib/db';
-import { needsReattempt, recordReattemptResult, scheduleReattempt } from '@/lib/reattempt';
-import { writeLocal } from '@/lib/sync';
-import { OUTCOME_BY_CODE, OUTCOMES } from '@/lib/constants';
-import { cn, formatDate, nowISO, todayISO, plural, uuid } from '@/lib/utils';
+import { recordReattemptResult } from '@/lib/reattempt';
+import { OUTCOME_BY_CODE } from '@/lib/constants';
+import { cn, formatDate, todayISO, plural } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
 import { useAuth } from '@/hooks/useAuth';
 import { useUiStore } from '@/stores/ui';
@@ -21,7 +16,6 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Empty } from '@/components/ui/Empty';
-import VariationDialog from '@/components/shared/VariationDialog';
 
 const TONE_BADGE: Record<'ok' | 'slow' | 'guess' | 'wrong', 'success' | 'warn' | 'guess' | 'danger'> = {
   ok: 'success',
@@ -60,12 +54,11 @@ interface DueCardProps {
   question?: QuestionRow;
   today: string;
   onResult: (row: ReattemptRow, result: 'clean' | 'fail') => void;
-  onVariations: (parent: QuestionRow) => void;
 }
 
 // forwardRef because AnimatePresence popLayout measures exiting children via ref
 const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
-  { row, question, today, onResult, onVariations },
+  { row, question, today, onResult },
   ref
 ) {
   const ink = question ? subjectInk(question.subject) : null;
@@ -113,18 +106,7 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
       </p>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-        {question ? (
-          <button
-            type="button"
-            onClick={() => onVariations(question)}
-            className="flex items-center gap-1 text-[12px] text-text-faint underline decoration-dotted underline-offset-2 hover:text-accent"
-          >
-            <Sparkles size={11} strokeWidth={1.75} />
-            Generate 5 variations
-          </button>
-        ) : (
-          <span className="text-[12px] text-text-faint">Re-solve on paper first, then report.</span>
-        )}
+        <span className="text-[12px] text-text-faint">Re-solve on paper first, then report.</span>
         <div className="flex gap-2">
           <Button variant="danger" size="sm" onClick={() => onResult(row, 'fail')}>
             Failed — reset
@@ -138,74 +120,10 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
   );
 });
 
-interface VariationCardProps {
-  row: VariationRow;
-  parent?: QuestionRow;
-  onLog: (v: VariationRow, parent: QuestionRow | undefined, outcome: Outcome) => void;
-  onSkip: (v: VariationRow) => void;
-}
-
-function VariationCard({ row, parent, onLog, onSkip }: VariationCardProps) {
-  const ink = parent ? subjectInk(parent.subject) : null;
-  return (
-    <div className="rounded-lg border border-border bg-bg-raised p-4 shadow-card">
-      <div className="flex flex-wrap items-center gap-2 text-[12px]">
-        {ink && (
-          <>
-            <span className={cn('h-1.5 w-1.5 rounded-full', ink.dot)} />
-            <span className={cn('font-medium', ink.text)}>{parent?.subject}</span>
-          </>
-        )}
-        <Badge tone="neutral">variation</Badge>
-        {parent?.pattern_name && (
-          <span className="text-text-muted">of “{parent.pattern_name}”</span>
-        )}
-        <span className="ml-auto text-text-faint">
-          added {formatDate(row.created_at.slice(0, 10), 'dd MMM')}
-        </span>
-      </div>
-      <p className="mt-3 whitespace-pre-wrap text-[13.5px] leading-relaxed text-text">
-        {row.generated_text}
-      </p>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-        <span className="text-[12px] text-text-faint">
-          Solve on paper, then log outcome. Non-clean enters the D3 ladder.
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {OUTCOMES.map((o) => (
-            <button
-              key={o.code}
-              type="button"
-              onClick={() => onLog(row, parent, o.code)}
-              title={o.hint}
-              className={cn(
-                'rounded border px-2 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors',
-                'border-border bg-bg-overlay text-text-muted hover:border-accent hover:text-accent'
-              )}
-            >
-              {o.code}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => onSkip(row)}
-            className="rounded border border-border bg-bg-overlay px-2 py-1 text-[11px] font-medium text-text-faint hover:text-text"
-          >
-            skip
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Reattempts() {
   const { userId } = useAuth();
   const pushToast = useUiStore((s) => s.pushToast);
   const today = todayISO();
-
-  const [variationParent, setVariationParent] = useState<QuestionRow | null>(null);
-  const [variationOpen, setVariationOpen] = useState(false);
 
   const reattempts = useLiveQuery(
     () => (userId ? db.reattempts.where('user_id').equals(userId).toArray() : []),
@@ -215,18 +133,6 @@ export default function Reattempts() {
     () => (userId ? db.questions.where('user_id').equals(userId).toArray() : []),
     [userId]
   );
-  const variations = useLiveQuery(
-    async () => {
-      if (!userId) return [] as VariationRow[];
-      const rows = await db.variations.where('user_id').equals(userId).toArray();
-      return rows
-        .filter((v) => v.added_to_reattempt)
-        .sort((a, b) => (a.created_at > b.created_at ? -1 : 1));
-    },
-    [userId],
-    []
-  );
-
   const qById = useMemo(() => new Map((questions ?? []).map((q) => [q.id, q])), [questions]);
 
   const { due, upcoming, mastered } = useMemo(() => {
@@ -253,53 +159,6 @@ export default function Reattempts() {
     }
   }
 
-  function openVariations(parent: QuestionRow) {
-    setVariationParent(parent);
-    setVariationOpen(true);
-  }
-
-  async function logVariation(v: VariationRow, parent: QuestionRow | undefined, outcome: Outcome) {
-    if (!userId) return;
-    const now = nowISO();
-    const parentRef = parent?.source_ref ? `Variation of ${parent.source_ref}` : 'Variation';
-    const synthetic: QuestionRow = {
-      id: uuid(),
-      user_id: userId,
-      session_id: null,
-      subject: parent?.subject ?? 'General Aptitude',
-      subtopic: parent?.subtopic ?? null,
-      source_year: null,
-      source_ref: parentRef,
-      question_text: v.generated_text,
-      image_url: null,
-      time_spent_sec: 0,
-      target_time_sec: parent?.target_time_sec ?? 120,
-      outcome,
-      pattern_name: parent?.pattern_name ?? null,
-      trigger_sentence: null,
-      root_cause: null,
-      mark_decision: null,
-      mark_correct: null,
-      created_at: now
-    };
-    await writeLocal('questions', synthetic);
-    if (needsReattempt(outcome)) {
-      await scheduleReattempt(userId, synthetic.id);
-    }
-    await writeLocal('variations', { ...v, added_to_reattempt: false });
-    pushToast(
-      needsReattempt(outcome)
-        ? `Variation logged (${outcome}). Enters D3 ladder.`
-        : `Variation logged (${outcome}). Off the queue.`,
-      needsReattempt(outcome) ? 'neutral' : 'success'
-    );
-  }
-
-  async function skipVariation(v: VariationRow) {
-    await writeLocal('variations', { ...v, added_to_reattempt: false });
-    pushToast('Variation dropped.', 'neutral');
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
@@ -307,9 +166,7 @@ export default function Reattempts() {
         description={
           reattempts === undefined
             ? 'Loading…'
-            : `${due.length} due · ${upcoming.length} upcoming · ${mastered} mastered${
-                variations.length > 0 ? ` · ${variations.length} ${plural(variations.length, 'variation')}` : ''
-              }`
+            : `${due.length} due · ${upcoming.length} upcoming · ${mastered} mastered`
         }
       />
 
@@ -323,7 +180,6 @@ export default function Reattempts() {
                 question={qById.get(r.question_id)}
                 today={today}
                 onResult={(row, result) => void onResult(row, result)}
-                onVariations={openVariations}
               />
             ))}
           </AnimatePresence>
@@ -333,30 +189,6 @@ export default function Reattempts() {
           title="Nothing due"
           hint="The queue fills as you tag RBS, RBG and W-* questions. First rung lands 3 days after the mistake."
         />
-      )}
-
-      {variations.length > 0 && (
-        <Card>
-          <CardHeader
-            title="Queued variations"
-            aside={
-              <span className="u-num text-[11px] text-text-faint">
-                {variations.length} {plural(variations.length, 'item')}
-              </span>
-            }
-          />
-          <div className="flex flex-col gap-3 p-4">
-            {variations.map((v) => (
-              <VariationCard
-                key={v.id}
-                row={v}
-                parent={qById.get(v.parent_question_id)}
-                onLog={(row, parent, outcome) => void logVariation(row, parent, outcome)}
-                onSkip={(row) => void skipVariation(row)}
-              />
-            ))}
-          </div>
-        </Card>
       )}
 
       {upcoming.length > 0 && (
@@ -386,11 +218,6 @@ export default function Reattempts() {
         </Card>
       )}
 
-      <VariationDialog
-        parent={variationParent}
-        open={variationOpen}
-        onClose={() => setVariationOpen(false)}
-      />
     </div>
   );
 }

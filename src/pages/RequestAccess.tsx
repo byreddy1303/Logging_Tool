@@ -212,8 +212,8 @@ function Pitch({ daysLeft }: { daysLeft: number }) {
         body: 'The Sunday review lands on a single upstream weakness. Not five. One.'
       },
       {
-        head: 'AI as a second opinion, never a first.',
-        body: 'Groq, Gemini, DeepSeek — used for doubts and variations, never for auto-tagging.'
+        head: 'One trusted study buddy, kept focused.',
+        body: 'Share questions, discuss approaches, and see presence without turning study into a social feed.'
       }
     ],
     []

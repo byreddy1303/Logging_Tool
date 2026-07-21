@@ -8,7 +8,6 @@
 #   2. Sign up on Resend (https://resend.com) and grab the API key.
 #      Optional but recommended: verify a sending domain so invite mails
 #      can go to third parties.
-#   3. Sign up on Groq / Gemini / OpenRouter / Cerebras for LLM keys.
 #
 # Then:
 #   1. Populate .deploy.env in this repo root (already created for you).
@@ -42,14 +41,6 @@ for var in RESEND_API_KEY MAIL_FROM OWNER_EMAIL SUPABASE_PROJECT_REF; do
     fail "$var is empty in .deploy.env — fill it in and retry."
   fi
 done
-missing_llm=()
-for var in GROQ_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY CEREBRAS_API_KEY; do
-  [[ -z "${!var:-}" ]] && missing_llm+=("$var")
-done
-if [[ ${#missing_llm[@]} -gt 0 ]]; then
-  info "Warning: LLM keys missing: ${missing_llm[*]}"
-  info "         Doubt / triangulate / weekly-insight will fail until set."
-fi
 ok "Required secrets present"
 
 step "Check supabase CLI"
@@ -82,23 +73,26 @@ ok "Schema is up to date"
 
 step "Deploy edge functions"
 functions=(
-  llm-router
   schedule-reattempts
   compute-readiness
   request-access
   approve-request
   decline-request
-  weekly-insight
+  signup-via-invite
+  login
+  request-pin-reset
+  buddy-request
+  daily-digest
 )
 for fn in "${functions[@]}"; do
   info "→ $fn"
   supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
 done
-ok "All 7 edge functions deployed"
+ok "All ${#functions[@]} edge functions deployed"
 
 step "Set edge function secrets"
 # Only set variables that are non-empty. Supabase secrets set fails on an
-# empty value, and we already warned about missing LLM keys above.
+# empty value.
 secret_args=()
 add_secret() {
   local key="$1"
@@ -109,11 +103,6 @@ add_secret RESEND_API_KEY
 add_secret MAIL_FROM
 add_secret OWNER_EMAIL
 add_secret VITE_APP_URL
-add_secret GROQ_API_KEY
-add_secret GEMINI_API_KEY
-add_secret OPENROUTER_API_KEY
-add_secret CEREBRAS_API_KEY
-
 if [[ ${#secret_args[@]} -gt 0 ]]; then
   supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" "${secret_args[@]}"
   ok "Set ${#secret_args[@]} secrets"
