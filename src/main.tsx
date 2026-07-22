@@ -4,6 +4,8 @@ import { registerSW } from 'virtual:pwa-register';
 import App from '@/App';
 import '@/index.css';
 
+const UPDATE_CHECK_INTERVAL_MS = 60 * 1000;
+
 // When an installed PWA is already controlled by a service worker, a newly
 // activated release should replace the open app without asking the learner to
 // refresh. Ignore the first controller claim on a brand-new installation so
@@ -30,7 +32,7 @@ registerSW({
   onRegisteredSW(_swUrl, registration) {
     if (!registration) return;
     void registration.update();
-    window.setInterval(() => void registration.update(), 15 * 60 * 1000);
+    window.setInterval(() => void registration.update(), UPDATE_CHECK_INTERVAL_MS);
   }
 });
 
