@@ -96,7 +96,7 @@ The artifact is:
 android/app/build/outputs/apk/release/airjournal-live-release.apk
 ```
 
-After this APK is installed once, normal web releases are delivered by pushing a verified commit to `main`; Vercel updates the production origin and the app checks for a new service worker every minute. Do not use this path for native permission, plugin, or signing changes.
+After this APK is installed once, normal web releases are delivered by pushing a verified commit to `main`; Vercel updates the production origin and the app checks on launch/resume and every 15 minutes while open. Do not use this path for native permission, plugin, or signing changes.
 
 ## Release verification matrix
 

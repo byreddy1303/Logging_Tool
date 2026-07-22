@@ -46,7 +46,7 @@ The pushed app includes the production-oriented Android/mobile pass:
 The web app and Android wrapper share product code, but Android-only presentation and
 native behavior are scoped so they do not change the desktop website layout.
 
-Installed PWA copies now check for a release immediately and every 15 minutes. When a
+Installed PWA copies now check for a release immediately, on resume, and every 15 minutes. When a
 new service worker takes control of an already-open app, the page reloads once without
 asking the learner to refresh or reinstall. The production bundle at
 `https://air-journal-omega.vercel.app` was verified to contain this behavior on

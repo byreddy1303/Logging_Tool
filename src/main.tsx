@@ -4,7 +4,7 @@ import { registerSW } from 'virtual:pwa-register';
 import App from '@/App';
 import '@/index.css';
 
-const UPDATE_CHECK_INTERVAL_MS = 60 * 1000;
+const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 // When an installed PWA is already controlled by a service worker, a newly
 // activated release should replace the open app without asking the learner to
@@ -44,6 +44,10 @@ registerSW({
 });
 
 window.setInterval(checkForServiceWorkerUpdate, UPDATE_CHECK_INTERVAL_MS);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkForServiceWorkerUpdate();
+});
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
