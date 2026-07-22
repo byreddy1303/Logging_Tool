@@ -329,7 +329,7 @@ export default function Dashboard() {
 
       <Card>
         <CardHeader
-          title="Daily plan"
+          title="Today's plan"
           aside={<span className="text-[11px] text-text-faint">from Settings</span>}
         />
         <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
