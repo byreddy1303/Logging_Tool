@@ -108,8 +108,8 @@ Current state:
 - Signed 1.0.1 AAB is ready.
 - Play Console setup/upload has not started.
 - Browser automation is blocked because the ChatGPT Chrome Extension is not installed
-  in the active Chrome profile. The user approved opening its official Chrome Web Store
-  page; installation still needs to be completed by the user.
+  in the active Chrome profile. Its official Chrome Web Store page is open; the user
+  must click **Add to Chrome** and approve Chrome's installation prompt.
 - The friend's Google account email is still needed when configuring the tester list.
 
 Next Play steps:
