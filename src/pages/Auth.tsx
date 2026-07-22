@@ -77,7 +77,7 @@ export default function Auth() {
           <div className="pl-6">
             <p className="mt-4 text-[13.5px] leading-relaxed text-text-muted">
               Sign in with your{' '}
-              <span className="u-highlight font-medium text-text">username and PIN</span>.
+              <span className="u-highlight font-medium text-text">username and 6-digit PIN</span>.
             </p>
           </div>
 
