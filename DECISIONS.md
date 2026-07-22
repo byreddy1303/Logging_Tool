@@ -137,6 +137,14 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 
 **Reason**: one canonical field keeps offline sync and editing predictable, while an explicit reveal protects retrieval practice and prevents accidental spoilers.
 
+## 2026-07-22 — User-directed live-shell Android release
+
+**Chose**: add an explicitly named signed APK variant that loads the production HTTPS app and receives web-code releases through the existing Vercel/PWA update path.
+
+**Rejected**: claiming the previously installed bundled APK could be updated remotely, or using the live shell for native plugin and permission changes.
+
+**Reason**: the user explicitly prioritized one-time APK installation and direct future web updates; isolating this behavior to a separate build command keeps the normal offline-bundled release available and makes the online-first/origin-migration tradeoff explicit.
+
 ## 2026-07-22 — Confirm fully untagged question logs
 
 **Chose**: interrupt a new Log or Session save only when both Pattern and Trigger are blank. The confirmation returns directly to tagging by default but preserves an explicit "Save without tags" override.

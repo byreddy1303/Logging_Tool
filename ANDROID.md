@@ -2,6 +2,8 @@
 
 AIR Journal uses Capacitor to package the existing React application as a native Android app. The web/PWA and Android builds share the same components, Dexie database, sync engine, authentication, and tests. The APK contains the UI bundle locally; it is not a remote website inside a thin browser.
 
+The user-directed `android:live:release` variant is the exception: it is a signed shell pinned to `https://air-journal-omega.vercel.app`. It receives React, CSS, and content updates from Vercel without another APK installation. It requires an online first launch, then uses the production service worker for cached offline launches. Native code and plugin changes still require a new signed APK.
+
 ## Product guarantees
 
 - Solo study writes remain Dexie-first and work offline after the first authenticated launch.
@@ -77,6 +79,24 @@ android/app/build/outputs/bundle/release/app-release.aab
 ```
 
 Keep the upload keystore and passwords in a password manager and an encrypted offline backup. Losing the signing key can prevent future direct-install updates from replacing the existing app.
+
+## One-time live-shell release
+
+Before replacing an older bundled-shell APK, open it online and wait until its pending-sync count reaches zero. The live shell uses the production HTTPS origin instead of the old local WebView origin, so unsynced local-only rows are not visible after the upgrade.
+
+Build the signed live shell with a version code higher than every prior APK/AAB:
+
+```bash
+AIR_VERSION_CODE=3 AIR_VERSION_NAME=1.1.0 npm run android:live:release
+```
+
+The artifact is:
+
+```text
+android/app/build/outputs/apk/release/airjournal-live-release.apk
+```
+
+After this APK is installed once, normal web releases are delivered by pushing a verified commit to `main`; Vercel updates the production origin and the app checks for a new service worker every minute. Do not use this path for native permission, plugin, or signing changes.
 
 ## Release verification matrix
 

@@ -79,6 +79,19 @@ Before calling this feature deployed and released:
 
 ## Android release artifacts
 
+### Live-shell automatic web-update APK
+
+- Version: `1.1.0` (`versionCode 3`)
+- Path: `android/app/build/outputs/apk/release/airjournal-live-release.apk`
+- SHA-256: `da52bb389d4446b7439d620f7cadfd3593b05ae51ba328c55d88ba6d277021e9`
+- Embedded origin: `https://air-journal-omega.vercel.app`
+- Package: `in.airjournal.app`
+- Signing certificate matches the previous signed Play bundle.
+- Purpose: install once, then receive React/CSS/content releases from Vercel without
+  another APK installation. Native changes still require a new APK.
+- Migration warning: sync every pending local row in the old bundled APK before installing;
+  the live shell uses the production HTTPS WebView origin and requires an online first launch.
+
 ### Existing direct-install APK
 
 - Version: `1.0.0` (`versionCode 1`)
