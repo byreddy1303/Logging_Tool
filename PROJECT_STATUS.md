@@ -10,11 +10,10 @@ must happen next.
 ## Current repository state
 
 - Branch: `main`
-- Last pushed product-code baseline: `d23b6b3` (`S42: fix daily Telegram cron authentication`)
-- `origin/main` matched local `main` before this handoff documentation was added.
+- Last pushed product-code baseline: `0c9570d` (`S16: add concealed question answers`)
+- `origin/main` matched local `main` when this snapshot was corrected.
 - The pushed baseline includes Android/mobile production work from `a0c2568`.
-- The working tree is intentionally **not clean**. Do not discard or overwrite the
-  concealed-answer changes described below.
+- The working tree was clean when this snapshot was corrected.
 
 ### Current verification
 
@@ -24,7 +23,7 @@ Run on 2026-07-22 against the current working tree:
 - `npm run lint` — passed with zero warnings
 - `npm run test -- --run` — 18 files passed, 100 tests passed
 
-These checks do not mean the in-progress database migration has been deployed or that
+These checks do not mean the new database migration has been deployed or that
 the current web assets have been rebuilt into a new Android release.
 
 ## Shipped and pushed baseline
@@ -45,9 +44,9 @@ The pushed app includes the production-oriented Android/mobile pass:
 The web app and Android wrapper share product code, but Android-only presentation and
 native behavior are scoped so they do not change the desktop website layout.
 
-## In-progress work — do not lose
+## Implemented in code — deployment/release pending
 
-There is an uncommitted private concealed-answer feature in the working tree. It adds:
+Commit `0c9570d` adds a private concealed-answer feature:
 
 - Optional `questions.answer_text` storage and TypeScript types
 - Answer capture in manual Log and timed Sessions
@@ -57,18 +56,18 @@ There is an uncommitted private concealed-answer feature in the working tree. It
 - Tests ensuring Buddy question sharing never includes the answer
 - Migration: `supabase/migrations/20260722000001_question_answers.sql`
 
-Relevant modified or new areas include `BUILD.md`, `DECISIONS.md`, question/source
+Relevant areas include `BUILD.md`, `DECISIONS.md`, question/source
 draft models, `QuestionEditor`, Log, Session Active/Review, Journal, Re-attempts,
 database types, tests, and the migration above.
 
-Before calling this feature complete:
+Before calling this feature deployed and released:
 
 1. Review the whole diff and confirm the reveal UX on a physical Android phone.
 2. Apply/test the Supabase migration in the intended environment.
 3. Verify offline creation, sync, editing, logout isolation, and multi-device hydration.
 4. Confirm Buddy payloads omit `answer_text` at every boundary.
 5. Re-run typecheck, lint, unit tests, production web build, and Android device QA.
-6. Commit and push only after the checks above pass.
+6. Build and distribute a new web/Android release only after the checks above pass.
 
 ## Android release artifacts
 
@@ -87,9 +86,9 @@ Before calling this feature complete:
 - Signature check: `jarsigner -verify` passed on 2026-07-22
 - Purpose: Google Play Internal Testing; an AAB cannot be installed directly like an APK
 
-The 1.0.1 AAB was produced from the currently synced native assets. The concealed-answer
-working-tree changes have **not** been declared part of that Play build. Rebuild with a
-higher version code after those changes are finalized and synced.
+The 1.0.1 AAB was produced before commit `0c9570d`. The concealed-answer feature is
+**not** part of that Play build. Rebuild with a higher version code after its migration,
+production build, native sync, and device QA are complete.
 
 ### Signing safety
 
