@@ -21,6 +21,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, json } from '../_shared/cors.ts';
+import { jwtRoleClaim } from '../_shared/cron-auth.ts';
 import { sendEmail } from '../_shared/email.ts';
 import { greetingForHour, pickQuoteForDay } from '../_shared/quotes.ts';
 import {
@@ -119,7 +120,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
-  const isServiceCall = Boolean(token && token === SERVICE);
+  // The gateway verifies this JWT before invoking the function. Check its
+  // service-role claim instead of requiring byte equality with the injected
+  // key: hosted pg_cron and Edge Functions can expose different valid key
+  // generations during API-key rotation.
+  const isServiceCall = Boolean(
+    token && (token === SERVICE || jwtRoleClaim(token) === 'service_role')
+  );
   if (body.user_id) {
     if (!isServiceCall) {
       const { data, error } = await admin.auth.getUser(token);
