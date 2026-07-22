@@ -10,9 +10,10 @@ must happen next.
 ## Current repository state
 
 - Branch: `main`
-- Last pushed product-code baseline: `0c9570d` (`S16: add concealed question answers`)
+- Last pushed product-code baseline: `3beb67d` (`S36: apply deployed PWA updates automatically`)
 - `origin/main` matched local `main` when this snapshot was corrected.
-- The pushed baseline includes Android/mobile production work from `a0c2568`.
+- The pushed baseline includes Android/mobile production work from `a0c2568` and
+  automatic installed-PWA release activation from `3beb67d`.
 - The working tree was clean when this snapshot was corrected.
 
 ### Current verification
@@ -21,7 +22,8 @@ Run on 2026-07-22 against the current working tree:
 
 - `npm run typecheck` — passed
 - `npm run lint` — passed with zero warnings
-- `npm run test -- --run` — 18 files passed, 100 tests passed
+- `npm run test` — 19 files passed, 104 tests passed
+- `npm run build` — passed; PWA precache generated successfully
 
 These checks do not mean the new database migration has been deployed or that
 the current web assets have been rebuilt into a new Android release.
@@ -43,6 +45,12 @@ The pushed app includes the production-oriented Android/mobile pass:
 
 The web app and Android wrapper share product code, but Android-only presentation and
 native behavior are scoped so they do not change the desktop website layout.
+
+Installed PWA copies now check for a release immediately and every 15 minutes. When a
+new service worker takes control of an already-open app, the page reloads once without
+asking the learner to refresh or reinstall. The production bundle at
+`https://air-journal-omega.vercel.app` was verified to contain this behavior on
+2026-07-22.
 
 ## Implemented in code — deployment/release pending
 
