@@ -706,6 +706,7 @@ Each feature has a **Definition of Done (DoD)** — a testable condition. Do not
   - Outcome keys: `r`, `s`, `g`, `1`, `2`, `3` (mapping in `constants.ts`).
   - Skip Root Cause if outcome is `R`.
 - Pattern name has autocomplete from existing `patterns` (Levenshtein distance ≤ 2).
+- If both Pattern and Trigger are empty at save time, ask for explicit confirmation before logging.
 - Full flow must complete in ≤ 30s (perf test enforces).
 - DoD: perf test passes; e2e test tags 5 questions offline and syncs.
 

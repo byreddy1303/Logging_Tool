@@ -17,6 +17,8 @@ import TriggerStep from '@/components/tags/TriggerStep';
 import RootCauseStep from '@/components/tags/RootCauseStep';
 import { haptic, isNativeApp } from '@/lib/native';
 import { Button } from '@/components/ui/Button';
+import MissingTagsConfirm from '@/components/shared/MissingTagsConfirm';
+import { needsMissingTagsConfirmation } from '@/lib/questionTags';
 
 export interface TagDraft {
   source: SourceDraft;
@@ -73,6 +75,7 @@ export default function TagFlow({
   const [trigger, setTrigger] = useState<string | null>(null);
   const [cause, setCause] = useState<RootCause>();
   const [saving, setSaving] = useState(false);
+  const [pendingUntagged, setPendingUntagged] = useState<Omit<TagDraft, 'source'> | null>(null);
   const advanceTimer = useRef<ReturnType<typeof setTimeout>>();
   const dir = useRef(1);
 
@@ -84,13 +87,21 @@ export default function TagFlow({
     setStep(next);
   }
 
-  async function finalize(draft: Omit<TagDraft, 'source'>) {
+  async function persist(draft: Omit<TagDraft, 'source'>) {
     setSaving(true);
     try {
       await onSave({ source, ...draft });
     } finally {
       setSaving(false);
     }
+  }
+
+  function finalize(draft: Omit<TagDraft, 'source'>) {
+    if (needsMissingTagsConfirmation(draft.pattern_name, draft.trigger_sentence)) {
+      setPendingUntagged(draft);
+      return;
+    }
+    void persist(draft);
   }
 
   function submitSource(next: SourceDraft) {
@@ -113,7 +124,7 @@ export default function TagFlow({
   function submitTrigger(text: string | null) {
     setTrigger(text);
     if (outcome === 'R') {
-      void finalize({
+      finalize({
         outcome,
         pattern_name: pattern,
         trigger_sentence: text,
@@ -127,7 +138,7 @@ export default function TagFlow({
   function pickCause(rc: RootCause) {
     if (saving || !outcome) return;
     setCause(rc);
-    void finalize({
+    finalize({
       outcome,
       pattern_name: pattern,
       trigger_sentence: trigger,
@@ -140,6 +151,10 @@ export default function TagFlow({
   const previousStep = activeIdx > 0 ? steps[activeIdx - 1] : null;
 
   function goBack() {
+    if (pendingUntagged) {
+      setPendingUntagged(null);
+      return;
+    }
     if (previousStep) {
       haptic('selection');
       go(previousStep.id, -1);
@@ -166,13 +181,17 @@ export default function TagFlow({
         <div className="native-tag-header border-b border-border pb-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="u-label">Step {activeIdx + 1} of {steps.length}</p>
+              <p className="u-label">
+                Step {activeIdx + 1} of {steps.length}
+              </p>
               <p className="mt-1 font-display text-[20px] font-semibold capitalize text-text">
                 {activeLabel}
               </p>
             </div>
             <span className="u-num text-right text-[12px] leading-relaxed text-text-muted">
-              {questionLabel}<br />{secondsToClock(timeSpentSec)}
+              {questionLabel}
+              <br />
+              {secondsToClock(timeSpentSec)}
             </span>
           </div>
           <ol className="mt-4 flex gap-1.5" aria-label="Tagging progress">
@@ -214,40 +233,40 @@ export default function TagFlow({
           </div>
         </div>
       ) : (
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-        <ol className="flex items-center gap-1.5">
-          {steps.map((s, i) => (
-            <li key={s.id} className="flex items-center gap-1.5">
-              {i > 0 && (
-                <span
-                  aria-hidden
-                  className={cn('h-px w-3', i <= activeIdx ? 'bg-accent/40' : 'bg-border')}
-                />
-              )}
-              <span
-                className={cn(
-                  'flex h-5 items-center rounded-full px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors duration-150',
-                  i === activeIdx
-                    ? 'bg-accent text-white'
-                    : i < activeIdx
-                      ? 'bg-accent-faint text-accent'
-                      : 'bg-bg-overlay text-text-faint'
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+          <ol className="flex items-center gap-1.5">
+            {steps.map((s, i) => (
+              <li key={s.id} className="flex items-center gap-1.5">
+                {i > 0 && (
+                  <span
+                    aria-hidden
+                    className={cn('h-px w-3', i <= activeIdx ? 'bg-accent/40' : 'bg-border')}
+                  />
                 )}
-              >
-                {s.label}
+                <span
+                  className={cn(
+                    'flex h-5 items-center rounded-full px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors duration-150',
+                    i === activeIdx
+                      ? 'bg-accent text-white'
+                      : i < activeIdx
+                        ? 'bg-accent-faint text-accent'
+                        : 'bg-bg-overlay text-text-faint'
+                  )}
+                >
+                  {s.label}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <span className="u-num text-[12px] text-text-muted">
+            {questionLabel} · {secondsToClock(timeSpentSec)}
+            {outcome && (
+              <span className={cn('ml-2 font-semibold', TONE_TEXT[OUTCOME_BY_CODE[outcome].tone])}>
+                {OUTCOME_BY_CODE[outcome].code}
               </span>
-            </li>
-          ))}
-        </ol>
-        <span className="u-num text-[12px] text-text-muted">
-          {questionLabel} · {secondsToClock(timeSpentSec)}
-          {outcome && (
-            <span className={cn('ml-2 font-semibold', TONE_TEXT[OUTCOME_BY_CODE[outcome].tone])}>
-              {OUTCOME_BY_CODE[outcome].code}
-            </span>
-          )}
-        </span>
-      </div>
+            )}
+          </span>
+        </div>
       )}
 
       <div className="overflow-x-clip">
@@ -288,7 +307,12 @@ export default function TagFlow({
               />
             )}
             {step === 'cause' && (
-              <RootCauseStep selected={cause} onSelect={pickCause} onBack={() => go('trigger', -1)} />
+              <RootCauseStep
+                selected={cause}
+                onSelect={pickCause}
+                onBack={() => go('trigger', -1)}
+                enabled={!pendingUntagged}
+              />
             )}
           </motion.div>
         </AnimatePresence>
@@ -301,6 +325,21 @@ export default function TagFlow({
             ? 'saves locally first'
             : 'esc goes back · this should take under 30 seconds'}
       </p>
+
+      <MissingTagsConfirm
+        open={!!pendingUntagged}
+        saving={saving}
+        onGoBack={() => {
+          setPendingUntagged(null);
+          go('pattern', -1);
+        }}
+        onConfirm={() => {
+          const draft = pendingUntagged;
+          if (!draft) return;
+          setPendingUntagged(null);
+          void persist(draft);
+        }}
+      />
     </div>
   );
 }

@@ -136,3 +136,11 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 **Rejected**: placing answers in source metadata, auto-revealing after a timer, or including answers in Buddy question payloads.
 
 **Reason**: one canonical field keeps offline sync and editing predictable, while an explicit reveal protects retrieval practice and prevents accidental spoilers.
+
+## 2026-07-22 — Confirm fully untagged question logs
+
+**Chose**: interrupt a new Log or Session save only when both Pattern and Trigger are blank. The confirmation returns directly to tagging by default but preserves an explicit "Save without tags" override.
+
+**Rejected**: making either field mandatory, warning when only one is blank, or using the browser's native confirmation popup.
+
+**Reason**: one recognition cue is enough to keep a question useful, while a deliberate override preserves the sub-30-second flow for legitimate exceptions.

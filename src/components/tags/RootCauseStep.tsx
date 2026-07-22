@@ -6,16 +6,21 @@ import TagOption from '@/components/tags/TagOption';
 export default function RootCauseStep({
   selected,
   onSelect,
-  onBack
+  onBack,
+  enabled = true
 }: {
   selected?: RootCause;
   onSelect: (rc: RootCause) => void;
   onBack: () => void;
+  enabled?: boolean;
 }) {
-  useKeyboard({
-    escape: onBack,
-    ...Object.fromEntries(ROOT_CAUSES.map((rc) => [rc.key, () => onSelect(rc.value)]))
-  });
+  useKeyboard(
+    {
+      escape: onBack,
+      ...Object.fromEntries(ROOT_CAUSES.map((rc) => [rc.key, () => onSelect(rc.value)]))
+    },
+    enabled
+  );
   return (
     <div className="flex flex-col gap-1.5">
       {ROOT_CAUSES.map((rc) => (
