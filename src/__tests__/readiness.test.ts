@@ -26,6 +26,7 @@ function question(o: Partial<QuestionRow>): QuestionRow {
     source_year: null,
     source_ref: null,
     question_text: null,
+    answer_text: null,
     image_url: null,
     time_spent_sec: 0,
     target_time_sec: 120,
@@ -218,10 +219,9 @@ describe('nextMoves', () => {
         })
       );
     }
-    const perSubject = computeReadinessBySubject(
-      { questions: qs, reattempts: [], patterns: [] },
-      ['Databases']
-    );
+    const perSubject = computeReadinessBySubject({ questions: qs, reattempts: [], patterns: [] }, [
+      'Databases'
+    ]);
     const overall = computeReadiness({ questions: qs, reattempts: [], patterns: [] });
     const moves = nextMoves(overall, perSubject);
     expect(moves[0].kind).toBe('calibrate');
@@ -230,10 +230,10 @@ describe('nextMoves', () => {
   });
 
   it('emits a diagnose move when no subject has signal', () => {
-    const perSubject = computeReadinessBySubject(
-      { questions: [], reattempts: [], patterns: [] },
-      ['Databases', 'Algorithms']
-    );
+    const perSubject = computeReadinessBySubject({ questions: [], reattempts: [], patterns: [] }, [
+      'Databases',
+      'Algorithms'
+    ]);
     const overall = computeReadiness({ questions: [], reattempts: [], patterns: [] });
     const moves = nextMoves(overall, perSubject);
     expect(moves.some((m) => m.kind === 'diagnose')).toBe(true);

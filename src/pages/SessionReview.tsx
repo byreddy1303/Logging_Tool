@@ -13,6 +13,7 @@ import { OUTCOMES, OUTCOME_BY_CODE } from '@/lib/constants';
 import { cn, formatDate, secondsToClock } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
 import LoadingScreen from '@/components/shared/LoadingScreen';
+import AnswerReveal from '@/components/shared/AnswerReveal';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -22,11 +23,7 @@ import { Empty } from '@/components/ui/Empty';
 import { Dialog } from '@/components/ui/Dialog';
 import QuestionEditor, { DeleteBar } from '@/components/shared/QuestionEditor';
 import SessionEditor from '@/components/shared/SessionEditor';
-import {
-  applyDraftToRow,
-  draftFromRow,
-  type EditorDraft
-} from '@/components/shared/questionDraft';
+import { applyDraftToRow, draftFromRow, type EditorDraft } from '@/components/shared/questionDraft';
 
 const TONE_BG: Record<'ok' | 'slow' | 'guess' | 'wrong', string> = {
   ok: 'bg-success',
@@ -127,8 +124,7 @@ export default function SessionReview() {
         action={<Button onClick={() => navigate('/')}>Dashboard</Button>}
       />
     );
-  if (session.actual_duration_min === null)
-    return <Navigate to={`/session/${id}/solve`} replace />;
+  if (session.actual_duration_min === null) return <Navigate to={`/session/${id}/solve`} replace />;
 
   const ink = subjectInk(session.subject);
   const value = draft ?? session.insight ?? '';
@@ -286,7 +282,10 @@ export default function SessionReview() {
               ))}
             </div>
             <p className="text-[12px] text-text-faint">
-              avg <span className="u-num">{secondsToClock(Math.round(stats.totalSec / questions.length))}</span>{' '}
+              avg{' '}
+              <span className="u-num">
+                {secondsToClock(Math.round(stats.totalSec / questions.length))}
+              </span>{' '}
               per question · <span className="u-num">{stats.over}</span> over target
             </p>
           </CardBody>
@@ -304,7 +303,7 @@ export default function SessionReview() {
             }
           />
           <div className="u-table-wrap">
-            <table className="u-data-table min-w-[620px] text-[13px]">
+            <table className="u-data-table min-w-[860px] text-[13px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
                   <th className="px-3 py-2 font-mono">#</th>
@@ -312,6 +311,7 @@ export default function SessionReview() {
                   <th className="px-3 py-2 font-mono">Pattern</th>
                   <th className="hidden px-3 py-2 font-mono sm:table-cell">Source</th>
                   <th className="px-3 py-2 text-right font-mono">Time</th>
+                  <th className="min-w-[220px] px-3 py-2 font-mono">Answer</th>
                   <th className="w-[64px] px-3 py-2 text-right">Edit</th>
                 </tr>
               </thead>
@@ -341,9 +341,7 @@ export default function SessionReview() {
                       </td>
                       <td className="px-3 py-2">
                         <span className="truncate text-text">
-                          {q.pattern_name ?? (
-                            <span className="text-text-faint">no pattern</span>
-                          )}
+                          {q.pattern_name ?? <span className="text-text-faint">no pattern</span>}
                         </span>
                       </td>
                       <td className="hidden max-w-[240px] px-3 py-2 text-[12px] text-text-muted sm:table-cell">
@@ -358,6 +356,9 @@ export default function SessionReview() {
                         )}
                       >
                         {secondsToClock(q.time_spent_sec)}
+                      </td>
+                      <td className="min-w-[220px] px-3 py-2">
+                        <AnswerReveal answer={q.answer_text} onAdd={() => openEdit(q)} compact />
                       </td>
                       <td className="px-3 py-2 text-right">
                         <button

@@ -30,6 +30,7 @@ import { OUTCOME_BY_CODE } from '@/lib/constants';
 import { cn, formatDate, nowISO, plural, secondsToClock, todayISO, uuid } from '@/lib/utils';
 import { subjectInk } from '@/lib/subjectInk';
 import QuestionEditor, { DeleteBar } from '@/components/shared/QuestionEditor';
+import AnswerReveal from '@/components/shared/AnswerReveal';
 import {
   applyDraftToRow,
   draftFromRow,
@@ -40,10 +41,7 @@ import {
 const DEFAULT_SUBJECT = 'Discrete Mathematics';
 
 async function reconcilePattern(userId: string, subject: string, name: string) {
-  const count = await db.questions
-    .where('[user_id+pattern_name]')
-    .equals([userId, name])
-    .count();
+  const count = await db.questions.where('[user_id+pattern_name]').equals([userId, name]).count();
   const existing = await db.patterns.where('[user_id+name]').equals([userId, name]).first();
   if (existing) {
     await writeLocal('patterns', { ...existing, count });
@@ -107,7 +105,7 @@ export default function Log() {
   const [deleting, setDeleting] = useState(false);
 
   const activeSession = useLiveQuery(
-    async () => (sessionId ? (await db.sessions.get(sessionId)) ?? null : null),
+    async () => (sessionId ? ((await db.sessions.get(sessionId)) ?? null) : null),
     [sessionId],
     null
   );
@@ -170,6 +168,7 @@ export default function Log() {
         source_year: null,
         source_ref: null,
         question_text: null,
+        answer_text: null,
         image_url: null,
         time_spent_sec: 0,
         target_time_sec: 120,
@@ -282,8 +281,8 @@ export default function Log() {
             <>Single entry — saves once, then returns here.</>
           ) : (
             <>
-              One-off entries outside a timed session. Same fields as Journal — subject and
-              outcome are enough.
+              One-off entries outside a timed session. Same fields as Journal — subject and outcome
+              are enough.
             </>
           )
         }
@@ -316,8 +315,8 @@ export default function Log() {
                 Batch (multiple questions)
               </span>
               <span className="text-[12px] text-text-muted">
-                Sticky subject / source across saves. Group is stored as a session — end
-                when you're done. Progress survives navigation.
+                Sticky subject / source across saves. Group is stored as a session — end when you're
+                done. Progress survives navigation.
               </span>
             </button>
           </CardBody>
@@ -340,9 +339,7 @@ export default function Log() {
                   saved
                 </motion.span>
               ) : (
-                <span className="u-num text-[11px] text-text-faint">
-                  date defaults to today
-                </span>
+                <span className="u-num text-[11px] text-text-faint">date defaults to today</span>
               )
             }
           />
@@ -374,11 +371,7 @@ export default function Log() {
                 </Button>
               )}
               <Button variant="primary" onClick={() => void save()} disabled={!canSave || saving}>
-                {saving
-                  ? 'Saving…'
-                  : mode === 'multi'
-                    ? 'Save & next'
-                    : 'Save entry'}
+                {saving ? 'Saving…' : mode === 'multi' ? 'Save & next' : 'Save entry'}
               </Button>
             </div>
           </CardBody>
@@ -389,7 +382,9 @@ export default function Log() {
         <Card>
           <CardBody className="flex flex-wrap items-center gap-3 text-[12px] text-text-muted">
             <span className="flex items-center gap-1.5">
-              <span className={cn('h-1.5 w-1.5 rounded-full', subjectInk(activeSession.subject).dot)} />
+              <span
+                className={cn('h-1.5 w-1.5 rounded-full', subjectInk(activeSession.subject).dot)}
+              />
               <span className="font-medium">{activeSession.subject}</span>
             </span>
             <span className="text-text-faint">
@@ -409,8 +404,7 @@ export default function Log() {
           aside={
             recent.length > 0 ? (
               <span className="u-num text-[12px] text-text-faint">
-                {recent.length} recent · {dayCounts.size}{' '}
-                {plural(dayCounts.size, 'day')}
+                {recent.length} recent · {dayCounts.size} {plural(dayCounts.size, 'day')}
               </span>
             ) : undefined
           }
@@ -423,7 +417,7 @@ export default function Log() {
           />
         ) : (
           <div className="u-table-wrap">
-            <table className="u-data-table min-w-[700px] text-[13px]">
+            <table className="u-data-table min-w-[940px] text-[13px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
                   <th className="px-3 py-2 font-mono">Date</th>
@@ -432,6 +426,7 @@ export default function Log() {
                   <th className="px-3 py-2 font-mono">Outcome</th>
                   <th className="hidden px-3 py-2 font-mono md:table-cell">Source</th>
                   <th className="px-3 py-2 font-mono">Pattern</th>
+                  <th className="min-w-[220px] px-3 py-2 font-mono">Answer</th>
                   <th className="hidden px-3 py-2 text-right font-mono sm:table-cell">Time</th>
                   <th className="w-[64px] px-3 py-2 text-right">Edit</th>
                 </tr>
@@ -445,10 +440,7 @@ export default function Log() {
                   return (
                     <tr
                       key={q.id}
-                      className={cn(
-                        'hover:bg-bg-overlay/40',
-                        inBatch && 'bg-accent-faint/25'
-                      )}
+                      className={cn('hover:bg-bg-overlay/40', inBatch && 'bg-accent-faint/25')}
                     >
                       <td className="u-num whitespace-nowrap px-3 py-2 text-[11px] text-text-faint">
                         {formatDate(q.created_at.slice(0, 10), 'dd MMM yy')}
@@ -486,10 +478,11 @@ export default function Log() {
                       </td>
                       <td className="max-w-[240px] px-3 py-2">
                         <span className="truncate">
-                          {q.pattern_name ?? (
-                            <span className="text-text-faint">no pattern</span>
-                          )}
+                          {q.pattern_name ?? <span className="text-text-faint">no pattern</span>}
                         </span>
+                      </td>
+                      <td className="min-w-[220px] px-3 py-2">
+                        <AnswerReveal answer={q.answer_text} onAdd={() => openEdit(q)} compact />
                       </td>
                       <td
                         className={cn(

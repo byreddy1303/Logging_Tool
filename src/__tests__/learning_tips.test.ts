@@ -12,6 +12,7 @@ function question(overrides: Partial<QuestionRow> = {}): QuestionRow {
     source_year: null,
     source_ref: null,
     question_text: null,
+    answer_text: null,
     image_url: null,
     time_spent_sec: 60,
     target_time_sec: 120,
@@ -49,7 +50,9 @@ describe('buildLearningTips', () => {
       sessionsThisWeek: 1,
       questionsToday: 2
     });
-    expect(tips.map((tip) => tip.id)).toEqual(expect.arrayContaining(['reading-errors', 'execution-errors']));
+    expect(tips.map((tip) => tip.id)).toEqual(
+      expect.arrayContaining(['reading-errors', 'execution-errors'])
+    );
   });
 
   it('shows a useful default when there is no learner data', () => {

@@ -30,10 +30,7 @@ import { Kbd } from '@/components/ui/Kbd';
 import { Empty } from '@/components/ui/Empty';
 
 async function reconcilePattern(userId: string, subject: string, name: string) {
-  const count = await db.questions
-    .where('[user_id+pattern_name]')
-    .equals([userId, name])
-    .count();
+  const count = await db.questions.where('[user_id+pattern_name]').equals([userId, name]).count();
   const existing = await db.patterns.where('[user_id+name]').equals([userId, name]).first();
   if (existing) {
     await writeLocal('patterns', { ...existing, count });
@@ -112,8 +109,7 @@ export default function SessionActive() {
   async function saveTag(draft: TagDraft) {
     if (!session || !userId) return;
     const { source } = draft;
-    const target =
-      source.marks != null ? MARKS_TARGET_SEC[source.marks] : DEFAULT_TARGET_TIME_SEC;
+    const target = source.marks != null ? MARKS_TARGET_SEC[source.marks] : DEFAULT_TARGET_TIME_SEC;
     const q: QuestionRow = {
       id: uuid(),
       user_id: userId,
@@ -129,6 +125,7 @@ export default function SessionActive() {
         source.format
       ),
       question_text: source.questionText,
+      answer_text: source.answerText,
       image_url: source.imageDataUrl,
       time_spent_sec: timeSpent,
       target_time_sec: target,
@@ -181,7 +178,8 @@ export default function SessionActive() {
         action={<Button onClick={() => navigate('/session/new')}>New session</Button>}
       />
     );
-  if (session.actual_duration_min !== null) return <Navigate to={`/session/${id}/review`} replace />;
+  if (session.actual_duration_min !== null)
+    return <Navigate to={`/session/${id}/review`} replace />;
 
   return (
     <div className="flex min-h-[70vh] flex-col">

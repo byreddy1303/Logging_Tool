@@ -184,6 +184,7 @@ create table questions (
   source_year       int,                    -- e.g. 2019
   source_ref        text,                   -- e.g. "GATE CS 2019 Q23"
   question_text     text,
+  answer_text       text,                   -- OWNER-ONLY; concealed by default
   image_url         text,
   time_spent_sec    int not null,
   target_time_sec   int default 120,
@@ -699,6 +700,8 @@ Each feature has a **Definition of Done (DoD)** — a testable condition. Do not
 
 **F2.2 — Active session with timer + tag flow**
 - Timer counts up per question; user hits "Next" to log time and open tag flow.
+- Source capture accepts the exact question and an optional owner-only answer/solution. Answers
+  must never be included in Buddy question sharing.
 - Tag flow: 4 sequential screens (Outcome → Pattern → Trigger → Root Cause), keyboard shortcuts.
   - Outcome keys: `r`, `s`, `g`, `1`, `2`, `3` (mapping in `constants.ts`).
   - Skip Root Cause if outcome is `R`.
@@ -722,6 +725,7 @@ Each feature has a **Definition of Done (DoD)** — a testable condition. Do not
 - Filterable list: subject, outcome, date range, pattern name, root cause, mark decision.
 - Search by trigger phrase (fuzzy).
 - Row expand shows all tag details + link to source PYQ.
+- Saved answers stay concealed and render only after an explicit "Show answer" action.
 - DoD: filter combinations work; pagination at 50/page.
 
 **F3.2 — Pattern library**
@@ -735,6 +739,8 @@ Each feature has a **Definition of Done (DoD)** — a testable condition. Do not
 - On tagging outcome `RBS`, `RBG`, or any `W-*`: auto-create `reattempts` row scheduled `current_date + 3`.
 - Nightly cron (edge function `schedule-reattempts`) advances stages.
 - Dashboard "Due today" section shows all `reattempts` with `scheduled_date <= today`.
+- The due card shows the exact question, runs the attempt timer, and exposes the concealed answer
+  only after the attempt finishes and the learner presses "Show answer".
 - On re-attempt done: user picks "clean" / "fail" → server calls `advance_reattempt(id, result)`.
 - DoD: unit test `reattempt.test.ts` — ladder progression D3→D10→D30→MASTERED; failure resets to D3.
 

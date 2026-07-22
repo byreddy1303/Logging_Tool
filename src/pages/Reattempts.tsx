@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTimer } from '@/hooks/useTimer';
 import { useUiStore } from '@/stores/ui';
 import PageHeader from '@/components/layout/PageHeader';
+import AnswerReveal from '@/components/shared/AnswerReveal';
 import Timer from '@/components/shared/Timer';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -101,6 +102,7 @@ interface DueCardProps {
   onRestart: () => void;
   onResult: (row: ReattemptRow, result: 'clean' | 'fail', elapsed: number) => Promise<void>;
   onSavePrompt: (question: QuestionRow, prompt: string) => Promise<void>;
+  onSaveAnswer: (question: QuestionRow, answer: string) => Promise<void>;
 }
 
 // forwardRef because AnimatePresence popLayout measures exiting children via ref.
@@ -116,13 +118,17 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
     onFinish,
     onRestart,
     onResult,
-    onSavePrompt
+    onSavePrompt,
+    onSaveAnswer
   },
   ref
 ) {
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [promptDraft, setPromptDraft] = useState(question?.question_text ?? '');
   const [savingPrompt, setSavingPrompt] = useState(false);
+  const [editingAnswer, setEditingAnswer] = useState(false);
+  const [answerDraft, setAnswerDraft] = useState(question?.answer_text ?? '');
+  const [savingAnswer, setSavingAnswer] = useState(false);
   const [reporting, setReporting] = useState(false);
   const ink = question ? subjectInk(question.subject) : null;
   const carriedForward = row.scheduled_date < today;
@@ -134,6 +140,10 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
     setPromptDraft(question?.question_text ?? '');
   }, [question?.question_text]);
 
+  useEffect(() => {
+    setAnswerDraft(question?.answer_text ?? '');
+  }, [question?.answer_text]);
+
   async function savePrompt() {
     if (!question || !promptDraft.trim() || savingPrompt) return;
     setSavingPrompt(true);
@@ -142,6 +152,17 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
       setEditingPrompt(false);
     } finally {
       setSavingPrompt(false);
+    }
+  }
+
+  async function saveAnswer() {
+    if (!question || !answerDraft.trim() || savingAnswer) return;
+    setSavingAnswer(true);
+    try {
+      await onSaveAnswer(question, answerDraft.trim());
+      setEditingAnswer(false);
+    } finally {
+      setSavingAnswer(false);
     }
   }
 
@@ -328,6 +349,35 @@ const DueCard = forwardRef<HTMLDivElement, DueCardProps>(function DueCard(
                     </Button>
                   </div>
                   <div className="mt-4 border-t border-border pt-4">
+                    <AnswerReveal
+                      answer={question?.answer_text}
+                      onAdd={question ? () => setEditingAnswer(true) : undefined}
+                    />
+                    {editingAnswer && question ? (
+                      <div className="mt-3 flex flex-col gap-3 rounded-xl border border-border bg-bg-overlay/30 p-3">
+                        <Textarea
+                          rows={4}
+                          value={answerDraft}
+                          onChange={(event) => setAnswerDraft(event.target.value)}
+                          placeholder="Add the final answer and the key method…"
+                          autoFocus
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => setEditingAnswer(false)}>
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => void saveAnswer()}
+                            disabled={!answerDraft.trim() || savingAnswer}
+                          >
+                            {savingAnswer ? 'Saving…' : 'Save answer'}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 border-t border-border pt-4">
                     <p className="text-[13px] font-medium text-text">How did it go?</p>
                     <p className="mt-1 text-[12px] text-text-muted">
                       Report only after checking the final answer and method.
@@ -455,6 +505,11 @@ export default function Reattempts() {
     pushToast('Question text saved for future attempts.', 'success');
   }
 
+  async function saveAnswer(question: QuestionRow, answer: string) {
+    await writeLocal('questions', { ...question, answer_text: answer });
+    pushToast('Answer saved and kept concealed.', 'success');
+  }
+
   return (
     <div className="reattempt-page native-reattempt-page flex flex-col gap-4">
       <PageHeader
@@ -500,6 +555,7 @@ export default function Reattempts() {
                 }}
                 onResult={onResult}
                 onSavePrompt={savePrompt}
+                onSaveAnswer={saveAnswer}
               />
             ))}
           </AnimatePresence>

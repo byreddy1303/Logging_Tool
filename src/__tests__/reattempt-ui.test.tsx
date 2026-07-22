@@ -9,6 +9,7 @@ import Reattempts from '@/pages/Reattempts';
 
 const USER = '00000000-0000-4000-8000-000000000001';
 const QUESTION = 'Which schedules are conflict serializable, and why?';
+const ANSWER = 'The schedule is not conflict serializable.';
 const PATTERN = 'precedence graph cycle';
 
 vi.mock('@/hooks/useAuth', () => ({
@@ -50,6 +51,7 @@ async function seedDueQuestion(scheduledDate = '2026-07-20') {
     source_year: 2024,
     source_ref: 'GATE CS 2024 Q31',
     question_text: QUESTION,
+    answer_text: ANSWER,
     image_url: null,
     time_spent_sec: 180,
     target_time_sec: 120,
@@ -98,11 +100,16 @@ describe('re-attempt solve flow', () => {
     expect(await screen.findByText(QUESTION)).toBeInTheDocument();
     expect(screen.getByText(PATTERN)).toBeInTheDocument();
     expect(screen.getByText('carried forward')).toBeInTheDocument();
+    expect(screen.queryByText(ANSWER)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show answer' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Start timer' }));
     expect(await screen.findByText('Attempt running')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Finish attempt' }));
     expect(await screen.findByText('How did it go?')).toBeInTheDocument();
+    expect(screen.queryByText(ANSWER)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show answer' }));
+    expect(screen.getByText(ANSWER)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Solved clean' }));
 
     expect(await screen.findByText('Nothing due')).toBeInTheDocument();

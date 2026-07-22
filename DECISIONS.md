@@ -128,3 +128,11 @@ F3.3 says the server calls `advance_reattempt(id, result)`. Doing that from the 
 **Rejected**: a generic white dashboard redesign and claims of literal O(1) remote fetching.
 
 **Reason**: local keyed reads can be constant-time or logarithmic, but network latency and returned row count remain real. Parallel stale-while-revalidate hydration keeps the interface immediate while preserving complete multi-device sync semantics.
+
+## 2026-07-22 — Private concealed answers for question verification
+
+**Chose**: store an optional owner-only `questions.answer_text`, capture it in both Log and timed Sessions, and render it through one shared reveal control. Re-attempts do not render the reveal until the timer is finished; Journal and Session Review keep it concealed by default.
+
+**Rejected**: placing answers in source metadata, auto-revealing after a timer, or including answers in Buddy question payloads.
+
+**Reason**: one canonical field keeps offline sync and editing predictable, while an explicit reveal protects retrieval practice and prevents accidental spoilers.

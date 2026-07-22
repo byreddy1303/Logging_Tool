@@ -27,6 +27,7 @@ function q(overrides: Partial<QuestionRow>): QuestionRow {
     source_year: null,
     source_ref: null,
     question_text: null,
+    answer_text: null,
     image_url: null,
     time_spent_sec: 60,
     target_time_sec: 120,
@@ -83,7 +84,7 @@ describe('mistakeSurfaceTrend', () => {
     expect(t.delta).toBe(-1);
   });
 
-  it('rows created after the as-of date don\'t count in prior', () => {
+  it("rows created after the as-of date don't count in prior", () => {
     const rows = [ra({ stage: 'D3', created_at: '2026-07-15T09:00:00.000Z' })];
     const t = mistakeSurfaceTrend(rows, now);
     expect(t.current).toBe(1);
@@ -240,7 +241,9 @@ describe('heatmapCells (F5.2 DoD)', () => {
 
   it('skips R outcomes and buckets by (subject × subtopic × root_cause)', () => {
     const cells = heatmapCells(rows);
-    expect(cells.find((c) => c.rootCause === 'concept' && c.subject === 'Databases')?.count).toBe(2);
+    expect(cells.find((c) => c.rootCause === 'concept' && c.subject === 'Databases')?.count).toBe(
+      2
+    );
     expect(cells.find((c) => c.rootCause === 'computation')?.count).toBe(1);
     expect(cells.find((c) => c.rootCause === 'unspecified')?.count).toBe(1);
     // R is skipped entirely
@@ -250,7 +253,9 @@ describe('heatmapCells (F5.2 DoD)', () => {
   it('collapses subtopic when groupBySubtopic is false', () => {
     const cells = heatmapCells(rows, { groupBySubtopic: false });
     for (const c of cells) expect(c.subtopic).toBeNull();
-    expect(cells.find((c) => c.subject === 'Databases' && c.rootCause === 'concept')?.count).toBe(2);
+    expect(cells.find((c) => c.subject === 'Databases' && c.rootCause === 'concept')?.count).toBe(
+      2
+    );
   });
 
   it('respects from/to window', () => {

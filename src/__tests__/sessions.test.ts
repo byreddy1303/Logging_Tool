@@ -42,6 +42,7 @@ function question(id: string, sessionId: string): QuestionRow & { sync_status: '
     source_year: null,
     source_ref: null,
     question_text: null,
+    answer_text: null,
     image_url: null,
     time_spent_sec: 60,
     target_time_sec: 120,
@@ -80,10 +81,7 @@ describe('session history', () => {
       'newer-valid',
       'older-valid'
     ]);
-    expect((await allSessions(USER)).map((row) => row.id)).toEqual([
-      'newer-valid',
-      'older-valid'
-    ]);
+    expect((await allSessions(USER)).map((row) => row.id)).toEqual(['newer-valid', 'older-valid']);
     expect((await recentSessions(USER, 1)).map((row) => row.id)).toEqual(['newer-valid']);
   });
 

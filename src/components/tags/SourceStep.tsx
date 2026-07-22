@@ -26,7 +26,6 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Kbd } from '@/components/ui/Kbd';
 import type { SourceDraft } from '@/components/tags/sourceDraft';
 
-
 function MarksChip({
   value,
   active,
@@ -191,6 +190,7 @@ export default function SourceStep({
       set: isPyq && yearHasSets ? draft.set : null,
       questionNumber: draft.questionNumber?.trim() ? draft.questionNumber.trim() : null,
       questionText: draft.questionText?.trim() ? draft.questionText.trim() : null,
+      answerText: draft.answerText?.trim() ? draft.answerText.trim() : null,
       imageDataUrl: draft.imageDataUrl
     };
     onSubmit(normalized);
@@ -331,6 +331,24 @@ export default function SourceStep({
         </p>
       </div>
 
+      <div className="flex flex-col gap-1.5 rounded border border-ink-teal/15 bg-ink-teal/5 px-3 py-3">
+        <label className="u-label text-ink-teal" htmlFor="src-answer-text">
+          Answer / solution (recommended)
+        </label>
+        <Textarea
+          id="src-answer-text"
+          rows={3}
+          value={draft.answerText ?? ''}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, answerText: event.target.value || null }))
+          }
+          placeholder="Final answer, key steps, or the method you want to verify later."
+        />
+        <p className="text-[11px] leading-relaxed text-text-faint">
+          Saved privately and concealed until you press Show answer.
+        </p>
+      </div>
+
       <ImageUpload
         dataUrl={draft.imageDataUrl}
         uploading={uploading}
@@ -380,16 +398,12 @@ export default function SourceStep({
             <MarksChip
               value={1}
               active={draft.marks === 1}
-              onClick={() =>
-                setDraft((d) => ({ ...d, marks: d.marks === 1 ? null : 1 }))
-              }
+              onClick={() => setDraft((d) => ({ ...d, marks: d.marks === 1 ? null : 1 }))}
             />
             <MarksChip
               value={2}
               active={draft.marks === 2}
-              onClick={() =>
-                setDraft((d) => ({ ...d, marks: d.marks === 2 ? null : 2 }))
-              }
+              onClick={() => setDraft((d) => ({ ...d, marks: d.marks === 2 ? null : 2 }))}
             />
           </div>
         </div>
@@ -446,9 +460,7 @@ function ImageUpload({
             className="h-24 w-24 shrink-0 rounded object-cover"
           />
           <div className="flex flex-1 flex-col gap-2 text-[12px] text-text-muted">
-            <span>
-              Attached. Full-size preview available from Journal — click the thumbnail.
-            </span>
+            <span>Attached. Full-size preview available from Journal — click the thumbnail.</span>
             <div className="flex gap-2">
               <Button
                 type="button"

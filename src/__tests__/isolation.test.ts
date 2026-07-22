@@ -33,6 +33,7 @@ async function seedAll() {
     source_year: null,
     source_ref: null,
     question_text: null,
+    answer_text: null,
     image_url: null,
     time_spent_sec: 60,
     target_time_sec: 120,

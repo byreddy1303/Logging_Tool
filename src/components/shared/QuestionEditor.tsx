@@ -175,8 +175,18 @@ export default function QuestionEditor({
           {isPyq && yearHasSets && (
             <Field label="Set">
               <div className="flex items-center gap-1.5">
-                <Chip label="Set 1" active={draft.sourceSet === 1} onClick={() => set('sourceSet', 1)} value={1} />
-                <Chip label="Set 2" active={draft.sourceSet === 2} onClick={() => set('sourceSet', 2)} value={2} />
+                <Chip
+                  label="Set 1"
+                  active={draft.sourceSet === 1}
+                  onClick={() => set('sourceSet', 1)}
+                  value={1}
+                />
+                <Chip
+                  label="Set 2"
+                  active={draft.sourceSet === 2}
+                  onClick={() => set('sourceSet', 2)}
+                  value={2}
+                />
               </div>
             </Field>
           )}
@@ -200,6 +210,20 @@ export default function QuestionEditor({
           Saved with the question and shown on its timed re-attempt card.
         </p>
       </Field>
+
+      <div className="rounded border border-ink-teal/15 bg-ink-teal/5 px-3 py-3">
+        <Field label="Answer / solution (recommended)">
+          <Textarea
+            rows={3}
+            value={draft.answerText ?? ''}
+            onChange={(event) => set('answerText', event.target.value || null)}
+            placeholder="Final answer, key steps, or the method you want to verify later."
+          />
+          <p className="text-[11px] leading-relaxed text-text-faint">
+            Saved privately. Review screens keep it concealed until you press Show answer.
+          </p>
+        </Field>
+      </div>
 
       {/* Photo — available for every source, always. */}
       <Field label="Question photo (optional)">
@@ -272,8 +296,18 @@ export default function QuestionEditor({
         </Field>
         <Field label="Marks">
           <div className="flex items-center gap-1.5">
-            <Chip label="1m" active={draft.marks === 1} onClick={() => set('marks', draft.marks === 1 ? null : 1)} value={1} />
-            <Chip label="2m" active={draft.marks === 2} onClick={() => set('marks', draft.marks === 2 ? null : 2)} value={2} />
+            <Chip
+              label="1m"
+              active={draft.marks === 1}
+              onClick={() => set('marks', draft.marks === 1 ? null : 1)}
+              value={1}
+            />
+            <Chip
+              label="2m"
+              active={draft.marks === 2}
+              onClick={() => set('marks', draft.marks === 2 ? null : 2)}
+              value={2}
+            />
           </div>
         </Field>
       </div>
@@ -340,9 +374,7 @@ export default function QuestionEditor({
                 key={m.value}
                 label={m.label}
                 active={draft.markDecision === m.value}
-                onClick={() =>
-                  set('markDecision', draft.markDecision === m.value ? null : m.value)
-                }
+                onClick={() => set('markDecision', draft.markDecision === m.value ? null : m.value)}
                 value={m.value}
               />
             ))}
@@ -351,9 +383,24 @@ export default function QuestionEditor({
         {draft.markDecision && draft.markDecision !== 'SKIP' && (
           <Field label="Did it pay off?">
             <div className="flex items-center gap-1.5">
-              <Chip label="Paid off" active={draft.markCorrect === true} onClick={() => set('markCorrect', true)} value={true} />
-              <Chip label="Did not" active={draft.markCorrect === false} onClick={() => set('markCorrect', false)} value={false} />
-              <Chip label="Unknown" active={draft.markCorrect === null} onClick={() => set('markCorrect', null)} value={null} />
+              <Chip
+                label="Paid off"
+                active={draft.markCorrect === true}
+                onClick={() => set('markCorrect', true)}
+                value={true}
+              />
+              <Chip
+                label="Did not"
+                active={draft.markCorrect === false}
+                onClick={() => set('markCorrect', false)}
+                value={false}
+              />
+              <Chip
+                label="Unknown"
+                active={draft.markCorrect === null}
+                onClick={() => set('markCorrect', null)}
+                value={null}
+              />
             </div>
           </Field>
         )}
@@ -411,7 +458,12 @@ export function DeleteBar({ onDelete }: { onDelete: () => void }) {
   return (
     <div className="flex items-center justify-between border-t border-danger/25 pt-3">
       <span className="text-[12px] text-text-faint">Permanent — no undo.</span>
-      <Button variant="ghost" size="sm" onClick={onDelete} className="text-danger hover:text-danger">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onDelete}
+        className="text-danger hover:text-danger"
+      >
         <X size={14} strokeWidth={2} className="mr-1" />
         Delete question
       </Button>

@@ -11,6 +11,7 @@ const question: QuestionRow = {
   source_year: 2025,
   source_ref: 'GATE 2025 Q42',
   question_text: 'Find the recurrence.',
+  answer_text: 'T(n) = T(n - 1) + n.',
   image_url: null,
   time_spent_sec: 180,
   target_time_sec: 120,
@@ -50,6 +51,7 @@ describe('Buddy helpers', () => {
       origin_question_id: 'question-1'
     });
     expect(ref).not.toHaveProperty('outcome');
+    expect(ref).not.toHaveProperty('answer_text');
     expect(ref).not.toHaveProperty('pattern_name');
     expect(ref).not.toHaveProperty('root_cause');
   });

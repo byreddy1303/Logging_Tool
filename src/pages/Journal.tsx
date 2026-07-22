@@ -32,19 +32,19 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Empty } from '@/components/ui/Empty';
 import { ImagePreview } from '@/components/shared/ImagePreview';
+import AnswerReveal from '@/components/shared/AnswerReveal';
 import { Dialog } from '@/components/ui/Dialog';
 import QuestionEditor, { DeleteBar } from '@/components/shared/QuestionEditor';
 import SessionEditor from '@/components/shared/SessionEditor';
-import {
-  applyDraftToRow,
-  draftFromRow,
-  type EditorDraft
-} from '@/components/shared/questionDraft';
+import { applyDraftToRow, draftFromRow, type EditorDraft } from '@/components/shared/questionDraft';
 import { subtopicsFor } from '@/lib/subtopics';
 
 const PAGE_SIZE = 50;
 
-const TONE_BADGE: Record<'ok' | 'slow' | 'guess' | 'wrong', 'success' | 'warn' | 'guess' | 'danger'> = {
+const TONE_BADGE: Record<
+  'ok' | 'slow' | 'guess' | 'wrong',
+  'success' | 'warn' | 'guess' | 'danger'
+> = {
   ok: 'success',
   slow: 'warn',
   guess: 'guess',
@@ -57,9 +57,7 @@ function fuzzy(query: string, target: string): boolean {
   const t = target.toLowerCase();
   if (t.includes(q)) return true;
   const words = t.split(/\s+/);
-  return q
-    .split(/\s+/)
-    .every((qw) => words.some((w) => w.includes(qw) || levenshtein(qw, w) <= 2));
+  return q.split(/\s+/).every((qw) => words.some((w) => w.includes(qw) || levenshtein(qw, w) <= 2));
 }
 
 interface Filters {
@@ -151,7 +149,9 @@ function Row({
           </span>
         </td>
         <td className="hidden max-w-[180px] px-3 py-2 text-[12px] text-text-muted sm:table-cell">
-          <span className="truncate">{q.subtopic ?? <span className="text-text-faint">—</span>}</span>
+          <span className="truncate">
+            {q.subtopic ?? <span className="text-text-faint">—</span>}
+          </span>
         </td>
         <td className="hidden px-3 py-2 sm:table-cell">
           <Badge tone={TONE_BADGE[spec.tone]}>{q.outcome}</Badge>
@@ -255,7 +255,10 @@ function Row({
                         <button
                           type="button"
                           onClick={() =>
-                            onImage(q.image_url as string, q.source_ref ?? sourceLabel ?? 'Question')
+                            onImage(
+                              q.image_url as string,
+                              q.source_ref ?? sourceLabel ?? 'Question'
+                            )
                           }
                           className="group relative h-16 w-16 overflow-hidden rounded border border-border shadow-sm transition-transform hover:-translate-y-px hover:shadow-card"
                           aria-label="View full-size image"
@@ -285,6 +288,7 @@ function Row({
                   </Detail>
                 )}
               </div>
+              <AnswerReveal answer={q.answer_text} onAdd={() => onEdit(q)} className="mt-4" />
             </td>
           </motion.tr>
         )}
@@ -359,18 +363,10 @@ export default function Journal() {
   }, [userId]);
 
   // Newest-first past sessions for the strip below the filter bar.
-  const recent = useLiveQuery(
-    async () => (userId ? recentSessions(userId, 6) : []),
-    [userId],
-    []
-  );
+  const recent = useLiveQuery(async () => (userId ? recentSessions(userId, 6) : []), [userId], []);
   // All sessions for the filter Select — the user can jump to any old session
   // even if it isn't in the top-6 strip.
-  const sessionsAll = useLiveQuery(
-    async () => (userId ? allSessions(userId) : []),
-    [userId],
-    []
-  );
+  const sessionsAll = useLiveQuery(async () => (userId ? allSessions(userId) : []), [userId], []);
 
   // Per-session tagged counts (used by the sessions strip subtitle).
   const questionCountBySession = useMemo(() => {
@@ -410,7 +406,7 @@ export default function Journal() {
   const showQuestionsTable = filtersActive;
   const selectedSession =
     f.session && f.session !== 'standalone'
-      ? sessionsAll.find((s) => s.id === f.session) ?? null
+      ? (sessionsAll.find((s) => s.id === f.session) ?? null)
       : null;
 
   function set<K extends keyof Filters>(key: K, value: string) {
@@ -642,68 +638,68 @@ export default function Journal() {
       )}
 
       {showQuestionsTable ? (
-      <Card>
-        {pageRows.length > 0 ? (
-          <>
-            <div className="u-table-wrap">
-              <table className="u-data-table min-w-[780px] text-[13px]">
-                <thead>
-                  <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
-                    <th className="px-3 py-2 font-mono">Date</th>
-                    <th className="px-3 py-2 font-mono">Subject</th>
-                    <th className="hidden px-3 py-2 font-mono sm:table-cell">Subtopic</th>
-                    <th className="hidden px-3 py-2 font-mono sm:table-cell">Outcome</th>
-                    <th className="hidden px-3 py-2 font-mono md:table-cell">Source</th>
-                    <th className="px-3 py-2 font-mono">Pattern</th>
-                    <th className="px-3 py-2 font-mono">Photo</th>
-                    <th className="hidden px-3 py-2 text-right font-mono sm:table-cell">Time</th>
-                    <th className="w-[88px] px-3 py-2 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {pageRows.map((q) => (
-                    <Row
-                      key={q.id}
-                      q={q}
-                      onImage={(src, caption) => setPreview({ src, caption })}
-                      onEdit={openEdit}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {pages > 1 && (
-              <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={current === 0}
-                  onClick={() => setPage(current - 1)}
-                >
-                  Prev
-                </Button>
-                <span className="u-num text-[12px] text-text-muted">
-                  page {current + 1} of {pages}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={current >= pages - 1}
-                  onClick={() => setPage(current + 1)}
-                >
-                  Next
-                </Button>
+        <Card>
+          {pageRows.length > 0 ? (
+            <>
+              <div className="u-table-wrap">
+                <table className="u-data-table min-w-[780px] text-[13px]">
+                  <thead>
+                    <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.08em] text-text-muted">
+                      <th className="px-3 py-2 font-mono">Date</th>
+                      <th className="px-3 py-2 font-mono">Subject</th>
+                      <th className="hidden px-3 py-2 font-mono sm:table-cell">Subtopic</th>
+                      <th className="hidden px-3 py-2 font-mono sm:table-cell">Outcome</th>
+                      <th className="hidden px-3 py-2 font-mono md:table-cell">Source</th>
+                      <th className="px-3 py-2 font-mono">Pattern</th>
+                      <th className="px-3 py-2 font-mono">Photo</th>
+                      <th className="hidden px-3 py-2 text-right font-mono sm:table-cell">Time</th>
+                      <th className="w-[88px] px-3 py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {pageRows.map((q) => (
+                      <Row
+                        key={q.id}
+                        q={q}
+                        onImage={(src, caption) => setPreview({ src, caption })}
+                        onEdit={openEdit}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </>
-        ) : (
-          <Empty
-            title="No entries match"
-            hint="Loosen a filter or clear them all."
-            className="border-0 py-10"
-          />
-        )}
-      </Card>
+              {pages > 1 && (
+                <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={current === 0}
+                    onClick={() => setPage(current - 1)}
+                  >
+                    Prev
+                  </Button>
+                  <span className="u-num text-[12px] text-text-muted">
+                    page {current + 1} of {pages}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={current >= pages - 1}
+                    onClick={() => setPage(current + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : (
+            <Empty
+              title="No entries match"
+              hint="Loosen a filter or clear them all."
+              className="border-0 py-10"
+            />
+          )}
+        </Card>
       ) : null}
 
       <ImagePreview

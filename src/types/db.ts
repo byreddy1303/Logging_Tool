@@ -88,6 +88,7 @@ export interface QuestionRow {
   source_year: number | null;
   source_ref: string | null;
   question_text: string | null;
+  answer_text: string | null;
   image_url: string | null;
   time_spent_sec: number;
   target_time_sec: number;
@@ -176,9 +177,9 @@ export interface BuddyRow {
 }
 
 /** Payload used for kind='question' messages.
- * Deliberately excludes outcome, pattern, notes, root_cause — anything that
- * reveals the sender's analysis. Only the raw question metadata + optional
- * image. */
+ * Deliberately excludes the saved answer, outcome, pattern, notes and
+ * root_cause — anything that reveals the sender's analysis. Only the raw
+ * question metadata + optional image. */
 export interface SharedQuestionRef {
   subject: string;
   subtopic: string | null;
