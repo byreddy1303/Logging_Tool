@@ -1,7 +1,16 @@
 export interface TelegramCommand {
-  name: 'start' | 'stop' | 'status' | 'timetable' | 'tomorrow' | 'help';
+  name: 'start' | 'stop' | 'status' | 'today' | 'timetable' | 'tomorrow' | 'help';
   argument: string | null;
 }
+
+export const TELEGRAM_BOT_COMMANDS = [
+  { command: 'today', description: "Show today's plan and due re-attempts" },
+  { command: 'tomorrow', description: "Show tomorrow's study plan" },
+  { command: 'timetable', description: "Show this week's study timetable" },
+  { command: 'status', description: 'Check Telegram delivery status' },
+  { command: 'stop', description: 'Pause the daily digest' },
+  { command: 'help', description: 'Show available commands' }
+] as const;
 export interface TelegramStudySession {
   subject: string;
   customSubject?: string;
@@ -34,6 +43,15 @@ export interface TelegramTomorrowInput {
   sessions: TelegramStudySession[];
 }
 
+export interface TelegramTodayInput {
+  isoDate: string;
+  quote: string;
+  quoteAttribution: string;
+  sessions: TelegramStudySession[];
+  reAttemptTotal: number;
+  subjectCounts: Array<{ subject: string; count: number }>;
+}
+
 export interface TelegramSendResult {
   ok: boolean;
   id?: number;
@@ -45,7 +63,7 @@ export function parseTelegramCommand(text: string | undefined): TelegramCommand 
   const match = text
     .trim()
     .match(
-      /^\/(start|stop|status|timetable|tomorrow|help)(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?\s*$/i
+      /^\/(start|stop|status|today|timetable|tomorrow|help)(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?\s*$/i
     );
   if (!match) return null;
   return {
@@ -189,14 +207,17 @@ function fullDateLabel(isoDate: string): string {
   return `${part('weekday')} · ${part('day')} ${part('month')}`.toUpperCase();
 }
 
-export function renderTelegramDigest(input: TelegramDigestInput): string {
+function renderTelegramDay(
+  input: TelegramDigestInput,
+  heading: 'AIR JOURNAL' | 'AIR JOURNAL · TODAY'
+): string {
   const sessions = input.sessions.slice(0, 6);
   const totalMinutes = input.sessions.reduce(
     (sum, session) => sum + Math.max(0, session.durationMin || 0),
     0
   );
   const lines: string[] = [
-    '<b>AIR JOURNAL</b>',
+    `<b>${heading}</b>`,
     `<b>${escapeTelegramHtml(input.dateLabel)}</b>`,
     '',
     `<i>“${escapeTelegramHtml(input.quote)}”</i>`,
@@ -236,6 +257,24 @@ export function renderTelegramDigest(input: TelegramDigestInput): string {
   lines.push('', `${input.sessions.length} ${sessionWord}. Finish them cleanly.`);
 
   return lines.join('\n').slice(0, 3900);
+}
+
+export function renderTelegramDigest(input: TelegramDigestInput): string {
+  return renderTelegramDay(input, 'AIR JOURNAL');
+}
+
+export function renderTelegramTodayUpdate(input: TelegramTodayInput): string {
+  return renderTelegramDay(
+    {
+      dateLabel: fullDateLabel(input.isoDate),
+      quote: input.quote,
+      quoteAttribution: input.quoteAttribution,
+      sessions: input.sessions,
+      reAttemptTotal: input.reAttemptTotal,
+      subjectCounts: input.subjectCounts
+    },
+    'AIR JOURNAL · TODAY'
+  );
 }
 
 export function renderTelegramConnectionTest(): string {

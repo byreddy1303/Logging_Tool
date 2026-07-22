@@ -20,6 +20,8 @@ At the user's direction, an optional Telegram bot may send one deterministic dai
 
 Telegram connection, delivery time, timezone, test delivery, disconnect, and the daily on/off control live only in Settings. Planner remains planning-only. Its day modal contains Study sessions and Review; Day structure, Mindset & energy, and Non-study tasks are no longer shown. Legacy locally stored fields may remain readable for backward compatibility but are not part of new day planning.
 
+The private bot supports `/today` for the connected user's local-date plan and due re-attempts, `/tomorrow` for the next-day plan, and `/timetable` for the current Monday-to-Sunday plan.
+
 ---
 
 ## 0. Autonomy directives (for Claude executing this doc)

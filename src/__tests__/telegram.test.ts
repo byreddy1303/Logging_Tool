@@ -6,9 +6,11 @@ import {
   parseTelegramStudySessions,
   renderTelegramConnectionTest,
   renderTelegramDigest,
+  renderTelegramTodayUpdate,
   renderTelegramTimetable,
   renderTelegramTomorrowPlan,
   sendTelegramMessage,
+  TELEGRAM_BOT_COMMANDS,
   tomorrowIsoDateForTimezone,
   weekIsoDatesForTimezone
 } from '../../supabase/functions/_shared/telegram';
@@ -33,7 +35,15 @@ describe('Telegram daily digest', () => {
       name: 'tomorrow',
       argument: null
     });
+    expect(parseTelegramCommand('/today@Gate_prep_reminder_bot')).toEqual({
+      name: 'today',
+      argument: null
+    });
     expect(parseTelegramCommand('send me a digest')).toBeNull();
+    expect(TELEGRAM_BOT_COMMANDS[0]).toEqual({
+      command: 'today',
+      description: "Show today's plan and due re-attempts"
+    });
   });
 
   it('uses the connected user timezone to find the current Monday-to-Sunday week', () => {
@@ -106,6 +116,38 @@ describe('Telegram daily digest', () => {
     expect(message).toContain('<b>AIR JOURNAL · CONNECTED</b>');
     expect(message).toContain('Telegram delivery is working.');
     expect(message).toContain('<b>No plan. No noise.</b>');
+  });
+
+  it("renders today's plan and due re-attempt summary on demand", () => {
+    const message = renderTelegramTodayUpdate({
+      isoDate: '2026-07-22',
+      quote: 'The hard set should recognise you first.',
+      quoteAttribution: 'AIR Journal',
+      sessions: [
+        {
+          subject: 'Custom...',
+          customSubject: 'Compiler < Design',
+          durationMin: 180,
+          mode: 'Revision',
+          target: 'FIRST & FOLLOW'
+        },
+        { subject: 'TOC', durationMin: 180, mode: 'Deep Study', target: 'PDA PYQs' }
+      ],
+      reAttemptTotal: 3,
+      subjectCounts: [
+        { subject: 'TOC', count: 2 },
+        { subject: 'Compiler Design', count: 1 }
+      ]
+    });
+
+    expect(message).toContain('<b>AIR JOURNAL · TODAY</b>');
+    expect(message).toContain('<b>WEDNESDAY · 22 JULY</b>');
+    expect(message).toContain("<b>TODAY'S PLAN · 6h</b>");
+    expect(message).toContain('Compiler &lt; Design');
+    expect(message).toContain('FIRST &amp; FOLLOW');
+    expect(message).toContain('<b>RE-ATTEMPTS · 3</b>');
+    expect(message).toContain('TOC · 2');
+    expect(message.length).toBeLessThan(4096);
   });
 
   it('renders a compact, escaped Monday-to-Sunday timetable', () => {

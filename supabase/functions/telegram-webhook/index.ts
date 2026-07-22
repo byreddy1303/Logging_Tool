@@ -4,6 +4,7 @@
 //   /start <short-lived token> — bind this Telegram chat to AIR Journal
 //   /stop                      — pause the daily digest
 //   /status                    — show the current connection state
+//   /today                     — show today's study plan and due re-attempts
 //   /timetable                 — show this user's current-week study plan
 //   /tomorrow                  — show this user's next-day study plan
 //   /help                      — show the available commands
@@ -15,12 +16,15 @@ import {
   isoDateForTimezone,
   parseTelegramCommand,
   parseTelegramStudySessions,
+  renderTelegramTodayUpdate,
   renderTelegramTimetable,
   renderTelegramTomorrowPlan,
   sendTelegramMessage,
+  TELEGRAM_BOT_COMMANDS,
   tomorrowIsoDateForTimezone,
   weekIsoDatesForTimezone
 } from '../_shared/telegram.ts';
+import { pickQuoteForDay } from '../_shared/quotes.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const Deno: any;
@@ -61,15 +65,7 @@ async function ensureTelegramCommandMenu(): Promise<void> {
       const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setMyCommands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          commands: [
-            { command: 'tomorrow', description: "Show tomorrow's study plan" },
-            { command: 'timetable', description: "Show this week's study timetable" },
-            { command: 'status', description: 'Check Telegram delivery status' },
-            { command: 'stop', description: 'Pause the daily digest' },
-            { command: 'help', description: 'Show available commands' }
-          ]
-        })
+        body: JSON.stringify({ commands: TELEGRAM_BOT_COMMANDS })
       });
       const payload = (await response.json().catch(() => ({}))) as { ok?: boolean };
       if (!response.ok || payload.ok !== true) {
@@ -127,7 +123,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!command) {
     await reply(
       chatId,
-      'Use /tomorrow for the next day, /timetable for this week, or /help for every command.'
+      'Use /today for today, /tomorrow for the next day, /timetable for this week, or /help for every command.'
     );
     return json({ ok: true });
   }
@@ -180,7 +176,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     await reply(
       chatId,
-      '<b>AIR Journal connected.</b>\n\nYour optional daily study digest is on. Change its time or pause it from Settings. Use /tomorrow for the next day or /timetable for the week.'
+      '<b>AIR Journal connected.</b>\n\nYour optional daily study digest is on. Change its time or pause it from Settings. Use /today for today, /tomorrow for the next day, or /timetable for the week.'
     );
     return json({ ok: true });
   }
@@ -191,7 +187,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .eq('chat_id', chatId)
     .maybeSingle();
 
-  if (command.name === 'timetable' || command.name === 'tomorrow') {
+  if (command.name === 'today' || command.name === 'timetable' || command.name === 'tomorrow') {
     if (!subscription) {
       await reply(
         chatId,
@@ -214,6 +210,74 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const timezone =
       typeof user.timezone === 'string' && user.timezone ? user.timezone : 'Asia/Kolkata';
     const now = new Date();
+
+    if (command.name === 'today') {
+      const todayDate = isoDateForTimezone(now, timezone);
+      const [planResult, reattemptResult] = await Promise.all([
+        admin
+          .from('planner_day_plans')
+          .select('plan_date, sessions')
+          .eq('user_id', subscription.user_id)
+          .eq('plan_date', todayDate)
+          .maybeSingle(),
+        admin
+          .from('reattempts')
+          .select('question_id')
+          .eq('user_id', subscription.user_id)
+          .lte('scheduled_date', todayDate)
+          .neq('stage', 'MASTERED')
+      ]);
+
+      if (planResult.error || reattemptResult.error) {
+        console.error(
+          'Telegram today data load failed:',
+          subscription.user_id,
+          planResult.error?.message,
+          reattemptResult.error?.message
+        );
+        await reply(chatId, "I could not load today's data right now. Try again in a moment.");
+        return json({ ok: true });
+      }
+
+      const reattemptRows = (reattemptResult.data as Array<{ question_id: string }> | null) ?? [];
+      const questionIds = [...new Set(reattemptRows.map((row) => row.question_id))];
+      const subjectCounts = new Map<string, number>();
+
+      if (questionIds.length > 0) {
+        const { data: questions, error: questionsError } = await admin
+          .from('questions')
+          .select('id, subject')
+          .in('id', questionIds);
+        if (questionsError) {
+          console.error(
+            'Telegram today re-attempt subjects load failed:',
+            subscription.user_id,
+            questionsError.message
+          );
+          await reply(chatId, "I could not load today's data right now. Try again in a moment.");
+          return json({ ok: true });
+        }
+        for (const question of (questions as Array<{ id: string; subject: string }> | null) ?? []) {
+          subjectCounts.set(question.subject, (subjectCounts.get(question.subject) ?? 0) + 1);
+        }
+      }
+
+      const quote = pickQuoteForDay(todayDate, subscription.user_id);
+      const todayUpdate = renderTelegramTodayUpdate({
+        isoDate: todayDate,
+        quote: quote.text,
+        quoteAttribution: quote.attribution,
+        sessions: parseTelegramStudySessions(
+          (planResult.data as StoredPlannerDay | null)?.sessions
+        ),
+        reAttemptTotal: reattemptRows.length,
+        subjectCounts: [...subjectCounts]
+          .map(([subject, count]) => ({ subject, count }))
+          .sort((a, b) => b.count - a.count || a.subject.localeCompare(b.subject))
+      });
+      await reply(chatId, todayUpdate, `/planner?date=${todayDate}`);
+      return json({ ok: true });
+    }
 
     if (command.name === 'tomorrow') {
       const tomorrowDate = tomorrowIsoDateForTimezone(now, timezone);
@@ -295,7 +359,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   await reply(
     chatId,
-    "<b>AIR Journal bot</b>\n/tomorrow — show tomorrow's study plan\n/timetable — show this week's study timetable\n/status — check delivery\n/stop — pause the daily digest\n/start — connect using the private Settings link"
+    "<b>AIR Journal bot</b>\n/today — show today's plan and due re-attempts\n/tomorrow — show tomorrow's study plan\n/timetable — show this week's study timetable\n/status — check delivery\n/stop — pause the daily digest\n/start — connect using the private Settings link"
   );
   return json({ ok: true });
 });

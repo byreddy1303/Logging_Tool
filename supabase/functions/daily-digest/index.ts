@@ -339,7 +339,7 @@ async function buildDigest(
     .select('id, question_id, stage')
     .eq('user_id', u.id)
     .lte('scheduled_date', isoDate)
-    .is('result', null);
+    .neq('stage', 'MASTERED');
   const reAttemptRows = (reattempts as { id: string; question_id: string; stage: string }[]) ?? [];
 
   let subjectCounts: { subject: string; count: number }[] = [];
