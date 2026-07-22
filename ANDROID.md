@@ -96,6 +96,13 @@ The artifact is:
 android/app/build/outputs/apk/release/airjournal-live-release.apk
 ```
 
+For devices that already have the original direct-share debug-signed APK, use the
+matching optimized artifact instead so Android can upgrade it without uninstalling:
+
+```text
+android/app/build/outputs/apk/release/airjournal-live-friend.apk
+```
+
 After this APK is installed once, normal web releases are delivered by pushing a verified commit to `main`; Vercel updates the production origin and the app checks on launch/resume and every 15 minutes while open. Do not use this path for native permission, plugin, or signing changes.
 
 ## Release verification matrix

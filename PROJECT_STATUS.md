@@ -92,6 +92,15 @@ Before calling this feature deployed and released:
 - Migration warning: sync every pending local row in the old bundled APK before installing;
   the live shell uses the production HTTPS WebView origin and requires an online first launch.
 
+### Existing direct-share installation upgrade
+
+- Version: `1.1.1` (`versionCode 4`)
+- Path: `android/app/build/outputs/apk/release/airjournal-live-friend.apk`
+- SHA-256: `43474a4afb6cf0b3c67301d9c4a71ea94d96ea86d77f83b89ed93cd9c05424e6`
+- Signing certificate matches the original direct-share APK so it installs in place
+  without clearing the learner's app data.
+- Verified installed and running on the connected Motorola test device.
+
 ### Existing direct-install APK
 
 - Version: `1.0.0` (`versionCode 1`)
