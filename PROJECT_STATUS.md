@@ -81,9 +81,9 @@ Before calling this feature deployed and released:
 
 ### Live-shell automatic web-update APK
 
-- Version: `1.1.0` (`versionCode 3`)
+- Version: `1.1.1` (`versionCode 4`)
 - Path: `android/app/build/outputs/apk/release/airjournal-live-release.apk`
-- SHA-256: `da52bb389d4446b7439d620f7cadfd3593b05ae51ba328c55d88ba6d277021e9`
+- SHA-256: `5d3deed3c8b0176d43ab3574fb0f914dea3c0a37134559d16ee132a2818e9df9`
 - Embedded origin: `https://air-journal-omega.vercel.app`
 - Package: `in.airjournal.app`
 - Signing certificate matches the previous signed Play bundle.
@@ -162,8 +162,8 @@ For each Play update:
 1. Finish and verify the source changes.
 2. Run `npm run typecheck`, `npm run lint`, `npm run test -- --run`, and the production build.
 3. Sync the latest web assets into Capacitor Android.
-4. Increment `versionCode` above every previously uploaded code. Since code 2 is already
-   prepared, the next Play bundle should use at least code 3.
+4. Increment `versionCode` above every previously distributed code. Since code 4 is already
+   distributed, the next Play bundle should use at least code 5.
 5. Build a signed release AAB.
 6. Upload it to the Internal testing track and roll it out to testers.
 

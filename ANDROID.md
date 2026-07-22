@@ -87,7 +87,7 @@ Before replacing an older bundled-shell APK, open it online and wait until its p
 Build the signed live shell with a version code higher than every prior APK/AAB:
 
 ```bash
-AIR_VERSION_CODE=3 AIR_VERSION_NAME=1.1.0 npm run android:live:release
+AIR_VERSION_CODE=4 AIR_VERSION_NAME=1.1.1 npm run android:live:release
 ```
 
 The artifact is:
