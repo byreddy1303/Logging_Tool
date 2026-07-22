@@ -107,15 +107,17 @@ Current state:
 
 - Signed 1.0.1 AAB is ready.
 - Play Console setup/upload has not started.
-- Browser automation is blocked because the ChatGPT Chrome Extension is not installed
-  in the active Chrome profile. Its official Chrome Web Store page is open; the user
-  must click **Add to Chrome** and approve Chrome's installation prompt.
+- Chrome control is working and Play Console was opened on 2026-07-22 under
+  `kalyankrishnareddyb@gmail.com`.
+- Google blocks developer-account creation until 2-step verification is enabled for
+  that Google account. The Play Console setup page is open at that handoff point.
 - The friend's Google account email is still needed when configuring the tester list.
 
 Next Play steps:
 
-1. Install/enable the ChatGPT Chrome Extension in the active Chrome profile and reconnect.
-2. Open Google Play Console with the developer account.
+1. Enable 2-step verification for `kalyankrishnareddyb@gmail.com`, then return to the
+   open Play Console setup page.
+2. Complete Google Play developer registration.
 3. If developer registration, payment, identity verification, or legal acceptance is
    required, hand control to the user. Do not accept or pay automatically.
 4. Create `AIR Journal` as an Android app using package `in.airjournal.app`.
