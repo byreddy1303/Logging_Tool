@@ -24,6 +24,14 @@ navigator.serviceWorker?.addEventListener('controllerchange', () => {
   window.location.reload();
 });
 
+function checkForServiceWorkerUpdate(): void {
+  if (!navigator.serviceWorker) return;
+  void navigator.serviceWorker
+    .getRegistration()
+    .then((registration) => registration?.update())
+    .catch(() => undefined);
+}
+
 // Installed copies can stay open for days. Check immediately and periodically
 // so an activated release replaces obsolete cached screens without requiring
 // the learner to clear site data or reinstall the PWA.
@@ -32,9 +40,10 @@ registerSW({
   onRegisteredSW(_swUrl, registration) {
     if (!registration) return;
     void registration.update();
-    window.setInterval(() => void registration.update(), UPDATE_CHECK_INTERVAL_MS);
   }
 });
+
+window.setInterval(checkForServiceWorkerUpdate, UPDATE_CHECK_INTERVAL_MS);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
